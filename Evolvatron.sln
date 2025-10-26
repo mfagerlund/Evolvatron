@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Core", "Evolvatron.Core\Evolvatron.Core.csproj", "{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Rigidon", "Evolvatron.Rigidon\Evolvatron.Rigidon.csproj", "{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Demo", "Evolvatron.Demo\Evolvatron.Demo.csproj", "{87CE6C66-0D9F-48E1-853E-6999E59F9413}"
 EndProject

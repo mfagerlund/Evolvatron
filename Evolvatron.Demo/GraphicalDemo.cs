@@ -49,8 +49,12 @@ public static class GraphicalDemo
         int sceneIndex = 0;
         float simTime = 0f;
 
+        // Particle coloring metadata (for scene 7 - particle boxes)
+        List<int> angleConstraintParticles = new List<int>();
+        List<int> diagonalBracingParticles = new List<int>();
+
         // Build initial scene
-        BuildScene(world, sceneIndex);
+        BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
 
         while (!Raylib.WindowShouldClose())
         {
@@ -64,23 +68,29 @@ public static class GraphicalDemo
             if (Raylib.IsKeyPressed(KeyboardKey.R))
             {
                 world.Clear();
-                BuildScene(world, sceneIndex);
+                angleConstraintParticles.Clear();
+                diagonalBracingParticles.Clear();
+                BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
                 simTime = 0f;
             }
 
             if (Raylib.IsKeyPressed(KeyboardKey.Right))
             {
-                sceneIndex = (sceneIndex + 1) % 6;
+                sceneIndex = (sceneIndex + 1) % 8;  // Updated to 8 scenes
                 world.Clear();
-                BuildScene(world, sceneIndex);
+                angleConstraintParticles.Clear();
+                diagonalBracingParticles.Clear();
+                BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
                 simTime = 0f;
             }
 
             if (Raylib.IsKeyPressed(KeyboardKey.Left))
             {
-                sceneIndex = (sceneIndex - 1 + 6) % 6;
+                sceneIndex = (sceneIndex - 1 + 8) % 8;  // Updated to 8 scenes
                 world.Clear();
-                BuildScene(world, sceneIndex);
+                angleConstraintParticles.Clear();
+                diagonalBracingParticles.Clear();
+                BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
                 simTime = 0f;
             }
 
@@ -106,6 +116,13 @@ public static class GraphicalDemo
                 int stepsPerFrame = 4;
                 for (int i = 0; i < stepsPerFrame; i++)
                 {
+                    // Update snake virtual particles for scene 7 (before physics step)
+                    if (sceneIndex == 7)
+                    {
+                        UpdateMorphingBoxMotors(world, simTime);
+                        CancelGravityOnVirtualParticles(world, config);
+                    }
+
                     stepper.Step(world, config);
                     simTime += config.Dt;
                 }
@@ -117,7 +134,7 @@ public static class GraphicalDemo
             Raylib.ClearBackground(Color.Black);
 
             // Draw world
-            DrawWorld(world, cameraPos, cameraZoom);
+            DrawWorld(world, cameraPos, cameraZoom, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
 
             // Draw UI
             DrawUI(world, simTime, paused, sceneIndex, cameraZoom);
@@ -128,7 +145,63 @@ public static class GraphicalDemo
         Raylib.CloseWindow();
     }
 
-    private static void BuildScene(WorldState world, int index)
+    private static void CancelGravityOnVirtualParticles(WorldState world, SimulationConfig config)
+    {
+        // Virtual particles should not be affected by gravity
+        // They're control particles, not physical mass
+        // Cancel out gravity that was applied during integration
+
+        for (int i = 0; i < world.ParticleCount; i++)
+        {
+            // Check if this is a virtual particle (small radius)
+            if (world.Radius[i] < 0.06f && world.InvMass[i] > 0f)
+            {
+                // Cancel gravity by removing what was added
+                world.VelY[i] -= config.GravityY * config.Dt;
+            }
+        }
+    }
+
+    private static void UpdateMorphingBoxMotors(WorldState world, float time)
+    {
+        // Make snakes slither by moving their virtual particles in a wave pattern
+        // Virtual particles are placed perpendicular to joints
+        // Moving them creates bending motion
+
+        float frequency = 1.0f; // Wave frequency
+        float amplitude = 0.3f; // How far virtual particles move
+
+        // We need to identify which particles are virtual particles
+        // They're the smaller ones (radius 0.04)
+        // For now, just apply forces to all small particles
+
+        for (int i = 0; i < world.ParticleCount; i++)
+        {
+            // Check if this is a virtual particle (small radius)
+            if (world.Radius[i] < 0.06f)
+            {
+                // This is a virtual particle
+                // Apply sinusoidal force perpendicular to its current position
+
+                // Use particle position as phase offset for traveling wave
+                float phase = world.PosX[i] * 0.5f;
+                float wave = MathF.Sin(2f * MathF.PI * frequency * time + phase);
+
+                // Apply force in Y direction (perpendicular to snake body)
+                float targetOffset = amplitude * wave;
+
+                // Find the nearest segment particle to get its Y position
+                // For simplicity, just oscillate around initial position
+                float targetY = world.PosY[i] + targetOffset;
+
+                // Apply gentle force to reach target
+                float dy = targetOffset * 10f; // Force proportional to desired movement
+                world.VelY[i] += dy * 0.01f;
+            }
+        }
+    }
+
+    private static void BuildScene(WorldState world, int index, List<int> angleConstraintParticles, List<int> diagonalBracingParticles)
     {
         switch (index)
         {
@@ -149,6 +222,12 @@ public static class GraphicalDemo
                 break;
             case 5:
                 BuildSceneRigidBodyRocket(world);
+                break;
+            case 6:
+                BuildSceneParticleGrid(world);
+                break;
+            case 7:
+                BuildSceneParticleBoxes(world, angleConstraintParticles, diagonalBracingParticles);
                 break;
         }
     }
@@ -350,7 +429,470 @@ public static class GraphicalDemo
         world.Circles.Add(new CircleCollider(3f, -6f, 0.5f));
     }
 
-    private static void DrawWorld(WorldState world, Vector2 cameraPos, float zoom)
+    private static void BuildSceneParticleGrid(WorldState world)
+    {
+        // 8x8 PARTICLE GRID (SOFT-BODY CLOTH)
+        // Shows interconnected particles forming a deformable cloth-like grid
+        // Uses distance constraints (rods) for structure
+
+        // Ground platform
+        world.Obbs.Add(OBBCollider.AxisAligned(0f, -8f, 20f, 0.5f));
+
+        // Landing platform (angled)
+        float platformAngle = 0.2f;
+        world.Obbs.Add(new OBBCollider(0f, -5f, MathF.Cos(platformAngle), MathF.Sin(platformAngle), 6f, 0.3f));
+
+        // Create 8x8 grid
+        const int gridWidth = 8;
+        const int gridHeight = 8;
+        float spacing = 0.4f; // Distance between adjacent particles
+        float particleMass = 0.1f;
+        float particleRadius = 0.08f;
+        float startX = -(gridWidth - 1) * spacing / 2f;
+        float startY = 5f;
+
+        // Create particles
+        int[,] particleIndices = new int[gridWidth, gridHeight];
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                float px = startX + x * spacing;
+                float py = startY + y * spacing;
+
+                particleIndices[x, y] = world.AddParticle(
+                    x: px,
+                    y: py,
+                    vx: 0f,
+                    vy: 0f,
+                    mass: particleMass,
+                    radius: particleRadius);
+            }
+        }
+
+        // Connect with structural rods (horizontal and vertical)
+        float rodCompliance = 5e-4f; // Soft for cloth-like behavior (was 1e-5 = too stiff!)
+
+        // Horizontal connections
+        for (int x = 0; x < gridWidth - 1; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                world.Rods.Add(new Rod(
+                    particleIndices[x, y],
+                    particleIndices[x + 1, y],
+                    restLength: spacing,
+                    compliance: rodCompliance));
+            }
+        }
+
+        // Vertical connections
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight - 1; y++)
+            {
+                world.Rods.Add(new Rod(
+                    particleIndices[x, y],
+                    particleIndices[x, y + 1],
+                    restLength: spacing,
+                    compliance: rodCompliance));
+            }
+        }
+
+        // Diagonal connections (shear resistance - prevents sliding)
+        float diagonalLength = spacing * MathF.Sqrt(2f);
+        for (int x = 0; x < gridWidth - 1; x++)
+        {
+            for (int y = 0; y < gridHeight - 1; y++)
+            {
+                // Diagonal 1: top-left to bottom-right
+                world.Rods.Add(new Rod(
+                    particleIndices[x, y],
+                    particleIndices[x + 1, y + 1],
+                    restLength: diagonalLength,
+                    compliance: rodCompliance * 2f)); // Softer diagonals
+
+                // Diagonal 2: top-right to bottom-left
+                world.Rods.Add(new Rod(
+                    particleIndices[x + 1, y],
+                    particleIndices[x, y + 1],
+                    restLength: diagonalLength,
+                    compliance: rodCompliance * 2f));
+            }
+        }
+
+        // Optional: Pin top corners to make it hang like a cloth
+        // Uncomment these lines to pin the top-left and top-right corners
+        // world.InvMass[particleIndices[0, gridHeight - 1]] = 0f;  // Pin top-left
+        // world.InvMass[particleIndices[gridWidth - 1, gridHeight - 1]] = 0f;  // Pin top-right
+
+        // Add some obstacles for the cloth to interact with
+        world.Circles.Add(new CircleCollider(-2f, -3f, 1.2f));
+        world.Circles.Add(new CircleCollider(2f, -2f, 0.8f));
+    }
+
+    private static void BuildSceneParticleBoxes(WorldState world, List<int> angleConstraintParticles, List<int> diagonalBracingParticles)
+    {
+        // SNAKES WITH VIRTUAL PARTICLE ANGLE CONTROL
+        // Creates articulated chains (snakes) that slither using angle constraints
+        // Uses virtual particles perpendicular to joints to control angles
+
+        // Ground
+        world.Obbs.Add(OBBCollider.AxisAligned(0f, -8f, 20f, 0.5f));
+
+        // Create a random number generator with fixed seed for reproducible results
+        var random = new Random(42);
+
+        // Create 5 snakes with different lengths
+        int numSnakes = 5;
+        for (int snakeIdx = 0; snakeIdx < numSnakes; snakeIdx++)
+        {
+            // Random snake parameters
+            int segments = 4 + snakeIdx; // 4 to 8 segments
+            float segmentLength = 0.5f;
+            float startX = -10f + snakeIdx * 4.5f;
+            float startY = 8f + snakeIdx * 1.5f;
+            float phaseOffset = snakeIdx * MathF.PI / 2.5f;
+
+            var snakeParticles = CreateSnakeWithVirtualParticles(
+                world, startX, startY, segments, segmentLength, phaseOffset);
+
+            angleConstraintParticles.AddRange(snakeParticles);
+        }
+
+        // Add some obstacles
+        world.Circles.Add(new CircleCollider(-8f, -4f, 1.2f));
+        world.Circles.Add(new CircleCollider(0f, -5f, 1.5f));
+        world.Circles.Add(new CircleCollider(8f, -3f, 1.0f));
+        world.Obbs.Add(new OBBCollider(-4f, -6f, MathF.Cos(0.2f), MathF.Sin(0.2f), 3f, 0.3f));
+        world.Obbs.Add(new OBBCollider(4f, -6f, MathF.Cos(-0.2f), MathF.Sin(-0.2f), 3f, 0.3f));
+    }
+
+    private static List<int> CreateSnakeWithVirtualParticles(
+        WorldState world,
+        float startX,
+        float startY,
+        int numSegments,
+        float segmentLength,
+        float phaseOffset)
+    {
+        // Create a snake chain using virtual particles for angle control
+        // Snake structure: p0--p1--p2--p3--p4...
+        // At each joint (p1, p2, p3...), add a virtual particle perpendicular
+        // The virtual particle controls the bend angle at that joint
+
+        var allParticles = new List<int>();
+
+        float particleMass = 0.2f;
+        float particleRadius = 0.08f;
+        float virtualMass = 0.05f;      // Virtual particles are lighter
+        float virtualRadius = 0.04f;     // Smaller visual
+        float rodCompliance = 0f;        // Rigid segments
+        float virtualCompliance = 1e-5f; // Slightly soft angle control
+
+        // Create segment particles in a horizontal chain
+        var segments = new List<int>();
+        for (int i = 0; i <= numSegments; i++)
+        {
+            float px = startX + i * segmentLength;
+            float py = startY;
+            int p = world.AddParticle(px, py, 0f, 0f, particleMass, particleRadius);
+            segments.Add(p);
+            allParticles.Add(p);
+        }
+
+        // Connect segments with rigid rods
+        for (int i = 0; i < numSegments; i++)
+        {
+            world.Rods.Add(new Rod(segments[i], segments[i + 1], segmentLength, rodCompliance));
+        }
+
+        // Add virtual particles at each INTERIOR joint (not endpoints)
+        // Each virtual particle is placed perpendicular to the joint
+        float virtualDist = 0.15f; // Distance perpendicular to joint
+
+        for (int i = 1; i < numSegments; i++) // Interior joints only
+        {
+            int prev = segments[i - 1];
+            int curr = segments[i];
+            int next = segments[i + 1];
+
+            // Place virtual particle perpendicular to current joint
+            // Initial position: offset perpendicular (down from the chain)
+            float vx = world.PosX[curr];
+            float vy = world.PosY[curr] - virtualDist;
+
+            int v = world.AddParticle(vx, vy, 0f, 0f, virtualMass, virtualRadius);
+            allParticles.Add(v);
+
+            // Connect virtual particle to the two arms of the angle
+            // This forms a triangle: prev--curr--next with V controlling the angle
+            float armDist = MathF.Sqrt(segmentLength * segmentLength + virtualDist * virtualDist);
+
+            world.Rods.Add(new Rod(v, prev, armDist, virtualCompliance)); // V to previous segment
+            world.Rods.Add(new Rod(v, next, armDist, virtualCompliance)); // V to next segment
+        }
+
+        return allParticles;
+    }
+
+    private static int[] CreateMorphingParticleBox(
+        WorldState world,
+        float centerX,
+        float centerY,
+        float width,
+        float height,
+        float angle,
+        float angularVel,
+        float phaseOffset)
+    {
+        // Create a box using VIRTUAL PARTICLES for angle control
+        // Each corner gets a virtual particle placed inside the angle
+        // The virtual particle position defines the corner angle
+
+        float halfW = width / 2f;
+        float halfH = height / 2f;
+        float particleMass = 0.3f;
+        float particleRadius = 0.1f;
+        float virtualMass = 0.1f; // Virtual particles are lighter
+        float virtualRadius = 0.05f; // Smaller visual
+        float rodCompliance = 1e-6f; // Very stiff for edges
+
+        // Calculate rotated corner positions
+        float cos = MathF.Cos(angle);
+        float sin = MathF.Sin(angle);
+
+        // Local corner positions (before rotation)
+        Vector2[] localCorners = new[]
+        {
+            new Vector2(-halfW, -halfH), // Bottom-left
+            new Vector2(halfW, -halfH),  // Bottom-right
+            new Vector2(halfW, halfH),   // Top-right
+            new Vector2(-halfW, halfH)   // Top-left
+        };
+
+        // Create corner particles
+        int[] corners = new int[4];
+        for (int i = 0; i < 4; i++)
+        {
+            float localX = localCorners[i].X;
+            float localY = localCorners[i].Y;
+            float worldX = centerX + localX * cos - localY * sin;
+            float worldY = centerY + localX * sin + localY * cos;
+
+            float velX = -angularVel * localY;
+            float velY = angularVel * localX;
+
+            corners[i] = world.AddParticle(worldX, worldY, velX, velY, particleMass, particleRadius);
+        }
+
+        // Add edge rods (4 rods connecting corners in a loop)
+        world.Rods.Add(new Rod(corners[0], corners[1], width, rodCompliance));  // Bottom edge
+        world.Rods.Add(new Rod(corners[1], corners[2], height, rodCompliance)); // Right edge
+        world.Rods.Add(new Rod(corners[2], corners[3], width, rodCompliance));  // Top edge
+        world.Rods.Add(new Rod(corners[3], corners[0], height, rodCompliance)); // Left edge
+
+        // Add VIRTUAL PARTICLES at two opposing corners (bottom-left and top-right)
+        // Place them inside the box at a fixed distance from the corner
+        float virtualDist = 0.2f; // Distance from corner to virtual particle
+
+        // Virtual particle for bottom-left corner (inside box)
+        float vbl_x = world.PosX[corners[0]] + virtualDist * MathF.Cos(MathF.PI * 0.25f);
+        float vbl_y = world.PosY[corners[0]] + virtualDist * MathF.Sin(MathF.PI * 0.25f);
+        int vbl = world.AddParticle(vbl_x, vbl_y, 0f, 0f, virtualMass, virtualRadius);
+
+        // Virtual particle for top-right corner (inside box)
+        float vtr_x = world.PosX[corners[2]] - virtualDist * MathF.Cos(MathF.PI * 0.25f);
+        float vtr_y = world.PosY[corners[2]] - virtualDist * MathF.Sin(MathF.PI * 0.25f);
+        int vtr = world.AddParticle(vtr_x, vtr_y, 0f, 0f, virtualMass, virtualRadius);
+
+        // Connect virtual particles to their corner arms
+        // Bottom-left corner: connect V to left-arm (p3) and bottom-arm (p1)
+        float armDist = MathF.Sqrt(virtualDist * virtualDist + virtualDist * virtualDist); // Distance to arms
+        world.Rods.Add(new Rod(vbl, corners[3], armDist, 1e-5f)); // V to top-left
+        world.Rods.Add(new Rod(vbl, corners[1], armDist, 1e-5f)); // V to bottom-right
+
+        // Top-right corner: connect V to right-arm (p1) and top-arm (p3)
+        world.Rods.Add(new Rod(vtr, corners[1], armDist, 1e-5f)); // V to bottom-right
+        world.Rods.Add(new Rod(vtr, corners[3], armDist, 1e-5f)); // V to top-left
+
+        return corners;
+    }
+
+    private static int[] CreateParticleBoxWithDirectAngleConstraints(
+        WorldState world,
+        float centerX,
+        float centerY,
+        float width,
+        float height,
+        float angle,
+        float angularVel)
+    {
+        // Create a box from 4 corner particles
+        // Use rods for edges and DIRECT 3-point angle constraints (world.Angles.Add)
+        // WARNING: This version will fail/explode due to over-constraint!
+
+        float halfW = width / 2f;
+        float halfH = height / 2f;
+        float particleMass = 0.3f;
+        float particleRadius = 0.1f;
+        float rodCompliance = 1e-6f; // Very stiff for edges
+
+        // Calculate rotated corner positions
+        float cos = MathF.Cos(angle);
+        float sin = MathF.Sin(angle);
+
+        // Local corner positions (before rotation)
+        Vector2[] localCorners = new[]
+        {
+            new Vector2(-halfW, -halfH), // Bottom-left
+            new Vector2(halfW, -halfH),  // Bottom-right
+            new Vector2(halfW, halfH),   // Top-right
+            new Vector2(-halfW, halfH)   // Top-left
+        };
+
+        // Create particles at rotated positions with initial velocity from angular motion
+        int[] corners = new int[4];
+        for (int i = 0; i < 4; i++)
+        {
+            // Rotate corner position
+            float localX = localCorners[i].X;
+            float localY = localCorners[i].Y;
+            float worldX = centerX + localX * cos - localY * sin;
+            float worldY = centerY + localX * sin + localY * cos;
+
+            // Calculate velocity from angular motion: v = ω × r
+            float velX = -angularVel * localY;
+            float velY = angularVel * localX;
+
+            corners[i] = world.AddParticle(
+                x: worldX,
+                y: worldY,
+                vx: velX,
+                vy: velY,
+                mass: particleMass,
+                radius: particleRadius);
+        }
+
+        // Add edge rods (4 rods connecting corners in a loop)
+        world.Rods.Add(new Rod(corners[0], corners[1], width, rodCompliance));  // Bottom edge
+        world.Rods.Add(new Rod(corners[1], corners[2], height, rodCompliance)); // Right edge
+        world.Rods.Add(new Rod(corners[2], corners[3], width, rodCompliance));  // Top edge
+        world.Rods.Add(new Rod(corners[3], corners[0], height, rodCompliance)); // Left edge
+
+        // Add DIRECT 3-point angle constraints (the problematic approach!)
+        // These will conflict with the rods and contacts, causing instability
+
+        // Bottom-left corner angle (90 degrees)
+        world.Angles.Add(new Angle(
+            i: corners[3],       // Left side endpoint (top-left)
+            j: corners[0],       // Vertex of angle (bottom-left corner)
+            k: corners[1],       // Bottom side endpoint (bottom-right)
+            theta0: MathF.PI / 2f,
+            compliance: rodCompliance));
+
+        // Top-right corner angle (90 degrees)
+        world.Angles.Add(new Angle(
+            i: corners[1],       // Bottom side endpoint (bottom-right)
+            j: corners[2],       // Vertex of angle (top-right corner)
+            k: corners[3],       // Top side endpoint (top-left)
+            theta0: MathF.PI / 2f,
+            compliance: rodCompliance));
+
+        return corners;
+    }
+
+    private static int[] CreateParticleBoxWithAngleConstraints(
+        WorldState world,
+        float centerX,
+        float centerY,
+        float width,
+        float height,
+        float angle,
+        float angularVel)
+    {
+        // Create a box from 4 corner particles
+        // Use rods for edges and angle constraints (as diagonal rods) on opposing corners
+        // This version uses the AddAngleConstraintAsRod API
+
+        float halfW = width / 2f;
+        float halfH = height / 2f;
+        float particleMass = 0.3f;
+        float particleRadius = 0.1f;
+        float rodCompliance = 1e-6f; // Very stiff for edges
+
+        // Calculate rotated corner positions
+        float cos = MathF.Cos(angle);
+        float sin = MathF.Sin(angle);
+
+        // Local corner positions (before rotation)
+        Vector2[] localCorners = new[]
+        {
+            new Vector2(-halfW, -halfH), // Bottom-left
+            new Vector2(halfW, -halfH),  // Bottom-right
+            new Vector2(halfW, halfH),   // Top-right
+            new Vector2(-halfW, halfH)   // Top-left
+        };
+
+        // Create particles at rotated positions with initial velocity from angular motion
+        int[] corners = new int[4];
+        for (int i = 0; i < 4; i++)
+        {
+            // Rotate corner position
+            float localX = localCorners[i].X;
+            float localY = localCorners[i].Y;
+            float worldX = centerX + localX * cos - localY * sin;
+            float worldY = centerY + localX * sin + localY * cos;
+
+            // Calculate velocity from angular motion: v = ω × r
+            float velX = -angularVel * localY;
+            float velY = angularVel * localX;
+
+            corners[i] = world.AddParticle(
+                x: worldX,
+                y: worldY,
+                vx: velX,
+                vy: velY,
+                mass: particleMass,
+                radius: particleRadius);
+        }
+
+        // Add edge rods (4 rods connecting corners in a loop)
+        world.Rods.Add(new Rod(corners[0], corners[1], width, rodCompliance));  // Bottom edge
+        world.Rods.Add(new Rod(corners[1], corners[2], height, rodCompliance)); // Right edge
+        world.Rods.Add(new Rod(corners[2], corners[3], width, rodCompliance));  // Top edge
+        world.Rods.Add(new Rod(corners[3], corners[0], height, rodCompliance)); // Left edge
+
+        // Add angle constraints on two opposing corners (bottom-left and top-right)
+        // These prevent the box from shearing without using diagonal crossbracing
+        // We use the diagonal rod method which is stable for rigid structures
+
+        // Bottom-left corner angle (90 degrees)
+        // Constrains the angle at corner[0] between edges to corner[3] and corner[1]
+        world.AddAngleConstraintAsRod(
+            i: corners[3],       // Left side endpoint (top-left)
+            j: corners[0],       // Vertex of angle (bottom-left corner)
+            k: corners[1],       // Bottom side endpoint (bottom-right)
+            targetAngle: MathF.PI / 2f,
+            len1: height,        // Left edge length (corner[0] to corner[3])
+            len2: width,         // Bottom edge length (corner[0] to corner[1])
+            compliance: rodCompliance);
+
+        // Top-right corner angle (90 degrees)
+        // Constrains the angle at corner[2] between edges to corner[1] and corner[3]
+        world.AddAngleConstraintAsRod(
+            i: corners[1],       // Bottom side endpoint (bottom-right)
+            j: corners[2],       // Vertex of angle (top-right corner)
+            k: corners[3],       // Top side endpoint (top-left)
+            targetAngle: MathF.PI / 2f,
+            len1: height,        // Right edge length (corner[2] to corner[1])
+            len2: width,         // Top edge length (corner[2] to corner[3])
+            compliance: rodCompliance);
+
+        return corners;
+    }
+
+    private static void DrawWorld(WorldState world, Vector2 cameraPos, float zoom, int sceneIndex, List<int> angleConstraintParticles, List<int> diagonalBracingParticles)
     {
         // Draw static colliders
         foreach (var obb in world.Obbs)
@@ -371,13 +913,33 @@ public static class GraphicalDemo
             Raylib.DrawLineEx(p1, p2, 2f, Color.SkyBlue);
         }
 
-        // Draw particles
+        // Draw particles with color-coding for scene 7 (particle boxes comparison)
         for (int i = 0; i < world.ParticleCount; i++)
         {
             var pos = WorldToScreen(world.PosX[i], world.PosY[i], cameraPos, zoom);
             float r = world.Radius[i] * MetersToPixels * zoom;
             bool isPinned = world.InvMass[i] == 0f;
-            Color color = isPinned ? Color.Red : Color.Lime;
+
+            Color color;
+            if (isPinned)
+            {
+                color = Color.Red; // Pinned particles are always red
+            }
+            else if (sceneIndex == 7)
+            {
+                // Scene 7: Color-code particles by box type
+                if (angleConstraintParticles.Contains(i))
+                    color = new Color(0, 255, 255, 255);  // Cyan - LEFT side: Angle constraints
+                else if (diagonalBracingParticles.Contains(i))
+                    color = new Color(255, 0, 255, 255);  // Magenta - RIGHT side: Diagonal bracing
+                else
+                    color = Color.Lime;  // Default (shouldn't happen in scene 7)
+            }
+            else
+            {
+                color = Color.Lime; // Default color for other scenes
+            }
+
             Raylib.DrawCircleV(pos, r, color);
         }
 
@@ -584,11 +1146,11 @@ public static class GraphicalDemo
 
     private static void DrawUI(WorldState world, float simTime, bool paused, int sceneIndex, float zoom)
     {
-        string[] sceneNames = { "Capsule Test", "Rigid Bodies", "RB Rain", "Pendulum", "Mixed", "RB Rocket+Joints" };
+        string[] sceneNames = { "Capsule Test", "Rigid Bodies", "RB Rain", "Pendulum", "Mixed", "RB Rocket+Joints", "Particle Grid (Cloth)", "Slithering Snakes (Virtual Particles)" };
 
         Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 10, 20, Color.Green);
         Raylib.DrawText($"Time: {simTime:F2}s", 10, 35, 20, Color.Green);
-        Raylib.DrawText($"Scene: {sceneNames[sceneIndex]} ({sceneIndex + 1}/6)", 10, 60, 20, Color.Green);
+        Raylib.DrawText($"Scene: {sceneNames[sceneIndex]} ({sceneIndex + 1}/8)", 10, 60, 20, Color.Green);
         Raylib.DrawText($"Particles: {world.ParticleCount}, Rigid Bodies: {world.RigidBodies.Count}", 10, 85, 20, Color.Green);
         Raylib.DrawText($"Zoom: {zoom:F1}x", 10, 110, 20, Color.Green);
 

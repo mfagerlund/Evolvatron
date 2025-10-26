@@ -38,7 +38,7 @@ public class PhysicsTests
         Assert.InRange(dist, 1f - Tolerance, 1f + Tolerance);
     }
 
-    [Fact(Skip = "Angle constraints work in practice but test needs refinement")]
+    [Fact]
     public void AngleConstraint_MaintainsAngle()
     {
         // Arrange: Three particles forming a right angle at p1, with rods for stability

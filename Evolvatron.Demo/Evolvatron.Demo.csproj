@@ -1,11 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Evolvatron.Core\Evolvatron.Core.csproj" />
+    <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
+    <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Raylib-cs" Version="7.0.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="GodotSharp">
+      <HintPath>..\..\Colonel\Data\Dlls\GodotSharp.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <PropertyGroup>

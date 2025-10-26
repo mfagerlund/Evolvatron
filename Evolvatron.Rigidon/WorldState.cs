@@ -196,6 +196,59 @@ public sealed class WorldState
         }
     }
 
+    /// <summary>
+    /// Adds a stable angle constraint by computing the diagonal distance constraint.
+    /// This is more stable than using Angle constraints directly.
+    ///
+    /// Creates a rod constraint between particles i and k with length calculated
+    /// to maintain the target angle at vertex j.
+    ///
+    /// Example: For 90-degree angle with arm lengths 0.5:
+    ///   AddAngleConstraintAsRod(p0, p1, p2, MathF.PI/2, 0.5f, 0.5f, 0f)
+    /// </summary>
+    /// <param name="i">First particle index (one end of angle)</param>
+    /// <param name="j">Middle particle index (vertex of angle)</param>
+    /// <param name="k">Third particle index (other end of angle)</param>
+    /// <param name="targetAngle">Target angle in radians</param>
+    /// <param name="len1">Distance from j to i</param>
+    /// <param name="len2">Distance from j to k</param>
+    /// <param name="compliance">Constraint compliance (0 = rigid)</param>
+    /// <returns>The index of the created rod in the Rods list</returns>
+    public int AddAngleConstraintAsRod(int i, int j, int k, float targetAngle, float len1, float len2, float compliance = 0f)
+    {
+        // Calculate diagonal distance using law of cosines:
+        // d^2 = len1^2 + len2^2 - 2*len1*len2*cos(angle)
+        float diagonal = MathF.Sqrt(len1 * len1 + len2 * len2 - 2f * len1 * len2 * MathF.Cos(targetAngle));
+
+        var rod = new Rod(i, k, restLength: diagonal, compliance: compliance);
+        Rods.Add(rod);
+        return Rods.Count - 1;
+    }
+
+    /// <summary>
+    /// Adds a stable angle constraint by reading current particle positions
+    /// and computing the diagonal distance automatically.
+    ///
+    /// This is the most convenient method - it infers the edge lengths and target angle
+    /// from current positions.
+    /// </summary>
+    /// <param name="i">First particle index</param>
+    /// <param name="j">Middle particle index (vertex)</param>
+    /// <param name="k">Third particle index</param>
+    /// <param name="compliance">Constraint compliance (0 = rigid)</param>
+    /// <returns>The index of the created rod in the Rods list</returns>
+    public int AddAngleConstraintAsRodFromCurrentPositions(int i, int j, int k, float compliance = 0f)
+    {
+        // Compute current diagonal distance
+        float dx = _posX[i] - _posX[k];
+        float dy = _posY[i] - _posY[k];
+        float diagonal = MathF.Sqrt(dx * dx + dy * dy);
+
+        var rod = new Rod(i, k, restLength: diagonal, compliance: compliance);
+        Rods.Add(rod);
+        return Rods.Count - 1;
+    }
+
     private void ResizeCapacity(int newCapacity)
     {
         Array.Resize(ref _posX, newCapacity);

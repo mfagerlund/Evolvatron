@@ -6,4 +6,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Colonel\Colonel.Framework\Colonel.Framework.csproj" />
+    <ProjectReference Include="..\..\Colonel\Colonel.Tests\Colonel.Tests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="GodotSharp">
+      <HintPath>..\..\Colonel\Data\Dlls\GodotSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

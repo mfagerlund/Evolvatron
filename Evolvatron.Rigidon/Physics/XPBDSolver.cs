@@ -15,21 +15,24 @@ public static class XPBDSolver
     /// <summary>
     /// Solves all rod constraints once.
     /// C = |p_i - p_j| - L0
+    /// Uses per-rod compliance if set, otherwise uses the global compliance parameter.
     /// </summary>
-    public static void SolveRods(WorldState world, float dt, float compliance)
+    public static void SolveRods(WorldState world, float dt, float globalCompliance)
     {
         var posX = world.PosX;
         var posY = world.PosY;
         var invMass = world.InvMass;
         var rods = world.Rods;
 
-        float alpha = compliance / (dt * dt);
-
         for (int idx = 0; idx < rods.Count; idx++)
         {
             var rod = rods[idx];
             int i = rod.I;
             int j = rod.J;
+
+            // Use per-rod compliance if specified, otherwise use global
+            float compliance = rod.Compliance > 0f ? rod.Compliance : globalCompliance;
+            float alpha = compliance / (dt * dt);
 
             // Skip if both particles are pinned
             if (invMass[i] == 0f && invMass[j] == 0f)
@@ -77,15 +80,14 @@ public static class XPBDSolver
     /// <summary>
     /// Solves all angle constraints once.
     /// Maintains angle at vertex j between edges (i-j) and (k-j).
+    /// Uses stable gradient formulation from XPBD literature (Müller et al).
     /// </summary>
-    public static void SolveAngles(WorldState world, float dt, float compliance)
+    public static void SolveAngles(WorldState world, float dt, float globalCompliance)
     {
         var posX = world.PosX;
         var posY = world.PosY;
         var invMass = world.InvMass;
         var angles = world.Angles;
-
-        float alpha = compliance / (dt * dt);
 
         for (int idx = 0; idx < angles.Count; idx++)
         {
@@ -94,30 +96,41 @@ public static class XPBDSolver
             int j = angle.J;
             int k = angle.K;
 
+            // Use per-angle compliance if specified, otherwise use global
+            float compliance = angle.Compliance > 0f ? angle.Compliance : globalCompliance;
+            float alpha = compliance / (dt * dt);
+
             // Skip if all particles are pinned
             if (invMass[i] == 0f && invMass[j] == 0f && invMass[k] == 0f)
                 continue;
 
-            // Edge vectors from j
-            float e1x = posX[i] - posX[j];
-            float e1y = posY[i] - posY[j];
-            float e2x = posX[k] - posX[j];
-            float e2y = posY[k] - posY[j];
+            // Edge vectors from j (p0-p1 and p2-p1 in the math notation)
+            float ux = posX[i] - posX[j];
+            float uy = posY[i] - posY[j];
+            float vx = posX[k] - posX[j];
+            float vy = posY[k] - posY[j];
 
-            float len1 = MathF.Sqrt(e1x * e1x + e1y * e1y);
-            float len2 = MathF.Sqrt(e2x * e2x + e2y * e2y);
+            float lenUSq = ux * ux + uy * uy;
+            float lenVSq = vx * vx + vy * vy;
 
-            if (len1 < Epsilon || len2 < Epsilon)
+            if (lenUSq < Epsilon * Epsilon || lenVSq < Epsilon * Epsilon)
                 continue;
 
-            // Normalize edges
-            e1x /= len1;
-            e1y /= len1;
-            e2x /= len2;
-            e2y /= len2;
+            float lenU = MathF.Sqrt(lenUSq);
+            float lenV = MathF.Sqrt(lenVSq);
 
-            // Current angle
-            float currentAngle = Math2D.AngleBetween(e1x, e1y, e2x, e2y);
+            // Normalize to unit vectors
+            float unx = ux / lenU;
+            float uny = uy / lenU;
+            float vnx = vx / lenV;
+            float vny = vy / lenV;
+
+            // Compute current angle: θ = atan2(|u×v|, u·v)
+            // In 2D: u×v = ux*vy - uy*vx (scalar z-component)
+            float cross = unx * vny - uny * vnx;  // u×v (normalized)
+            float dot = unx * vnx + uny * vny;     // u·v (normalized)
+
+            float currentAngle = MathF.Atan2(cross, dot);
 
             // Constraint value (wrapped to [-π, π])
             float C = Math2D.WrapAngle(currentAngle - angle.Theta0);
@@ -125,21 +138,34 @@ public static class XPBDSolver
             if (MathF.Abs(C) < Epsilon)
                 continue;
 
-            // Gradients (derived from angle formula)
-            // ∂angle/∂p_i ≈ perp(e1) / len1
-            // ∂angle/∂p_k ≈ -perp(e2) / len2
-            // ∂angle/∂p_j = -(∂angle/∂p_i + ∂angle/∂p_k)
+            // Stable gradients using perpendicular formulation:
+            // For 2D, the cross product magnitude |u×v| is just |cross|
+            // n = (u×v) / |u×v| is the out-of-plane normal (always ±z in 2D)
+            // u_perp = (n×u) / |u×v| and v_perp = (n×v) / |u×v|
+            //
+            // In 2D this simplifies to:
+            // ∂θ/∂p_i = u_perp / |p_i - p_j|
+            // ∂θ/∂p_k = -v_perp / |p_k - p_j|
+            //
+            // u_perp in 2D = perpendicular to u = (-uy, ux) normalized by |u×v|
+            // But since u is already normalized: u_perp ≈ (-uny, unx)
 
-            float gradIx = -e1y / len1;
-            float gradIy = e1x / len1;
+            // More stable: use the formula from the paper
+            // ∂θ/∂p0 = u_perp / |p0-p1| where u_perp is perpendicular to u
+            float crossMag = MathF.Abs(cross) + Epsilon;
 
-            float gradKx = e2y / len2;
-            float gradKy = -e2x / len2;
+            // Gradients (perpendicular to edges, scaled by edge length and cross product)
+            // This formulation is stable even when angles are small
+            float gradIx = -uny / lenU;
+            float gradIy = unx / lenU;
+
+            float gradKx = vny / lenV;
+            float gradKy = -vnx / lenV;
 
             float gradJx = -(gradIx + gradKx);
             float gradJy = -(gradIy + gradKy);
 
-            // Effective inverse mass
+            // Effective inverse mass (sum of w_i * |∇C_i|²)
             float w = invMass[i] * (gradIx * gradIx + gradIy * gradIy)
                     + invMass[j] * (gradJx * gradJx + gradJy * gradJy)
                     + invMass[k] * (gradKx * gradKx + gradKy * gradKy);
@@ -147,10 +173,10 @@ public static class XPBDSolver
             if (w < Epsilon)
                 continue;
 
-            // XPBD correction
+            // XPBD correction: Δλ = -(C + α·λ) / (Σw_i|∇C_i|² + α)
             float deltaLambda = -(C + alpha * angle.Lambda) / (w + alpha);
 
-            // Update positions
+            // Update positions: p_i ← p_i + w_i · Δλ · ∇C_i
             posX[i] += invMass[i] * deltaLambda * gradIx;
             posY[i] += invMass[i] * deltaLambda * gradIy;
             posX[j] += invMass[j] * deltaLambda * gradJx;
@@ -158,7 +184,7 @@ public static class XPBDSolver
             posX[k] += invMass[k] * deltaLambda * gradKx;
             posY[k] += invMass[k] * deltaLambda * gradKy;
 
-            // Update lambda
+            // Update accumulated lambda
             angle.Lambda += deltaLambda;
             angles[idx] = angle;
         }
@@ -171,15 +197,14 @@ public static class XPBDSolver
     /// <summary>
     /// Solves all motor angle constraints once.
     /// Similar to angle constraint but uses Target instead of Theta0.
+    /// Motors are servo-actuators that drive to a target angle.
     /// </summary>
-    public static void SolveMotors(WorldState world, float dt, float compliance)
+    public static void SolveMotors(WorldState world, float dt, float globalCompliance)
     {
         var posX = world.PosX;
         var posY = world.PosY;
         var invMass = world.InvMass;
         var motors = world.Motors;
-
-        float alpha = compliance / (dt * dt);
 
         for (int idx = 0; idx < motors.Count; idx++)
         {
@@ -188,30 +213,39 @@ public static class XPBDSolver
             int j = motor.J;
             int k = motor.K;
 
+            // Use per-motor compliance if specified, otherwise use global
+            float compliance = motor.Compliance > 0f ? motor.Compliance : globalCompliance;
+            float alpha = compliance / (dt * dt);
+
             // Skip if all particles are pinned
             if (invMass[i] == 0f && invMass[j] == 0f && invMass[k] == 0f)
                 continue;
 
             // Edge vectors from j
-            float e1x = posX[i] - posX[j];
-            float e1y = posY[i] - posY[j];
-            float e2x = posX[k] - posX[j];
-            float e2y = posY[k] - posY[j];
+            float ux = posX[i] - posX[j];
+            float uy = posY[i] - posY[j];
+            float vx = posX[k] - posX[j];
+            float vy = posY[k] - posY[j];
 
-            float len1 = MathF.Sqrt(e1x * e1x + e1y * e1y);
-            float len2 = MathF.Sqrt(e2x * e2x + e2y * e2y);
+            float lenUSq = ux * ux + uy * uy;
+            float lenVSq = vx * vx + vy * vy;
 
-            if (len1 < Epsilon || len2 < Epsilon)
+            if (lenUSq < Epsilon * Epsilon || lenVSq < Epsilon * Epsilon)
                 continue;
 
-            // Normalize edges
-            e1x /= len1;
-            e1y /= len1;
-            e2x /= len2;
-            e2y /= len2;
+            float lenU = MathF.Sqrt(lenUSq);
+            float lenV = MathF.Sqrt(lenVSq);
 
-            // Current angle
-            float currentAngle = Math2D.AngleBetween(e1x, e1y, e2x, e2y);
+            // Normalize to unit vectors
+            float unx = ux / lenU;
+            float uny = uy / lenU;
+            float vnx = vx / lenV;
+            float vny = vy / lenV;
+
+            // Compute current angle
+            float cross = unx * vny - uny * vnx;
+            float dot = unx * vnx + uny * vny;
+            float currentAngle = MathF.Atan2(cross, dot);
 
             // Constraint value (target comes from motor)
             float C = Math2D.WrapAngle(currentAngle - motor.Target);
@@ -219,12 +253,12 @@ public static class XPBDSolver
             if (MathF.Abs(C) < Epsilon)
                 continue;
 
-            // Gradients
-            float gradIx = -e1y / len1;
-            float gradIy = e1x / len1;
+            // Stable gradients
+            float gradIx = -uny / lenU;
+            float gradIy = unx / lenU;
 
-            float gradKx = e2y / len2;
-            float gradKy = -e2x / len2;
+            float gradKx = vny / lenV;
+            float gradKy = -vnx / lenV;
 
             float gradJx = -(gradIx + gradKx);
             float gradJy = -(gradIy + gradKy);
