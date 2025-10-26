@@ -64,18 +64,28 @@ public static class Selection
     /// <param name="count">Number of offspring to generate.</param>
     /// <param name="tournamentSize">Tournament size for selection pressure.</param>
     /// <param name="random">Random number generator.</param>
+    /// <param name="parentPoolPercentage">Top percentage eligible as parents (0.0 to 1.0).</param>
     /// <returns>List of selected parents (clones, to be mutated later).</returns>
     public static List<Individual> GenerateOffspring(
         List<Individual> individuals,
         int count,
         int tournamentSize,
-        Random random)
+        Random random,
+        float parentPoolPercentage = 1.0f)
     {
+        // Filter to top X% by fitness
+        List<Individual> parentPool = individuals;
+        if (parentPoolPercentage < 1.0f)
+        {
+            int poolSize = Math.Max(1, (int)(individuals.Count * parentPoolPercentage));
+            parentPool = RankByFitness(individuals).Take(poolSize).ToList();
+        }
+
         var offspring = new List<Individual>(count);
 
         for (int i = 0; i < count; i++)
         {
-            var parent = TournamentSelect(individuals, tournamentSize, random);
+            var parent = TournamentSelect(parentPool, tournamentSize, random);
             var child = new Individual(parent); // Deep copy to avoid shared arrays
             offspring.Add(child);
         }

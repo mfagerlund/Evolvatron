@@ -83,7 +83,8 @@ public class Evolver
                 species.Individuals,
                 offspringCount,
                 config.TournamentSize,
-                _random);
+                _random,
+                config.ParentPoolPercentage);
         }
 
         // Step 3: Apply mutations to offspring (not elites)

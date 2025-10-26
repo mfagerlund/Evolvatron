@@ -33,10 +33,11 @@ public static class FollowTheCorridorDemo
         // Configure evolution
         var config = new EvolutionConfig
         {
-            SpeciesCount = 4,
-            IndividualsPerSpecies = 400, // 1600 total agents
-            Elites = 4,
-            TournamentSize = 4
+            SpeciesCount = 40,
+            IndividualsPerSpecies = 40, // 1600 total agents
+            Elites = 1, // Only keep top 1 unchanged
+            TournamentSize = 4,
+            ParentPoolPercentage = 0.2f // Only top 20% eligible as parents
         };
 
         // Initialize population
@@ -61,6 +62,14 @@ public static class FollowTheCorridorDemo
         Task? simulationTask = null;
         bool isSimulating = false;
         bool solved = false;
+
+        // Control whether to recompute elite fitness each generation
+        // When false, elites keep their fitness from previous generation (faster, guarantees monotonic increase)
+        // When true, elites are re-evaluated for visualization purposes (slower, but shows all agents)
+        bool recomputeElites = false;
+
+        // Track which individuals are elites (to avoid re-evaluating them)
+        var isElite = new bool[config.SpeciesCount * config.IndividualsPerSpecies];
 
         // Camera offset
         RaylibVector2 cameraOffset = new RaylibVector2(200, ScreenHeight - 100);
@@ -88,11 +97,15 @@ public static class FollowTheCorridorDemo
         // Helper to start new generation
         void StartNewGeneration()
         {
-            // Reset all environments
+            // Reset environments
             for (int i = 0; i < environments.Count; i++)
             {
-                environments[i].Reset(seed: generation);
-                totalRewards[i] = 0f;
+                if (!isElite[i] || recomputeElites)
+                {
+                    environments[i].Reset(seed: generation);
+                    totalRewards[i] = 0f;
+                }
+                // Elites (when recomputeElites=false): don't reset environment or totalRewards
             }
 
             currentStep = 0;
@@ -102,7 +115,7 @@ public static class FollowTheCorridorDemo
 
             simulationTask = Task.Run(() =>
             {
-                // Simulate all 1600 agents step by step
+                // Simulate all non-elite agents step by step
                 var swEval = Stopwatch.StartNew();
                 var observations = new float[environments[0].InputCount];
 
@@ -112,6 +125,10 @@ public static class FollowTheCorridorDemo
                     {
                         for (int i = 0; i < environments.Count; i++)
                         {
+                            // Skip elites unless recomputeElites is true
+                            if (isElite[i] && !recomputeElites)
+                                continue;
+
                             if (!environments[i].IsTerminal())
                             {
                                 environments[i].GetObservations(observations);
@@ -124,16 +141,19 @@ public static class FollowTheCorridorDemo
                     }
                 }
 
-                // Collect fitnesses
+                // Collect fitnesses (skip elites unless recomputeElites is true)
                 for (int i = 0, idx = 0; i < population.AllSpecies.Count; i++)
                 {
                     var species = population.AllSpecies[i];
                     for (int j = 0; j < species.Individuals.Count; j++, idx++)
                     {
-                        var ind = species.Individuals[j];
-                        ind.Fitness = totalRewards[idx];
-                        species.Individuals[j] = ind;
-                        individuals[idx] = ind;
+                        if (!isElite[idx] || recomputeElites)
+                        {
+                            var ind = species.Individuals[j];
+                            ind.Fitness = totalRewards[idx];
+                            species.Individuals[j] = ind;
+                            individuals[idx] = ind;
+                        }
                     }
                 }
 
@@ -174,6 +194,17 @@ public static class FollowTheCorridorDemo
                     sw.Stop();
                     totalEvolutionMs += sw.ElapsedMilliseconds;
                     generation++;
+
+                    // Mark elites (first config.Elites individuals in each species)
+                    Array.Fill(isElite, false);
+                    for (int i = 0, idx = 0; i < population.AllSpecies.Count; i++)
+                    {
+                        for (int j = 0; j < population.AllSpecies[i].Individuals.Count; j++, idx++)
+                        {
+                            isElite[idx] = (j < config.Elites);
+                        }
+                    }
+
                     StartNewGeneration();
                 }
             }
@@ -185,21 +216,26 @@ public static class FollowTheCorridorDemo
             // Render track
             RenderTrack(baseEnvironment.World, cameraOffset);
 
-            // Render ALL 1600 cars
+            // Render ALL 1600 cars (dead ones in red, alive ones in blue)
             lock (stateLock)
             {
                 int activeCars = 0;
                 for (int i = 0; i < environments.Count; i++)
                 {
+                    var position = environments[i].GetCarPosition();
+                    var heading = environments[i].GetCarHeading();
+
                     if (!environments[i].IsTerminal())
                     {
                         activeCars++;
-                        var position = environments[i].GetCarPosition();
-                        var heading = environments[i].GetCarHeading();
-
-                        // Color based on fitness rank (calculated per-species)
+                        // Alive cars: blue
                         var carColor = new RaylibColor(100, 200, 255, 180);
-
+                        RenderCar(position, heading, cameraOffset, carColor);
+                    }
+                    else
+                    {
+                        // Dead cars: red (at their final position)
+                        var carColor = new RaylibColor(255, 100, 100, 120);
                         RenderCar(position, heading, cameraOffset, carColor);
                     }
                 }

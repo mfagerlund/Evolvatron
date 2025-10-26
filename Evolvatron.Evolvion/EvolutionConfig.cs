@@ -38,6 +38,13 @@ public class EvolutionConfig
     public int TournamentSize { get; set; } = 4;
 
     /// <summary>
+    /// Percentage of top individuals eligible as parents (0.0 to 1.0).
+    /// Only the top X% by fitness can be selected as parents.
+    /// Default: 1.0 (100% - all individuals eligible)
+    /// </summary>
+    public float ParentPoolPercentage { get; set; } = 1.0f;
+
+    /// <summary>
     /// Number of generations a new species is protected from culling.
     /// Default: 3
     /// </summary>
