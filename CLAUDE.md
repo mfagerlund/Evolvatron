@@ -4,15 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Evolvatron** is a lightweight 2D physics sandbox for building contraptions from particles and constraints, featuring XPBD (Extended Position-Based Dynamics) physics. The primary use case is creating "lander" contraptions (rockets with legs and gimbaled engines) suitable for reinforcement learning experiments.
+**Evolvatron** is a game centered around **rocket systems design and reward engineering**. Think moon lander in continuous space where the rocket starts far away with obstacles in the way. The player's job is to design reward landscapes to train RL agents to land rockets successfully.
 
-**Key characteristics:**
+The game has two major workflows:
+1. **Rocket Design**: 2D editor for piecing together rocket components (sensors, gimbals, motors, differential steering)
+2. **Reward Engineering**: Live editing of reward landscapes while maintaining valid playback history (unless the agent's effectors/sensors change)
+
+**Key technical characteristics:**
 - Physics based on particles + XPBD constraints (rods, angles, motors)
 - Particle-vs-static-collider collisions only (no particle-particle)
 - Deterministic fixed-timestep simulation
 - Both CPU and GPU (ILGPU) implementations with identical API
 - Rigid body support with impulse-based contact solver
 - Reward shaping for RL landing tasks
+- Agents train on **2-15 input signals and 2-25 outputs** (not pixels)
+
+**Evolvion Integration** (planned): An evolutionary neural controller framework (see Evolvion.md) will eventually be integrated to evolve fixed-topology neural controllers using large-scale parallel GPU execution. Species evolve differing network topologies while individuals within species differ only by weights and node parameters.
 
 ## Build and Test Commands
 
