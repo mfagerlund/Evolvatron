@@ -34,7 +34,8 @@ public static class AngleConstraintDemo
             ContactCompliance = 1e-8f,
             FrictionMu = 0.5f,
             VelocityStabilizationBeta = 1.0f,
-            GlobalDamping = 0.02f
+            GlobalDamping = 0.02f,
+            AngularDamping = 0.3f  // Higher angular damping to prevent spinning
         };
 
         var stepper = new CPUStepper();
@@ -141,13 +142,7 @@ public static class AngleConstraintDemo
 
                 // Flag known problem shapes based on user observation
                 // Shape indices: 9 (last of row 0), 14 (5th of row 1), 28 (2nd to last of row 2)
-                string notes = "";
-                if (shapeIndex == 9 || shapeIndex == 14 || shapeIndex == 28)
-                {
-                    notes = "*** SPINS ***";
-                }
-
-                Console.WriteLine($"  {shapeIndex,3}  | {row,3} | {col,3} | {angleDegrees,8:F1}° | {rotationDegrees,7:F1}° | {notes}");
+                Console.WriteLine($"  {shapeIndex,3}  | {row,3} | {col,3} | {angleDegrees,8:F1}° | {rotationDegrees,7:F1}° |");
 
                 CreateLShape(world, x, y, angleRadians, rotationRadians);
                 shapeIndex++;
@@ -169,11 +164,7 @@ public static class AngleConstraintDemo
             float error = MathF.Abs(WrapAngle(currentAngle - angle.Theta0));
             float errorDeg = error * 180f / MathF.PI;
 
-            if (idx == 9 || idx == 14 || idx == 28)
-            {
-                Console.WriteLine($"Shape {idx}: Target={angle.Theta0 * 180f / MathF.PI:F1}°, Initial={currentAngle * 180f / MathF.PI:F1}°, Error={errorDeg:F2}° *** SPINS ***");
-            }
-            else if (errorDeg > 5f)
+            if (errorDeg > 5f)
             {
                 Console.WriteLine($"Shape {idx}: Target={angle.Theta0 * 180f / MathF.PI:F1}°, Initial={currentAngle * 180f / MathF.PI:F1}°, Error={errorDeg:F2}° (large initial error)");
             }
@@ -189,16 +180,20 @@ public static class AngleConstraintDemo
         float mass = 1f;
         float radius = 0.05f;
 
-        // Create L-shape: p0 (left), p1 (vertex), p2 (right at targetAngle)
-        // Initially create horizontal (p0-p1) and angled (p1-p2) arms
+        // Create L-shape: p0 (left), p1 (vertex), p2 (angled from p0)
+        // The angle constraint measures angle from edge (i→j) to edge (j→k)
+        // So u = (p0 - p1) points LEFT (π radians)
+        // And v = (p2 - p1) should be at angle (π + targetAngle) to give correct angle
         float p0x = -armLength;
         float p0y = 0f;
 
         float p1x = 0f;
         float p1y = 0f;
 
-        float p2x = armLength * MathF.Cos(targetAngle);
-        float p2y = armLength * MathF.Sin(targetAngle);
+        // Place p2 at angle (π + targetAngle) from the positive X axis
+        float p2Angle = MathF.PI + targetAngle;
+        float p2x = armLength * MathF.Cos(p2Angle);
+        float p2y = armLength * MathF.Sin(p2Angle);
 
         // Apply rotation
         float cos = MathF.Cos(rotation);

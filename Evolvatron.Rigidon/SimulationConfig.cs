@@ -87,6 +87,14 @@ public sealed class SimulationConfig
     public float GlobalDamping { get; set; } = 0.01f;
 
     /// <summary>
+    /// Angular damping per second (default: 0.1).
+    /// Applied to rotational motion to dissipate spinning energy.
+    /// Higher values more aggressively dampen rotation.
+    /// Applied as: angular_velocity *= (1 - angularDamping * dt).
+    /// </summary>
+    public float AngularDamping { get; set; } = 0.1f;
+
+    /// <summary>
     /// Creates a deep copy of this configuration.
     /// </summary>
     public SimulationConfig Clone()
@@ -105,7 +113,8 @@ public sealed class SimulationConfig
             FrictionMu = FrictionMu,
             Restitution = Restitution,
             VelocityStabilizationBeta = VelocityStabilizationBeta,
-            GlobalDamping = GlobalDamping
+            GlobalDamping = GlobalDamping,
+            AngularDamping = AngularDamping
         };
     }
 }

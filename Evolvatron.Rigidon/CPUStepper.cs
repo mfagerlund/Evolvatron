@@ -98,10 +98,13 @@ public sealed class CPUStepper : IStepper
         Friction.ApplyFriction(world, cfg.FrictionMu);
         // Note: Rigid body friction is now handled in ImpulseContactSolver
 
-        // 7. Global damping
+        // 7. Global damping (linear velocity)
         world.ApplyDamping(cfg.GlobalDamping, dt);
-        Integrator.ApplyRigidBodyDamping(world, cfg.GlobalDamping, dt);
+        Integrator.ApplyRigidBodyDamping(world, cfg.GlobalDamping, cfg.AngularDamping, dt);
 
-        // 8. Optional: cull out-of-bounds particles/contraptions (not implemented yet)
+        // 8. Angular damping for particles
+        Integrator.ApplyParticleAngularDamping(world, cfg.AngularDamping, dt);
+
+        // 9. Optional: cull out-of-bounds particles/contraptions (not implemented yet)
     }
 }

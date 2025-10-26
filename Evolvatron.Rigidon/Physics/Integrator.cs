@@ -145,20 +145,97 @@ public static class Integrator
     }
 
     /// <summary>
-    /// Applies damping to rigid bodies.
+    /// Applies damping to rigid bodies (linear and angular).
     /// </summary>
-    public static void ApplyRigidBodyDamping(WorldState world, float damping, float dt)
+    public static void ApplyRigidBodyDamping(WorldState world, float linearDamping, float angularDamping, float dt)
     {
-        if (damping <= 0f) return;
-        float factor = MathF.Max(0f, 1f - damping * dt);
+        float linearFactor = MathF.Max(0f, 1f - linearDamping * dt);
+        float angularFactor = MathF.Max(0f, 1f - angularDamping * dt);
 
         for (int i = 0; i < world.RigidBodies.Count; i++)
         {
             var rb = world.RigidBodies[i];
-            rb.VelX *= factor;
-            rb.VelY *= factor;
-            rb.AngularVel *= factor;
+            if (linearDamping > 0f)
+            {
+                rb.VelX *= linearFactor;
+                rb.VelY *= linearFactor;
+            }
+            if (angularDamping > 0f)
+            {
+                rb.AngularVel *= angularFactor;
+            }
             world.RigidBodies[i] = rb;
+        }
+    }
+
+    /// <summary>
+    /// Applies angular damping to particles by dampening rotational motion
+    /// around rod constraints. For each rod, computes angular velocity and applies damping.
+    /// </summary>
+    public static void ApplyParticleAngularDamping(WorldState world, float angularDamping, float dt)
+    {
+        if (angularDamping <= 0f) return;
+
+        float factor = MathF.Max(0f, 1f - angularDamping * dt);
+        var posX = world.PosX;
+        var posY = world.PosY;
+        var velX = world.VelX;
+        var velY = world.VelY;
+        var invMass = world.InvMass;
+
+        // For each rod, dampen the rotational component of velocity
+        foreach (var rod in world.Rods)
+        {
+            int i = rod.I;
+            int j = rod.J;
+
+            if (invMass[i] == 0f && invMass[j] == 0f) continue;
+
+            // Center of mass
+            float mi = invMass[i] > 0f ? 1f / invMass[i] : 0f;
+            float mj = invMass[j] > 0f ? 1f / invMass[j] : 0f;
+            float totalMass = mi + mj;
+            if (totalMass < 1e-6f) continue;
+
+            float cmX = (posX[i] * mi + posX[j] * mj) / totalMass;
+            float cmY = (posY[i] * mi + posY[j] * mj) / totalMass;
+
+            // Relative positions from center of mass
+            float riX = posX[i] - cmX;
+            float riY = posY[i] - cmY;
+            float rjX = posX[j] - cmX;
+            float rjY = posY[j] - cmY;
+
+            // Angular velocity (omega = (r × v) / r²)
+            float Li = riX * velY[i] - riY * velX[i]; // Angular momentum contribution from i
+            float Lj = rjX * velY[j] - rjY * velX[j]; // Angular momentum contribution from j
+            float L = Li + Lj;
+
+            float I = mi * (riX * riX + riY * riY) + mj * (rjX * rjX + rjY * rjY); // Moment of inertia
+            if (I < 1e-6f) continue;
+
+            float omega = L / I;
+
+            // Apply angular damping
+            float omegaDamped = omega * factor;
+            float deltaOmega = omegaDamped - omega;
+
+            // Convert back to velocity change (v_tangent = omega × r)
+            if (invMass[i] > 0f)
+            {
+                float dvix = -riY * deltaOmega;
+                float dviy = riX * deltaOmega;
+                velX[i] += dvix;
+                velY[i] += dviy;
+            }
+
+            if (invMass[j] > 0f)
+            {
+                float dvjx = -rjY * deltaOmega;
+                float dvjy = rjX * deltaOmega;
+                velX[j] += dvjx;
+                velY[j] += dvjy;
+            }
         }
     }
 }
