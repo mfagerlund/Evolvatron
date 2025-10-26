@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Core", "Evolvatron.Core\Evolvatron.Core.csproj", "{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Demo", "Evolvatron.Demo\Evolvatron.Demo.csproj", "{87CE6C66-0D9F-48E1-853E-6999E59F9413}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Tests", "Evolvatron.Tests\Evolvatron.Tests.csproj", "{5F6505F5-7027-49E7-81A2-CDD7EAD09194}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C4A5FA6-BDE7-4070-ABDA-B3E12805DFA8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{87CE6C66-0D9F-48E1-853E-6999E59F9413}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{87CE6C66-0D9F-48E1-853E-6999E59F9413}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{87CE6C66-0D9F-48E1-853E-6999E59F9413}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{87CE6C66-0D9F-48E1-853E-6999E59F9413}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F6505F5-7027-49E7-81A2-CDD7EAD09194}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F6505F5-7027-49E7-81A2-CDD7EAD09194}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F6505F5-7027-49E7-81A2-CDD7EAD09194}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F6505F5-7027-49E7-81A2-CDD7EAD09194}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
