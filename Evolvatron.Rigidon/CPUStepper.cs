@@ -49,17 +49,20 @@ public sealed class CPUStepper : IStepper
         // === CONSTRAINT SOLVING ===
 
         // 3. XPBD constraint solving iterations (for particles)
+        // Reset lambdas once per substep (NOT per iteration - critical for XPBD stability)
         XPBDSolver.ResetLambdas(world);
 
         for (int iter = 0; iter < cfg.XpbdIterations; iter++)
         {
-            // Solve particle constraints
+            // Solve particle constraints in order of importance:
+            // 1. Structural (rods) - maintain edge lengths
+            // 2. Shape (angles) - maintain angles
+            // 3. Positional (contacts) - prevent penetration
+            // 4. Actuation (motors) - apply control
             XPBDSolver.SolveRods(world, dt, cfg.RodCompliance);
             XPBDSolver.SolveAngles(world, dt, cfg.AngleCompliance);
-            XPBDSolver.SolveMotors(world, dt, cfg.MotorCompliance);
-
-            // Solve particle contacts (particle vs static colliders)
             XPBDSolver.SolveContacts(world, dt, cfg.ContactCompliance);
+            XPBDSolver.SolveMotors(world, dt, cfg.MotorCompliance);
         }
 
         // 4. Impulse-based contact solving (for rigid bodies)

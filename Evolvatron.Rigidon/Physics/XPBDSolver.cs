@@ -80,7 +80,7 @@ public static class XPBDSolver
     /// <summary>
     /// Solves all angle constraints once.
     /// Maintains angle at vertex j between edges (i-j) and (k-j).
-    /// Uses stable gradient formulation from XPBD literature (Müller et al).
+    /// CORRECTED: Uses proper 2D angle gradient that accounts for both edges.
     /// </summary>
     public static void SolveAngles(WorldState world, float dt, float globalCompliance)
     {
@@ -104,33 +104,23 @@ public static class XPBDSolver
             if (invMass[i] == 0f && invMass[j] == 0f && invMass[k] == 0f)
                 continue;
 
-            // Edge vectors from j (p0-p1 and p2-p1 in the math notation)
+            // Edge vectors from vertex j (UN-normalized)
             float ux = posX[i] - posX[j];
             float uy = posY[i] - posY[j];
             float vx = posX[k] - posX[j];
             float vy = posY[k] - posY[j];
 
-            float lenUSq = ux * ux + uy * uy;
-            float lenVSq = vx * vx + vy * vy;
+            float uu = ux * ux + uy * uy;
+            float vv = vx * vx + vy * vy;
 
-            if (lenUSq < Epsilon * Epsilon || lenVSq < Epsilon * Epsilon)
+            if (uu < Epsilon || vv < Epsilon)
                 continue;
 
-            float lenU = MathF.Sqrt(lenUSq);
-            float lenV = MathF.Sqrt(lenVSq);
+            // Compute angle: θ = atan2(u×v, u·v)
+            float c = ux * vx + uy * vy;  // dot(u, v)
+            float s = ux * vy - uy * vx;  // cross(u, v) - scalar in 2D
 
-            // Normalize to unit vectors
-            float unx = ux / lenU;
-            float uny = uy / lenU;
-            float vnx = vx / lenV;
-            float vny = vy / lenV;
-
-            // Compute current angle: θ = atan2(|u×v|, u·v)
-            // In 2D: u×v = ux*vy - uy*vx (scalar z-component)
-            float cross = unx * vny - uny * vnx;  // u×v (normalized)
-            float dot = unx * vnx + uny * vny;     // u·v (normalized)
-
-            float currentAngle = MathF.Atan2(cross, dot);
+            float currentAngle = MathF.Atan2(s, c);
 
             // Constraint value (wrapped to [-π, π])
             float C = Math2D.WrapAngle(currentAngle - angle.Theta0);
@@ -138,30 +128,28 @@ public static class XPBDSolver
             if (MathF.Abs(C) < Epsilon)
                 continue;
 
-            // Stable gradients using perpendicular formulation:
-            // For 2D, the cross product magnitude |u×v| is just |cross|
-            // n = (u×v) / |u×v| is the out-of-plane normal (always ±z in 2D)
-            // u_perp = (n×u) / |u×v| and v_perp = (n×v) / |u×v|
+            // CORRECT 2D gradients for angle constraint:
+            // ∂θ/∂u = ( c·perp(v) - s·v ) / (||u||² ||v||²)
+            // ∂θ/∂v = ( c·perp(u) - s·u ) / (||u||² ||v||²)
+            // where perp(x,y) = (-y, x)
             //
-            // In 2D this simplifies to:
-            // ∂θ/∂p_i = u_perp / |p_i - p_j|
-            // ∂θ/∂p_k = -v_perp / |p_k - p_j|
-            //
-            // u_perp in 2D = perpendicular to u = (-uy, ux) normalized by |u×v|
-            // But since u is already normalized: u_perp ≈ (-uny, unx)
+            // This formula accounts for how θ depends on BOTH edges,
+            // unlike the incorrect simplified version that lost coupling.
 
-            // More stable: use the formula from the paper
-            // ∂θ/∂p0 = u_perp / |p0-p1| where u_perp is perpendicular to u
-            float crossMag = MathF.Abs(cross) + Epsilon;
+            float denom = uu * vv + 1e-12f;
 
-            // Gradients (perpendicular to edges, scaled by edge length and cross product)
-            // This formulation is stable even when angles are small
-            float gradIx = -uny / lenU;
-            float gradIy = unx / lenU;
+            // perp(v) = (-vy, vx), perp(u) = (-uy, ux)
+            float dθ_du_x = (c * (-vy) - s * vx) / denom;
+            float dθ_du_y = (c * ( vx) - s * vy) / denom;
 
-            float gradKx = vny / lenV;
-            float gradKy = -vnx / lenV;
+            float dθ_dv_x = (c * (-uy) - s * ux) / denom;
+            float dθ_dv_y = (c * ( ux) - s * uy) / denom;
 
+            // Map to particle gradients
+            float gradIx = dθ_du_x;
+            float gradIy = dθ_du_y;
+            float gradKx = dθ_dv_x;
+            float gradKy = dθ_dv_y;
             float gradJx = -(gradIx + gradKx);
             float gradJy = -(gradIy + gradKy);
 
@@ -175,6 +163,9 @@ public static class XPBDSolver
 
             // XPBD correction: Δλ = -(C + α·λ) / (Σw_i|∇C_i|² + α)
             float deltaLambda = -(C + alpha * angle.Lambda) / (w + alpha);
+
+            // Optional: cap impulse to help with contacts/stacking
+            deltaLambda = MathF.Max(-10f, MathF.Min(10f, deltaLambda));
 
             // Update positions: p_i ← p_i + w_i · Δλ · ∇C_i
             posX[i] += invMass[i] * deltaLambda * gradIx;
