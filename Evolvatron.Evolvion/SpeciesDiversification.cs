@@ -41,19 +41,10 @@ public static class SpeciesDiversification
         // Step 3: Apply diversification mutations
         ApplyDiversificationMutations(newTopology, config, random);
 
-        // Step 4: Apply weak edge pruning using parent population statistics
-        if (config.EdgeMutations.WeakEdgePruning.Enabled && topSpecies.Count > 0)
-        {
-            var parentIndividuals = topSpecies[0].Individuals;
-            if (parentIndividuals.Count > 0)
-            {
-                EdgeTopologyMutations.PruneWeakEdges(
-                    newTopology,
-                    parentIndividuals,
-                    config.EdgeMutations.WeakEdgePruning,
-                    random);
-            }
-        }
+        // Step 4: Weak edge pruning is SKIPPED during diversification
+        // The topology has been structurally changed (RowCounts mutated),
+        // so parent individuals' weight arrays no longer match the topology.
+        // Edge pruning will happen naturally during normal evolution instead.
 
         // Step 5: Initialize new individuals by inheriting from parent species
         // Clone individuals from best parent species and adapt to new topology
@@ -264,6 +255,10 @@ public static class SpeciesDiversification
 
             topology.RowCounts[row] = newSize;
         }
+
+        // Remove edges that now reference invalid node indices
+        int totalNodes = topology.TotalNodes;
+        topology.Edges.RemoveAll(e => e.Source >= totalNodes || e.Dest >= totalNodes);
     }
 
     /// <summary>

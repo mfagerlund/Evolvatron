@@ -82,12 +82,11 @@ public static class FollowTheCorridorDemo
 
         foreach (var species in population.AllSpecies)
         {
-            var eval = new CPUEvaluator(species.Topology);
             foreach (var individual in species.Individuals)
             {
                 environments.Add(new FollowTheCorridorEnvironment(maxSteps: 320));
                 individuals.Add(individual);
-                evaluators.Add(eval);
+                evaluators.Add(new CPUEvaluator(species.Topology)); // One evaluator per individual for thread safety
                 totalRewards.Add(0f);
             }
         }

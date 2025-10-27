@@ -418,8 +418,9 @@ public static class EdgeTopologyMutations
         weakEdges = weakEdges.OrderBy(e => e.MeanWeight).ToList();
 
         int prunedCount = 0;
+        var edgesToDelete = new List<(int Source, int Dest, int Index)>();
 
-        // Probabilistically delete weak edges
+        // Probabilistically select weak edges for deletion
         foreach (var (src, dst, weight, index) in weakEdges)
         {
             // Probability increases as weight approaches zero
@@ -430,24 +431,30 @@ public static class EdgeTopologyMutations
             {
                 if (ConnectivityValidator.CanDeleteEdge(spec, src, dst))
                 {
-                    spec.Edges.Remove((src, dst));
-
-                    // Remove corresponding weights from all individuals
-                    for (int i = 0; i < individuals.Count; i++)
-                    {
-                        var individual = individuals[i];
-                        var newWeights = individual.Weights.ToList();
-                        if (index < newWeights.Count)
-                        {
-                            newWeights.RemoveAt(index);
-                            individual.Weights = newWeights.ToArray();
-                            individuals[i] = individual;
-                        }
-                    }
-
-                    prunedCount++;
+                    edgesToDelete.Add((src, dst, index));
                 }
             }
+        }
+
+        // Sort by index descending so we remove from end first (keeps earlier indices valid)
+        edgesToDelete = edgesToDelete.OrderByDescending(e => e.Index).ToList();
+
+        // Delete edges and corresponding weights at the same index
+        foreach (var (src, dst, index) in edgesToDelete)
+        {
+            spec.Edges.RemoveAt(index);  // Remove at exact index, not by value search
+
+            // Remove corresponding weights from all individuals at the same index
+            for (int i = 0; i < individuals.Count; i++)
+            {
+                var individual = individuals[i];
+                var newWeights = individual.Weights.ToList();
+                newWeights.RemoveAt(index);
+                individual.Weights = newWeights.ToArray();
+                individuals[i] = individual;
+            }
+
+            prunedCount++;
         }
 
         if (prunedCount > 0)

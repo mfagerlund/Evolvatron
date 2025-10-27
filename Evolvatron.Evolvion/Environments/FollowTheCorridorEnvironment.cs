@@ -12,6 +12,7 @@ public class FollowTheCorridorEnvironment : IEnvironment
 {
     private readonly SimpleCarWorld _world;
     private SimpleCarWorld.SimpleCar _car;
+    private int _currentStep;
 
     public int InputCount => 9; // 9 distance sensors
     public int OutputCount => 2; // steering, throttle
@@ -21,12 +22,21 @@ public class FollowTheCorridorEnvironment : IEnvironment
     {
         _world = SimpleCarWorld.LoadFromFile(maxSteps);
         _car = new SimpleCarWorld.SimpleCar(_world);
+        _currentStep = 0;
+    }
+
+    public FollowTheCorridorEnvironment(SimpleCarWorld sharedWorld)
+    {
+        _world = sharedWorld;
+        _car = new SimpleCarWorld.SimpleCar(_world);
+        _currentStep = 0;
     }
 
     public void Reset(int seed)
     {
         // Seed not used - SimpleCar track is deterministic
         _car.Reset();
+        _currentStep = 0;
     }
 
     public void GetObservations(Span<float> observations)
@@ -43,12 +53,13 @@ public class FollowTheCorridorEnvironment : IEnvironment
         float steering = Math.Clamp(actions[0], -1f, 1f);
         float throttle = Math.Clamp(actions[1], -1f, 1f);
 
+        _currentStep++;
         return _world.Update(_car, new[] { steering, throttle });
     }
 
     public bool IsTerminal()
     {
-        return _car.IsDead;
+        return _car.IsDead || _currentStep >= MaxSteps;
     }
 
     // Additional properties for visualization
