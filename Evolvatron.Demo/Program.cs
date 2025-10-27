@@ -18,6 +18,11 @@ class Program
             // Launch hyperparameter sweep
             CorridorHyperparameterSweep.Run();
         }
+        else if (args.Length > 0 && args[0] == "timing")
+        {
+            // Launch simple timing test
+            SimpleTimingTest.Run();
+        }
         else if (args.Length > 0 && args[0] == "angles")
         {
             // Launch angle constraint demo

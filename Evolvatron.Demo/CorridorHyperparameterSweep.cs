@@ -183,6 +183,15 @@ public static class CorridorHyperparameterSweep
         return configs;
     }
 
+    private class TrialProgress
+    {
+        public int Generation;
+        public float BestFitness;
+        public long ElapsedMs;
+        public bool Completed;
+        public bool Solved;
+    }
+
     private static SweepResult EvaluateConfiguration(ConfigToTest config)
     {
         var result = new SweepResult
@@ -193,16 +202,64 @@ public static class CorridorHyperparameterSweep
             Generations = new List<int>()
         };
 
+        Console.WriteLine($"  Running {SeedsPerConfig} seeds in parallel...");
+
+        // Shared progress tracking
+        var progress = new TrialProgress[SeedsPerConfig];
+        for (int i = 0; i < SeedsPerConfig; i++)
+        {
+            progress[i] = new TrialProgress();
+        }
+
         // Run all seeds in parallel
         var tasks = new Task<(bool solved, long timeMs, int generations)>[SeedsPerConfig];
         for (int seed = 0; seed < SeedsPerConfig; seed++)
         {
-            int seedCopy = seed; // Capture for closure
-            tasks[seed] = Task.Run(() => RunSingleTrial(config, seedCopy));
+            int seedCopy = seed;
+            tasks[seed] = Task.Run(() => RunSingleTrial(config, seedCopy, progress[seedCopy]));
         }
 
-        // Wait for all trials to complete
-        Task.WaitAll(tasks);
+        // Monitor progress
+        var completedTasks = new HashSet<int>();
+        var lastReport = new int[SeedsPerConfig];
+        for (int i = 0; i < SeedsPerConfig; i++) lastReport[i] = -2; // Start below -1
+
+        while (!Task.WaitAll(tasks, millisecondsTimeout: 2000))
+        {
+            // Report progress from each seed
+            for (int i = 0; i < SeedsPerConfig; i++)
+            {
+                var p = progress[i];
+                if (p.Completed && !completedTasks.Contains(i))
+                {
+                    completedTasks.Add(i);
+                    var (solved, timeMs, _) = tasks[i].Result;
+                    Console.WriteLine($"  Seed {i}: {(solved ? $"SOLVED" : "timeout")} in {timeMs/1000.0:F1}s");
+                }
+                else if (!p.Completed && p.Generation > lastReport[i])
+                {
+                    if (p.Generation == -1)
+                    {
+                        Console.WriteLine($"  Seed {i}: initializing...");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  Seed {i}: gen {p.Generation}, best {p.BestFitness:F3}, {p.ElapsedMs/1000.0:F1}s");
+                    }
+                    lastReport[i] = p.Generation;
+                }
+            }
+        }
+
+        // Final completion check
+        for (int i = 0; i < SeedsPerConfig; i++)
+        {
+            if (!completedTasks.Contains(i))
+            {
+                var (solved, timeMs, _) = tasks[i].Result;
+                Console.WriteLine($"  Seed {i}: {(solved ? $"SOLVED" : "timeout")} in {timeMs/1000.0:F1}s");
+            }
+        }
 
         // Collect results
         foreach (var task in tasks)
@@ -211,7 +268,7 @@ public static class CorridorHyperparameterSweep
             if (solved)
             {
                 result.SolvedCount++;
-                result.TimesToSolve.Add(timeMs / 1000.0); // Convert to seconds
+                result.TimesToSolve.Add(timeMs / 1000.0);
                 result.Generations.Add(generations);
             }
         }
@@ -221,8 +278,12 @@ public static class CorridorHyperparameterSweep
 
     private static (bool solved, long timeMs, int generations) RunSingleTrial(
         ConfigToTest config,
-        int seed)
+        int seed,
+        TrialProgress progress)
     {
+        progress.Generation = -1; // Marker for "initializing"
+        progress.ElapsedMs = 0;
+
         // Create topology
         var topology = CreateCorridorTopology();
 
@@ -260,11 +321,26 @@ public static class CorridorHyperparameterSweep
         int generation = 0;
         bool solved = false;
 
+        progress.Generation = 0;
+        progress.ElapsedMs = 0;
+
         while (stopwatch.ElapsedMilliseconds < MaxTimeoutSeconds * 1000 && !solved)
         {
+            // Update progress AT START of generation
+            var bestInd = population.GetBestIndividual();
+            progress.Generation = generation;
+            progress.BestFitness = bestInd?.individual.Fitness ?? 0f;
+            progress.ElapsedMs = stopwatch.ElapsedMilliseconds;
+
             // Evaluate all individuals
             for (int i = 0; i < environments.Count; i++)
             {
+                // Update progress periodically during evaluation
+                if (i % 200 == 0)
+                {
+                    progress.ElapsedMs = stopwatch.ElapsedMilliseconds;
+                }
+
                 environments[i].Reset(seed: generation);
                 float totalReward = 0f;
                 var observations = new float[environments[i].InputCount];
@@ -301,6 +377,7 @@ public static class CorridorHyperparameterSweep
             if (best.HasValue && best.Value.individual.Fitness >= SolvedThreshold)
             {
                 solved = true;
+                progress.Solved = true;
                 break;
             }
 
@@ -310,6 +387,10 @@ public static class CorridorHyperparameterSweep
         }
 
         stopwatch.Stop();
+
+        progress.Completed = true;
+        progress.Generation = generation;
+        progress.ElapsedMs = stopwatch.ElapsedMilliseconds;
 
         return (solved, stopwatch.ElapsedMilliseconds, generation);
     }
