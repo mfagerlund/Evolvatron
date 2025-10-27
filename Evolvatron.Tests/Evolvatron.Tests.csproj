@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
+    <ProjectReference Include="..\Evolvatron.Demo\Evolvatron.Demo.csproj" />
   </ItemGroup>
 
 </Project>

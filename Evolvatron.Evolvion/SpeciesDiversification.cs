@@ -41,6 +41,9 @@ public static class SpeciesDiversification
         // Step 3: Apply diversification mutations
         ApplyDiversificationMutations(newTopology, config, random);
 
+        // Step 3.5: Rebuild RowPlans after mutations changed RowCounts/Edges
+        newTopology.BuildRowPlans();
+
         // Step 4: Weak edge pruning is SKIPPED during diversification
         // The topology has been structurally changed (RowCounts mutated),
         // so parent individuals' weight arrays no longer match the topology.

@@ -1,9 +1,4 @@
-using Evolvatron.Evolvion;
-using Evolvatron.Evolvion.Environments;
 using System.Diagnostics;
-using System.Text;
-using Colonel.Tests.HagridTests.FollowTheCorridor;
-using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
 
 namespace Evolvatron.Demo;
 
@@ -13,10 +8,10 @@ namespace Evolvatron.Demo;
 /// </summary>
 public static class CorridorHyperparameterSweep
 {
-    private const int MaxTimeoutSeconds = 120;
-    private const int SeedsPerConfig = 3;
-    private const float SolvedThreshold = 1.0f; // 100% completion
-    private const int MaxStepsForSuccess = 200; // Must complete in 200 steps (not full 320)
+    private const int MaxTimeoutSeconds = 900; // 15 minutes
+    private const int SeedsPerConfig = 1; // Just 1 seed to test
+    private const float SolvedThreshold = 0.9f; // 90% completion (matches demo EXACTLY)
+    private const int MaxStepsForSuccess = 1000; // Very generous step limit
 
     public static void Run()
     {
@@ -52,116 +47,47 @@ public static class CorridorHyperparameterSweep
     {
         var configs = new List<ConfigToTest>();
 
-        // Baseline population configurations
-        configs.Add(new ConfigToTest
-        {
-            Description = "Small Pop (10x40=400, E=1, P=0.2, T=4)",
-            SpeciesCount = 10,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4
-        });
+        // Population size variations (keep baseline values for others)
+        int[] speciesCounts = { 20, 40, 80 };
+        int[] individualsPerSpecies = { 20, 40, 80 };
 
-        configs.Add(new ConfigToTest
-        {
-            Description = "Medium Pop (20x40=800, E=1, P=0.2, T=4)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4
-        });
+        // Selection pressure variations
+        int[] eliteCounts = { 1, 2, 4 };
+        float[] parentPoolPercentages = { 0.1f, 0.2f, 0.4f };
+        int[] tournamentSizes = { 2, 4, 8 };
 
-        configs.Add(new ConfigToTest
+        // Generate combinations
+        foreach (var speciesCount in speciesCounts)
         {
-            Description = "Large Pop Square (40x40=1600, E=1, P=0.2, T=4)",
-            SpeciesCount = 40,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4
-        });
+            foreach (var individualsPerSpec in individualsPerSpecies)
+            {
+                int totalPop = speciesCount * individualsPerSpec;
 
-        configs.Add(new ConfigToTest
-        {
-            Description = "Large Pop Wide (80x20=1600, E=1, P=0.2, T=4)",
-            SpeciesCount = 80,
-            IndividualsPerSpecies = 20,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4
-        });
+                // Skip very large populations (>3200) to keep runtime reasonable
+                if (totalPop > 3200) continue;
 
-        // Mutation rate variations (using Medium Pop as baseline)
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + High Jitter (WJ=0.99, SD=0.5)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            WeightJitter = 0.99f,
-            WeightJitterStdDev = 0.5f
-        });
+                foreach (var elites in eliteCounts)
+                {
+                    foreach (var parentPool in parentPoolPercentages)
+                    {
+                        foreach (var tournamentSize in tournamentSizes)
+                        {
+                            configs.Add(new ConfigToTest
+                            {
+                                Description = $"S{speciesCount}xI{individualsPerSpec}={totalPop}, E={elites}, P={parentPool:F1}, T={tournamentSize}",
+                                SpeciesCount = speciesCount,
+                                IndividualsPerSpecies = individualsPerSpec,
+                                Elites = elites,
+                                ParentPoolPercentage = parentPool,
+                                TournamentSize = tournamentSize
+                            });
+                        }
+                    }
+                }
+            }
+        }
 
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + Low Jitter (WJ=0.8, SD=0.15)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            WeightJitter = 0.8f,
-            WeightJitterStdDev = 0.15f
-        });
-
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + High Reset (WR=0.2)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            WeightReset = 0.2f
-        });
-
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + Low Reset (WR=0.05)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            WeightReset = 0.05f
-        });
-
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + High ActSwap (AS=0.05)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            ActivationSwap = 0.05f
-        });
-
-        configs.Add(new ConfigToTest
-        {
-            Description = "Med Pop + No ActSwap (AS=0.0)",
-            SpeciesCount = 20,
-            IndividualsPerSpecies = 40,
-            Elites = 1,
-            ParentPoolPercentage = 0.2f,
-            TournamentSize = 4,
-            ActivationSwap = 0.0f
-        });
-
+        Console.WriteLine($"Generated {configs.Count} configurations");
         return configs;
     }
 
@@ -184,14 +110,14 @@ public static class CorridorHyperparameterSweep
             Generations = new List<int>()
         };
 
-        var resultLock = new object();
         var results = new (bool solved, long timeMs, int generations)[SeedsPerConfig];
 
-        Parallel.For(0, SeedsPerConfig, new ParallelOptions { MaxDegreeOfParallelism = 16 }, seed =>
+        // Run sequentially to avoid issues with species diversification changing population size
+        for (int seed = 0; seed < SeedsPerConfig; seed++)
         {
             var progress = new TrialProgress();
             results[seed] = RunSingleTrial(config, seed, progress);
-        });
+        }
 
         for (int seed = 0; seed < SeedsPerConfig; seed++)
         {
@@ -215,121 +141,44 @@ public static class CorridorHyperparameterSweep
         progress.Generation = -1;
         progress.ElapsedMs = 0;
 
-        var topology = CreateCorridorTopology();
-
-        var evolutionConfig = new EvolutionConfig
+        var runConfig = new CorridorEvaluationRunner.RunConfig
         {
             SpeciesCount = config.SpeciesCount,
             IndividualsPerSpecies = config.IndividualsPerSpecies,
             Elites = config.Elites,
             TournamentSize = config.TournamentSize,
             ParentPoolPercentage = config.ParentPoolPercentage,
-            MinSpeciesCount = config.SpeciesCount, // Disable species culling/diversification
-            MutationRates = new MutationRates
-            {
-                WeightJitter = config.WeightJitter,
-                WeightJitterStdDev = config.WeightJitterStdDev,
-                WeightReset = config.WeightReset,
-                ActivationSwap = config.ActivationSwap
-            }
+            MinSpeciesCount = 4,
+            EvolutionSeed = 42,
+            MaxGenerations = MaxStepsForSuccess,
+            SolvedThreshold = SolvedThreshold,
+            MaxTimeoutMs = MaxTimeoutSeconds * 1000,
+            MaxStepsPerEpisode = 320
         };
 
-        var evolver = new Evolver(seed: seed);
-        var population = evolver.InitializePopulation(evolutionConfig, topology);
-
-        var sharedWorld = SimpleCarWorld.LoadFromFile(maxSteps: 320);
-
-        var environments = new List<FollowTheCorridorEnvironment>();
-        foreach (var species in population.AllSpecies)
-        {
-            foreach (var individual in species.Individuals)
+        var runner = new CorridorEvaluationRunner(
+            config: runConfig,
+            progressCallback: update =>
             {
-                environments.Add(new FollowTheCorridorEnvironment(sharedWorld));
-            }
-        }
+                progress.Generation = update.Generation;
+                progress.BestFitness = update.BestFitness;
+                progress.ElapsedMs = update.ElapsedMs;
 
-        var stopwatch = Stopwatch.StartNew();
-        int generation = 0;
-        bool solved = false;
-
-        progress.Generation = 0;
-        progress.ElapsedMs = 0;
-
-        while (stopwatch.ElapsedMilliseconds < MaxTimeoutSeconds * 1000 && !solved)
-        {
-            var bestInd = population.GetBestIndividual();
-            progress.Generation = generation;
-            progress.BestFitness = bestInd?.individual.Fitness ?? 0f;
-            progress.ElapsedMs = stopwatch.ElapsedMilliseconds;
-
-            int envIdx = 0;
-            var stepCounts = new int[environments.Count];
-
-            foreach (var species in population.AllSpecies)
-            {
-                var evaluator = new CPUEvaluator(species.Topology);
-
-                for (int indIdx = 0; indIdx < species.Individuals.Count; indIdx++)
+                if (update.Generation % 100 == 0)
                 {
-                    environments[envIdx].Reset(seed: generation);
-
-                    float totalReward = 0f;
-                    var observations = new float[environments[envIdx].InputCount];
-                    int steps = 0;
-
-                    while (!environments[envIdx].IsTerminal())
-                    {
-                        environments[envIdx].GetObservations(observations);
-                        var actions = evaluator.Evaluate(species.Individuals[indIdx], observations);
-                        float reward = environments[envIdx].Step(actions);
-                        totalReward += reward;
-                        steps++;
-                    }
-
-                    stepCounts[envIdx] = steps;
-
-                    var ind = species.Individuals[indIdx];
-                    ind.Fitness = totalReward;
-                    species.Individuals[indIdx] = ind;
-
-                    envIdx++;
+                    Console.WriteLine($"  Gen {update.Generation}: Best={update.BestFitness:F3} ({update.BestFitness * 100:F1}%), Time={update.ElapsedMs / 1000.0:F1}s");
                 }
             }
+        );
 
-            var best = population.GetBestIndividual();
-
-            if (best.HasValue && best.Value.individual.Fitness >= SolvedThreshold)
-            {
-                envIdx = 0;
-                foreach (var species in population.AllSpecies)
-                {
-                    for (int indIdx = 0; indIdx < species.Individuals.Count; indIdx++)
-                    {
-                        if (species.Individuals[indIdx].Fitness >= SolvedThreshold &&
-                            stepCounts[envIdx] <= MaxStepsForSuccess)
-                        {
-                            solved = true;
-                            progress.Solved = true;
-                            break;
-                        }
-                        envIdx++;
-                    }
-                    if (solved) break;
-                }
-                if (solved) break;
-            }
-
-            evolver.StepGeneration(population);
-            generation++;
-        }
-
-        stopwatch.Stop();
+        var result = runner.Run();
 
         progress.Completed = true;
-        progress.Generation = generation;
-        progress.ElapsedMs = stopwatch.ElapsedMilliseconds;
+        progress.Solved = result.solved;
+        progress.Generation = result.generation;
+        progress.ElapsedMs = result.elapsedMs;
 
-        return (solved, stopwatch.ElapsedMilliseconds, generation);
+        return (result.solved, result.elapsedMs, result.generation);
     }
 
     private static void PrintSummary(List<SweepResult> results)
@@ -379,40 +228,6 @@ public static class CorridorHyperparameterSweep
         }
     }
 
-    private static SpeciesSpec CreateCorridorTopology()
-    {
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 9, 12, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b00000000001,
-                0b11111111111,
-                0b11111111111,
-                0b00000000011
-            },
-            MaxInDegree = 12,
-            Edges = new List<(int, int)>()
-        };
-
-        for (int src = 0; src < 10; src++)
-        {
-            for (int dst = 10; dst < 22; dst++)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        for (int src = 10; src < 22; src++)
-        {
-            topology.Edges.Add((src, 22));
-            topology.Edges.Add((src, 23));
-        }
-
-        topology.BuildRowPlans();
-        return topology;
-    }
-
     private class ConfigToTest
     {
         public string Description { get; set; } = "";
@@ -421,12 +236,6 @@ public static class CorridorHyperparameterSweep
         public int Elites { get; set; }
         public float ParentPoolPercentage { get; set; }
         public int TournamentSize { get; set; }
-
-        // Mutation parameters
-        public float WeightJitter { get; set; } = 0.95f;
-        public float WeightJitterStdDev { get; set; } = 0.3f;
-        public float WeightReset { get; set; } = 0.1f;
-        public float ActivationSwap { get; set; } = 0.01f;
     }
 
     private class SweepResult

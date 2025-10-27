@@ -1,276 +1,117 @@
-using Evolvatron.Evolvion;
-using Evolvatron.Evolvion.Environments;
 using Raylib_cs;
 using System.Numerics;
-using System.Diagnostics;
 using RaylibVector2 = System.Numerics.Vector2;
 using GodotVector2 = Godot.Vector2;
 using RaylibColor = Raylib_cs.Color;
+using Evolvatron.Evolvion.Environments;
 using Colonel.Tests.HagridTests.FollowTheCorridor;
 using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
 
 namespace Evolvatron.Demo;
 
-/// <summary>
-/// Real-time visualization of FollowTheCorridor evolution.
-/// Shows multiple cars from the population evolving over generations.
-/// </summary>
 public static class FollowTheCorridorDemo
 {
     private const int ScreenWidth = 1600;
     private const int ScreenHeight = 900;
-    private const float Scale = 2.5f; // Pixels per world unit
+    private const float Scale = 2.5f;
 
     public static void Run()
     {
-        Raylib.SetTraceLogLevel(TraceLogLevel.Warning); // Reduce startup noise
+        Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "Evolvatron - Follow The Corridor");
         Raylib.SetTargetFPS(60);
 
-        // Create topology
-        var topology = CreateCorridorTopology();
-
-        // Configure evolution
-        var config = new EvolutionConfig
-        {
-            SpeciesCount = 40,
-            IndividualsPerSpecies = 40, // 1600 total agents
-            Elites = 1, // Only keep top 1 unchanged
-            TournamentSize = 4,
-            ParentPoolPercentage = 0.2f // Only top 20% eligible as parents
-        };
-
-        // Initialize population
-        var evolver = new Evolver(seed: 42);
-        var population = evolver.InitializePopulation(config, topology);
         var baseEnvironment = new FollowTheCorridorEnvironment(maxSteps: 320);
-
-        int generation = 0;
-        int maxGenerations = 1000;
-        float bestFitness = float.MinValue;
-
-        // Accumulated timing stats
-        long totalFitnessEvalMs = 0;
-        long totalEvolutionMs = 0;
-
-        // Overall timer for elapsed time display
-        var overallStopwatch = Stopwatch.StartNew();
-
-        object stateLock = new object();
-
-        // Background simulation state
-        Task? simulationTask = null;
-        bool isSimulating = false;
-        bool solved = false;
-
-        // Control whether to recompute elite fitness each generation
-        // When false, elites keep their fitness from previous generation (faster, guarantees monotonic increase)
-        // When true, elites are re-evaluated for visualization purposes (slower, but shows all agents)
-        bool recomputeElites = false;
-
-        // Track which individuals are elites (to avoid re-evaluating them)
-        var isElite = new bool[config.SpeciesCount * config.IndividualsPerSpecies];
-
-        // Camera offset
         RaylibVector2 cameraOffset = new RaylibVector2(200, ScreenHeight - 100);
 
-        // Create 1600 environments (one per agent)
-        var environments = new List<FollowTheCorridorEnvironment>();
-        var individuals = new List<Individual>();
-        var evaluators = new List<CPUEvaluator>();
-        var totalRewards = new List<float>();
+        object snapshotLock = new object();
+        CorridorEvaluationRunner.GenerationSnapshot? latestSnapshot = null;
+        bool evolutionRunning = true;
+        bool solved = false;
 
-        foreach (var species in population.AllSpecies)
-        {
-            foreach (var individual in species.Individuals)
+        var runner = new CorridorEvaluationRunner(
+            config: new CorridorEvaluationRunner.RunConfig(),
+            progressCallback: update =>
             {
-                environments.Add(new FollowTheCorridorEnvironment(maxSteps: 320));
-                individuals.Add(individual);
-                evaluators.Add(new CPUEvaluator(species.Topology)); // One evaluator per individual for thread safety
-                totalRewards.Add(0f);
-            }
-        }
-
-        int currentStep = 0;
-
-        // Helper to start new generation
-        void StartNewGeneration()
-        {
-            // Reset environments
-            for (int i = 0; i < environments.Count; i++)
-            {
-                if (!isElite[i] || recomputeElites)
+                if (update.Generation % 100 == 0)
                 {
-                    environments[i].Reset(seed: generation);
-                    totalRewards[i] = 0f;
+                    Console.WriteLine($"Gen {update.Generation}: Best={update.BestFitness:F3} ({update.BestFitness * 100:F1}%)");
                 }
-                // Elites (when recomputeElites=false): don't reset environment or totalRewards
+            },
+            snapshotProvider: null
+        );
+
+        var evolutionTask = Task.Run(() =>
+        {
+            var result = runner.Run();
+            lock (snapshotLock)
+            {
+                solved = result.solved;
+                evolutionRunning = false;
             }
 
-            currentStep = 0;
-
-            // Start background simulation thread
-            isSimulating = true;
-
-            simulationTask = Task.Run(() =>
-            {
-                // Simulate all non-elite agents step by step
-                var swEval = Stopwatch.StartNew();
-                var observations = new float[environments[0].InputCount];
-
-                while (currentStep < 320)
-                {
-                    lock (stateLock)
-                    {
-                        for (int i = 0; i < environments.Count; i++)
-                        {
-                            // Skip elites unless recomputeElites is true
-                            if (isElite[i] && !recomputeElites)
-                                continue;
-
-                            if (!environments[i].IsTerminal())
-                            {
-                                environments[i].GetObservations(observations);
-                                var actions = evaluators[i].Evaluate(individuals[i], observations);
-                                float reward = environments[i].Step(actions);
-                                totalRewards[i] += reward;
-                            }
-                        }
-                        currentStep++;
-                    }
-                }
-
-                // Collect fitnesses (skip elites unless recomputeElites is true)
-                for (int i = 0, idx = 0; i < population.AllSpecies.Count; i++)
-                {
-                    var species = population.AllSpecies[i];
-                    for (int j = 0; j < species.Individuals.Count; j++, idx++)
-                    {
-                        if (!isElite[idx] || recomputeElites)
-                        {
-                            var ind = species.Individuals[j];
-                            ind.Fitness = totalRewards[idx];
-                            species.Individuals[j] = ind;
-                            individuals[idx] = ind;
-                        }
-                    }
-                }
-
-                swEval.Stop();
-
-                lock (stateLock)
-                {
-                    totalFitnessEvalMs += swEval.ElapsedMilliseconds;
-
-                    var best = population.GetBestIndividual();
-                    bestFitness = best.HasValue ? best.Value.individual.Fitness : 0f;
-
-                    // Check if solved
-                    if (bestFitness > 0.9f)
-                    {
-                        solved = true;
-                    }
-                }
-
-                isSimulating = false;
-            });
-        }
-
-        // Start initial generation
-        StartNewGeneration();
+            Console.WriteLine($"\n=== SUMMARY ===");
+            Console.WriteLine($"Generations: {result.generation}");
+            Console.WriteLine($"Final fitness: {result.bestFitness:F3} ({result.bestFitness * 100:F1}%)");
+            Console.WriteLine($"Status: {(result.solved ? "SOLVED!" : "Stopped")}");
+            Console.WriteLine($"Total time: {result.elapsedMs / 1000.0:F1}s");
+        });
 
         while (!Raylib.WindowShouldClose() && !solved)
         {
-            // Auto-advance to next generation as soon as simulation finishes
-            lock (stateLock)
+            lock (snapshotLock)
             {
-                bool shouldAdvance = !isSimulating && generation < maxGenerations;
-
-                if (shouldAdvance)
-                {
-                    var sw = Stopwatch.StartNew();
-                    evolver.StepGeneration(population);
-                    sw.Stop();
-                    totalEvolutionMs += sw.ElapsedMilliseconds;
-                    generation++;
-
-                    // Rebuild evaluators and individuals lists to match new topologies
-                    evaluators.Clear();
-                    individuals.Clear();
-                    foreach (var species in population.AllSpecies)
-                    {
-                        foreach (var individual in species.Individuals)
-                        {
-                            evaluators.Add(new CPUEvaluator(species.Topology));
-                            individuals.Add(individual);
-                        }
-                    }
-
-                    // Mark elites (first config.Elites individuals in each species)
-                    Array.Fill(isElite, false);
-                    for (int i = 0, idx = 0; i < population.AllSpecies.Count; i++)
-                    {
-                        for (int j = 0; j < population.AllSpecies[i].Individuals.Count; j++, idx++)
-                        {
-                            isElite[idx] = (j < config.Elites);
-                        }
-                    }
-
-                    StartNewGeneration();
-                }
+                latestSnapshot = runner.CreateSnapshot();
             }
 
-            // === RENDER ===
             Raylib.BeginDrawing();
             Raylib.ClearBackground(RaylibColor.Black);
 
-            // Render track
             RenderTrack(baseEnvironment.World, cameraOffset);
 
-            // Render ALL 1600 cars (dead ones in red, alive ones in blue)
-            lock (stateLock)
+            if (latestSnapshot != null)
             {
-                int activeCars = 0;
-                for (int i = 0; i < environments.Count; i++)
+                lock (snapshotLock)
                 {
-                    var position = environments[i].GetCarPosition();
-                    var heading = environments[i].GetCarHeading();
+                    foreach (var env in latestSnapshot.Environments)
+                    {
+                        RaylibColor color;
+                        if (!env.IsTerminal)
+                        {
+                            color = new RaylibColor(100, 200, 255, 180); // Blue - alive
+                        }
+                        else
+                        {
+                            color = env.DeathCause switch
+                            {
+                                Evolvion.Environments.DeathCause.WallCollision => new RaylibColor(255, 100, 100, 120), // Red
+                                Evolvion.Environments.DeathCause.TooSlowTo4thMarker => new RaylibColor(255, 165, 0, 120), // Orange
+                                Evolvion.Environments.DeathCause.TooSlowAfter4thMarker => new RaylibColor(255, 255, 0, 120), // Yellow
+                                Evolvion.Environments.DeathCause.Timeout => new RaylibColor(128, 128, 128, 120), // Gray
+                                Evolvion.Environments.DeathCause.Finished => new RaylibColor(0, 255, 0, 180), // Lime
+                                _ => new RaylibColor(255, 100, 100, 120)
+                            };
+                        }
+                        RenderCar(env.Position, env.Heading, cameraOffset, color);
+                    }
 
-                    if (!environments[i].IsTerminal())
-                    {
-                        activeCars++;
-                        // Alive cars: blue
-                        var carColor = new RaylibColor(100, 200, 255, 180);
-                        RenderCar(position, heading, cameraOffset, carColor);
-                    }
-                    else
-                    {
-                        // Dead cars: red (at their final position)
-                        var carColor = new RaylibColor(255, 100, 100, 120);
-                        RenderCar(position, heading, cameraOffset, carColor);
-                    }
+                    RenderUI(
+                        latestSnapshot.Generation,
+                        latestSnapshot.BestFitness,
+                        latestSnapshot.CurrentStep,
+                        latestSnapshot.ActiveCount,
+                        evolutionRunning,
+                        TimeSpan.FromMilliseconds(latestSnapshot.ElapsedMs),
+                        latestSnapshot.DeathCounts
+                    );
                 }
-
-                // Render UI
-                RenderUI(generation, bestFitness, currentStep, activeCars, isSimulating, overallStopwatch.Elapsed);
             }
 
             Raylib.EndDrawing();
         }
 
-        // Cleanup
-        simulationTask?.Wait();
+        evolutionTask.Wait();
         Raylib.CloseWindow();
-
-        // Print summary
-        long totalMs = totalFitnessEvalMs + totalEvolutionMs;
-        Console.WriteLine($"\n=== SUMMARY ===");
-        Console.WriteLine($"Generations: {generation}");
-        Console.WriteLine($"Final fitness: {bestFitness:F3} ({bestFitness * 100:F1}%)");
-        Console.WriteLine($"Status: {(solved ? "SOLVED!" : "Stopped")}");
-        Console.WriteLine($"\nTime breakdown ({totalMs}ms total):");
-        Console.WriteLine($"  Fitness evaluation: {totalFitnessEvalMs}ms ({100.0 * totalFitnessEvalMs / totalMs:F1}%)");
-        Console.WriteLine($"  Evolution (mutation/crossover): {totalEvolutionMs}ms ({100.0 * totalEvolutionMs / totalMs:F1}%)");
     }
 
     private static void RenderTrack(SimpleCarWorld world, RaylibVector2 cameraOffset)
@@ -318,7 +159,7 @@ public static class FollowTheCorridorDemo
         Raylib.DrawLineV(screenPos, screenNose, RaylibColor.White);
     }
 
-    private static void RenderUI(int generation, float bestFitness, int step, int activeCars, bool isSimulating, TimeSpan elapsed)
+    private static void RenderUI(int generation, float bestFitness, int step, int activeCars, bool isSimulating, TimeSpan elapsed, Dictionary<Evolvion.Environments.DeathCause, int> deathCounts)
     {
         int y = 10;
         int lineHeight = 25;
@@ -346,6 +187,30 @@ public static class FollowTheCorridorDemo
         {
             Raylib.DrawText("Status: Ready for next generation", 10, y, 20, RaylibColor.Lime);
         }
+        y += lineHeight;
+
+        // Death statistics
+        y += 5;
+        Raylib.DrawText("Agent Status:", 10, y, 18, RaylibColor.Gray);
+        y += lineHeight;
+
+        int wallCount = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.WallCollision, 0);
+        int slowTo4th = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.TooSlowTo4thMarker, 0);
+        int slowAfter4th = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.TooSlowAfter4thMarker, 0);
+        int finished = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.Finished, 0);
+        int timeout = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.Timeout, 0);
+
+        Raylib.DrawText($"  Alive: {activeCars}", 10, y, 16, new RaylibColor(100, 200, 255, 255));
+        y += 20;
+        Raylib.DrawText($"  Wall Collision: {wallCount}", 10, y, 16, RaylibColor.Red);
+        y += 20;
+        Raylib.DrawText($"  Too Slow (start): {slowTo4th}", 10, y, 16, RaylibColor.Orange);
+        y += 20;
+        Raylib.DrawText($"  Too Slow (4th+): {slowAfter4th}", 10, y, 16, RaylibColor.Yellow);
+        y += 20;
+        Raylib.DrawText($"  Timeout: {timeout}", 10, y, 16, RaylibColor.Gray);
+        y += 20;
+        Raylib.DrawText($"  Finished: {finished}", 10, y, 16, RaylibColor.Lime);
     }
 
     private static RaylibVector2 WorldToScreen(GodotVector2 worldPos, RaylibVector2 cameraOffset)
@@ -362,39 +227,5 @@ public static class FollowTheCorridorDemo
             cameraOffset.X + worldPos.X * Scale,
             cameraOffset.Y - worldPos.Y * Scale
         );
-    }
-
-    private static SpeciesSpec CreateCorridorTopology()
-    {
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 9, 12, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b00000000001,
-                0b11111111111,
-                0b11111111111,
-                0b00000000011
-            },
-            MaxInDegree = 12,
-            Edges = new List<(int, int)>()
-        };
-
-        for (int src = 0; src < 10; src++)
-        {
-            for (int dst = 10; dst < 22; dst++)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        for (int src = 10; src < 22; src++)
-        {
-            topology.Edges.Add((src, 22));
-            topology.Edges.Add((src, 23));
-        }
-
-        topology.BuildRowPlans();
-        return topology;
     }
 }

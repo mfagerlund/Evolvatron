@@ -4,6 +4,16 @@ using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
 
 namespace Evolvatron.Evolvion.Environments;
 
+public enum DeathCause
+{
+    None,
+    WallCollision,
+    TooSlowTo4thMarker,
+    TooSlowAfter4thMarker,
+    Finished,
+    Timeout
+}
+
 /// <summary>
 /// Evolvion adapter for FollowTheCorridor environment.
 /// Uses real SVG track from Colonel with SimpleCar physics.
@@ -13,10 +23,13 @@ public class FollowTheCorridorEnvironment : IEnvironment
     private readonly SimpleCarWorld _world;
     private SimpleCarWorld.SimpleCar _car;
     private int _currentStep;
+    private float _lastReward;
+    private bool _wasDeadLastStep;
 
     public int InputCount => 9; // 9 distance sensors
     public int OutputCount => 2; // steering, throttle
     public int MaxSteps => _world.MaxSteps;
+    public DeathCause CauseOfDeath { get; private set; }
 
     public FollowTheCorridorEnvironment(int maxSteps = 320)
     {
@@ -37,6 +50,9 @@ public class FollowTheCorridorEnvironment : IEnvironment
         // Seed not used - SimpleCar track is deterministic
         _car.Reset();
         _currentStep = 0;
+        CauseOfDeath = DeathCause.None;
+        _lastReward = 0f;
+        _wasDeadLastStep = false;
     }
 
     public void GetObservations(Span<float> observations)
@@ -53,8 +69,41 @@ public class FollowTheCorridorEnvironment : IEnvironment
         float steering = Math.Clamp(actions[0], -1f, 1f);
         float throttle = Math.Clamp(actions[1], -1f, 1f);
 
+        _wasDeadLastStep = _car.IsDead;
         _currentStep++;
-        return _world.Update(_car, new[] { steering, throttle });
+        _lastReward = _world.Update(_car, new[] { steering, throttle });
+
+        // Detect cause of death by checking what changed
+        if (_car.IsDead && !_wasDeadLastStep && CauseOfDeath == DeathCause.None)
+        {
+            // Check reward pattern to determine cause
+            if (_lastReward > 0)
+            {
+                CauseOfDeath = DeathCause.Finished;
+            }
+            else if (_lastReward <= -0.49f) // -0.5f timeout penalties
+            {
+                // Check which timeout it was
+                if (_car.CurrentProgressMarkerId < 4)
+                {
+                    CauseOfDeath = DeathCause.TooSlowTo4thMarker;
+                }
+                else
+                {
+                    CauseOfDeath = DeathCause.TooSlowAfter4thMarker;
+                }
+            }
+            else // Negative reward from collision
+            {
+                CauseOfDeath = DeathCause.WallCollision;
+            }
+        }
+        else if (_currentStep >= MaxSteps && CauseOfDeath == DeathCause.None)
+        {
+            CauseOfDeath = DeathCause.Timeout;
+        }
+
+        return _lastReward;
     }
 
     public bool IsTerminal()
