@@ -52,6 +52,7 @@ public static class CorridorHyperparameterSweep
     {
         var configs = new List<ConfigToTest>();
 
+        // Baseline population configurations
         configs.Add(new ConfigToTest
         {
             Description = "Small Pop (10x40=400, E=1, P=0.2, T=4)",
@@ -90,6 +91,75 @@ public static class CorridorHyperparameterSweep
             Elites = 1,
             ParentPoolPercentage = 0.2f,
             TournamentSize = 4
+        });
+
+        // Mutation rate variations (using Medium Pop as baseline)
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + High Jitter (WJ=0.99, SD=0.5)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            WeightJitter = 0.99f,
+            WeightJitterStdDev = 0.5f
+        });
+
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + Low Jitter (WJ=0.8, SD=0.15)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            WeightJitter = 0.8f,
+            WeightJitterStdDev = 0.15f
+        });
+
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + High Reset (WR=0.2)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            WeightReset = 0.2f
+        });
+
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + Low Reset (WR=0.05)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            WeightReset = 0.05f
+        });
+
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + High ActSwap (AS=0.05)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            ActivationSwap = 0.05f
+        });
+
+        configs.Add(new ConfigToTest
+        {
+            Description = "Med Pop + No ActSwap (AS=0.0)",
+            SpeciesCount = 20,
+            IndividualsPerSpecies = 40,
+            Elites = 1,
+            ParentPoolPercentage = 0.2f,
+            TournamentSize = 4,
+            ActivationSwap = 0.0f
         });
 
         return configs;
@@ -154,7 +224,14 @@ public static class CorridorHyperparameterSweep
             Elites = config.Elites,
             TournamentSize = config.TournamentSize,
             ParentPoolPercentage = config.ParentPoolPercentage,
-            MinSpeciesCount = config.SpeciesCount // Disable species culling/diversification
+            MinSpeciesCount = config.SpeciesCount, // Disable species culling/diversification
+            MutationRates = new MutationRates
+            {
+                WeightJitter = config.WeightJitter,
+                WeightJitterStdDev = config.WeightJitterStdDev,
+                WeightReset = config.WeightReset,
+                ActivationSwap = config.ActivationSwap
+            }
         };
 
         var evolver = new Evolver(seed: seed);
@@ -344,6 +421,12 @@ public static class CorridorHyperparameterSweep
         public int Elites { get; set; }
         public float ParentPoolPercentage { get; set; }
         public int TournamentSize { get; set; }
+
+        // Mutation parameters
+        public float WeightJitter { get; set; } = 0.95f;
+        public float WeightJitterStdDev { get; set; } = 0.3f;
+        public float WeightReset { get; set; } = 0.1f;
+        public float ActivationSwap { get; set; } = 0.01f;
     }
 
     private class SweepResult
