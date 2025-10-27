@@ -186,16 +186,11 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_ChangesActivation()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 3, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0,
-                (1u << (int)ActivationType.ReLU) | (1u << (int)ActivationType.Tanh),
-                (1u << (int)ActivationType.Linear)
-            }
-        };
+        var spec = new SpeciesBuilder()
+            .AddBiasRow()
+            .AddHiddenRow(3, ActivationType.ReLU, ActivationType.Tanh)
+            .AddOutputRow(2, ActivationType.Linear)
+            .Build();
 
         var individual = new Individual(5, 6);
         individual.Activations[1] = ActivationType.ReLU; // Input node
@@ -226,16 +221,11 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_RespectsAllowedActivations()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0,
-                (1u << (int)ActivationType.Linear), // Only Linear allowed
-                (1u << (int)ActivationType.Tanh)    // Only Tanh allowed
-            }
-        };
+        var spec = new SpeciesBuilder()
+            .AddBiasRow()
+            .AddHiddenRow(2, ActivationType.Linear)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .Build();
 
         var individual = new Individual(5, 5);
         var random = new Random(42);
@@ -253,16 +243,11 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_UpdatesNodeParameters()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 1 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0,
-                (1u << (int)ActivationType.LeakyReLU) | (1u << (int)ActivationType.ReLU),
-                (1u << (int)ActivationType.Linear)
-            }
-        };
+        var spec = new SpeciesBuilder()
+            .AddBiasRow()
+            .AddHiddenRow(2, ActivationType.LeakyReLU, ActivationType.ReLU)
+            .AddOutputRow(1, ActivationType.Linear)
+            .Build();
 
         var individual = new Individual(5, 4);
         individual.Activations[1] = ActivationType.ReLU; // No params needed
@@ -287,11 +272,10 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_SkipsBiasNode()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 }
-        };
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .Build();
 
         var individual = new Individual(5, 4);
         individual.Activations[0] = ActivationType.Linear;
@@ -419,11 +403,10 @@ public class MutationOperatorTests
     [Fact]
     public void InitializeWeights_FillsAllWeights()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 3, 2 },
-            MaxInDegree = 6
-        };
+        var spec = new SpeciesBuilder()
+            .AddInputRow(3)
+            .AddOutputRow(2)
+            .Build();
 
         var individual = new Individual(10, 6);
         var random = new Random(42);
@@ -446,12 +429,10 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_AppliesMultipleOperators()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 4, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 6
-        };
+        var spec = new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .Build();
 
         var individual = new Individual(15, 8);
         for (int i = 0; i < individual.Weights.Length; i++)
@@ -480,12 +461,10 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_RespectsZeroProbabilities()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 4, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 6
-        };
+        var spec = new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .Build();
 
         var individual = new Individual(15, 8);
         for (int i = 0; i < individual.Weights.Length; i++)
@@ -515,12 +494,10 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_DeterministicWithSameSeed()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 4, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 6
-        };
+        var spec = new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .Build();
 
         var config = new MutationConfig();
 

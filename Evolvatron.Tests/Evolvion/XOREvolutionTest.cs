@@ -124,38 +124,14 @@ public class XOREvolutionTest
 
     private SpeciesSpec CreateXORTopology()
     {
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 4, 1 }, // Bias, 2 inputs, 4 hidden, 1 output
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b11111111111, // Bias: all activations
-                0b11111111111, // Inputs: all activations
-                0b11111111111, // Hidden: all activations
-                0b00000000011  // Output: Linear or Tanh only
-            },
-            MaxInDegree = 8,
-            Edges = new List<(int, int)>()
-        };
-
-        // Fully connect: bias + inputs -> hidden
-        for (int src = 0; src < 3; src++) // Indices 0-2 (bias + 2 inputs)
-        {
-            for (int dst = 3; dst < 7; dst++) // Indices 3-6 (4 hidden nodes)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        // Fully connect: hidden -> output
-        for (int src = 3; src < 7; src++) // Indices 3-6 (4 hidden nodes)
-        {
-            topology.Edges.Add((src, 7)); // Index 7 (output node)
-        }
-
-        // Build row plans for evaluation
-        topology.BuildRowPlans();
-
-        return topology;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .WithMaxInDegree(8)
+            .Build();
     }
 }

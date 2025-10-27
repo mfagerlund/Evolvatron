@@ -54,18 +54,13 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_PassThroughNetwork_ProducesCorrectOutput()
     {
-        // Create simple pass-through: input -> output (with bias)
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 2 }, // bias, 2 inputs, 2 outputs
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (1, 3), // input[0] -> output[0]
-                (2, 4)  // input[1] -> output[1]
-            }
-        };
-        spec.BuildRowPlans();
+        // Create simple pass-through: input -> output
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .AddEdge(0, 2)
+            .AddEdge(1, 3)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
 
@@ -74,8 +69,8 @@ public class CPUEvaluatorTests
         individual.Weights[1] = 1.0f;
 
         // Use linear activation for outputs
+        individual.Activations[2] = ActivationType.Linear;
         individual.Activations[3] = ActivationType.Linear;
-        individual.Activations[4] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
         var inputs = new float[] { 0.5f, 0.8f };
@@ -88,16 +83,11 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_PassThroughWithWeights_ScalesCorrectly()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 1 }, // bias, 1 input, 1 output
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (1, 2) // input -> output
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(1, 2)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = 2.5f; // Scale by 2.5
@@ -116,16 +106,11 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_BiasNode_AlwaysOutputsOne()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (0, 2) // bias -> output
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddOutputRow(1, ActivationType.Linear)
+            .AddEdge(0, 2)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = 3.0f;
@@ -146,19 +131,15 @@ public class CPUEvaluatorTests
     public void CPUEvaluator_TwoLayerNetwork_ComputesCorrectly()
     {
         // Network: input -> hidden -> output
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 2, 1 }, // bias, input, 2 hidden, output
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (1, 2), // input -> hidden[0]
-                (1, 3), // input -> hidden[1]
-                (2, 4), // hidden[0] -> output
-                (3, 4)  // hidden[1] -> output
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddHiddenRow(2, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(1, 2)
+            .AddEdge(1, 3)
+            .AddEdge(2, 4)
+            .AddEdge(3, 4)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
 
@@ -185,23 +166,20 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_MultipleInputsToSameNode_AccumulatesCorrectly()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 1 }, // bias, 2 inputs, 1 output
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (0, 3), // bias -> output
-                (1, 3), // input[0] -> output
-                (2, 3)  // input[1] -> output
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(1, ActivationType.Linear)
+            .AddEdge(0, 3)  // bias -> output
+            .AddEdge(1, 3)  // input[0] -> output
+            .AddEdge(2, 3)  // input[1] -> output
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
-        individual.Weights[0] = 0.5f;  // bias weight
-        individual.Weights[1] = 2.0f;  // input[0] weight
-        individual.Weights[2] = 3.0f;  // input[1] weight
+        // After BuildRowPlans, edges are sorted by destination, then source
+        // All edges go to node 3, so they're sorted by source: 0, 1, 2
+        individual.Weights[0] = 0.5f;  // bias weight (edge 0->3)
+        individual.Weights[1] = 2.0f;  // input[0] weight (edge 1->3)
+        individual.Weights[2] = 3.0f;  // input[1] weight (edge 2->3)
         individual.Activations[3] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
@@ -218,13 +196,11 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_ReLUActivation_ClipsNegative()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)> { (1, 2) }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(1, 2)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = -2.0f; // Negative weight
@@ -240,13 +216,11 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_TanhActivation_BoundsOutput()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)> { (1, 2) }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(1, 2)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = 100.0f; // Very large weight
@@ -263,13 +237,11 @@ public class CPUEvaluatorTests
     [Fact]
     public void CPUEvaluator_LeakyReLUWithParameters_UsesAlpha()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 1, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)> { (1, 2) }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(1)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(1, 2)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = -1.0f;
@@ -292,22 +264,14 @@ public class CPUEvaluatorTests
     {
         // Test that a complex multi-layer network can be evaluated
         // Architecture: 2 inputs, 2 hidden (ReLU), 1 output (Tanh)
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 2, 1 }, // bias, input, hidden, output
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                // Bias to hidden
-                (0, 3), (0, 4),
-                // Inputs to hidden
-                (1, 3), (2, 3),
-                (1, 4), (2, 4),
-                // Hidden to output
-                (3, 5), (4, 5)
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(2, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .ConnectBiasToAll()
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         var random = new Random(42);
@@ -399,17 +363,12 @@ public class CPUEvaluatorTests
 
     private static SpeciesSpec CreateSimpleSpec()
     {
-        return new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 3 }, // bias, 2 inputs, 3 outputs
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (0, 3), (0, 4), (0, 5), // bias to all outputs
-                (1, 3), (1, 4), (1, 5), // input[0] to all outputs
-                (2, 3), (2, 4), (2, 5)  // input[1] to all outputs
-            }
-        };
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .ConnectBiasToAll()
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .Build();
     }
 
     private static void InitializeRandomIndividual(Individual individual, Random random)

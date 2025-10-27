@@ -144,37 +144,14 @@ public class SimpleCorridorEvolutionTest
         // 9 inputs (9 distance sensors)
         // 12 hidden neurons (more capacity than CartPole due to higher dimensionality)
         // 2 outputs (steering, throttle)
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 9, 12, 2 }, // Bias, 9 inputs, 12 hidden, 2 outputs
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b11111111111, // Bias: all activations
-                0b11111111111, // Inputs: all activations
-                0b11111111111, // Hidden: all activations
-                0b00000000011  // Output: Linear or Tanh only (for bounded control)
-            },
-            MaxInDegree = 12,
-            Edges = new List<(int, int)>()
-        };
-
-        // Fully connect: bias + inputs -> hidden
-        for (int src = 0; src < 10; src++) // 0=bias, 1-9=inputs
-        {
-            for (int dst = 10; dst < 22; dst++) // 10-21=hidden (12 nodes)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        // Fully connect: hidden -> outputs
-        for (int src = 10; src < 22; src++) // 10-21=hidden
-        {
-            topology.Edges.Add((src, 22)); // 22=steering
-            topology.Edges.Add((src, 23)); // 23=throttle
-        }
-
-        topology.BuildRowPlans();
-        return topology;
+        return new SpeciesBuilder()
+            .AddInputRow(9)
+            .AddHiddenRow(12, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .WithMaxInDegree(12)
+            .Build();
     }
 }

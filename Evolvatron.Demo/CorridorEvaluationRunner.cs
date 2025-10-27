@@ -291,35 +291,14 @@ public class CorridorEvaluationRunner
 
     public static SpeciesSpec CreateCorridorTopology()
     {
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 9, 12, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b00000000001,
-                0b11111111111,
-                0b11111111111,
-                0b00000000011
-            },
-            MaxInDegree = 12,
-            Edges = new List<(int, int)>()
-        };
-
-        for (int src = 0; src < 10; src++)
-        {
-            for (int dst = 10; dst < 22; dst++)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        for (int src = 10; src < 22; src++)
-        {
-            topology.Edges.Add((src, 22));
-            topology.Edges.Add((src, 23));
-        }
-
-        topology.BuildRowPlans();
-        return topology;
+        return new SpeciesBuilder()
+            .AddInputRow(9)
+            .AddHiddenRow(12, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .WithMaxInDegree(12)
+            .Build();
     }
 }

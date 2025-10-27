@@ -12,6 +12,12 @@ public struct Individual
     public float[] Weights;
 
     /// <summary>
+    /// Per-node bias values (length = number of nodes)
+    /// Each node has its own independent bias
+    /// </summary>
+    public float[] Biases;
+
+    /// <summary>
     /// Per-node activation parameters (length = number of nodes × 4)
     /// Only first N params used per node based on activation type
     /// </summary>
@@ -44,6 +50,7 @@ public struct Individual
     public Individual(int edgeCount, int nodeCount)
     {
         Weights = new float[edgeCount];
+        Biases = new float[nodeCount];
         NodeParams = new float[nodeCount * 4];
         Activations = new ActivationType[nodeCount];
         ActiveNodes = new bool[nodeCount];
@@ -57,6 +64,7 @@ public struct Individual
     public Individual(Individual other)
     {
         Weights = other.Weights != null ? (float[])other.Weights.Clone() : Array.Empty<float>();
+        Biases = other.Biases != null ? (float[])other.Biases.Clone() : Array.Empty<float>();
         NodeParams = other.NodeParams != null ? (float[])other.NodeParams.Clone() : Array.Empty<float>();
         Activations = other.Activations != null ? (ActivationType[])other.Activations.Clone() : Array.Empty<ActivationType>();
         ActiveNodes = other.ActiveNodes != null ? (bool[])other.ActiveNodes.Clone() : null;

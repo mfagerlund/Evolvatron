@@ -22,7 +22,7 @@ public class CPUEvaluator
     public ReadOnlySpan<float> Evaluate(Individual individual, ReadOnlySpan<float> inputs)
     {
         // Validate inputs
-        int inputRowSize = _spec.RowCounts[1]; // Row 1 is input layer
+        int inputRowSize = _spec.RowCounts[0]; // Row 0 is input layer
         if (inputs.Length != inputRowSize)
         {
             throw new ArgumentException(
@@ -32,18 +32,15 @@ public class CPUEvaluator
         // Clear node values
         Array.Fill(_nodeValues, 0.0f);
 
-        // Row 0: Bias (always 1.0)
-        _nodeValues[0] = 1.0f;
-
-        // Row 1: Copy input values
-        RowPlan inputPlan = _spec.RowPlans[1];
+        // Row 0: Copy input values
+        RowPlan inputPlan = _spec.RowPlans[0];
         for (int i = 0; i < inputRowSize; i++)
         {
             _nodeValues[inputPlan.NodeStart + i] = inputs[i];
         }
 
-        // Evaluate remaining rows (2 onwards)
-        for (int rowIdx = 2; rowIdx < _spec.RowPlans.Length; rowIdx++)
+        // Evaluate remaining rows (1 onwards)
+        for (int rowIdx = 1; rowIdx < _spec.RowPlans.Length; rowIdx++)
         {
             EvaluateRow(rowIdx, individual);
         }
@@ -74,6 +71,13 @@ public class CPUEvaluator
             float sourceValue = _nodeValues[source];
 
             _nodeValues[dest] += weight * sourceValue;
+        }
+
+        // Add intrinsic biases to each node
+        for (int i = 0; i < plan.NodeCount; i++)
+        {
+            int nodeIdx = plan.NodeStart + i;
+            _nodeValues[nodeIdx] += individual.Biases[nodeIdx];
         }
 
         // Apply activations

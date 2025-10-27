@@ -9,8 +9,8 @@ namespace Evolvatron.Demo;
 public static class CorridorHyperparameterSweep
 {
     private const int MaxTimeoutSeconds = 900; // 15 minutes
-    private const int SeedsPerConfig = 1; // Just 1 seed to test
-    private const float SolvedThreshold = 0.9f; // 90% completion (matches demo EXACTLY)
+    private const int SeedsPerConfig = 3; // Multiple seeds for statistical validity
+    private const float SolvedThreshold = 1.0f; // 100% completion - must finish!
     private const int MaxStepsForSuccess = 1000; // Very generous step limit
 
     public static void Run()
@@ -149,7 +149,7 @@ public static class CorridorHyperparameterSweep
             TournamentSize = config.TournamentSize,
             ParentPoolPercentage = config.ParentPoolPercentage,
             MinSpeciesCount = 4,
-            EvolutionSeed = 42,
+            EvolutionSeed = seed,
             MaxGenerations = MaxStepsForSuccess,
             SolvedThreshold = SolvedThreshold,
             MaxTimeoutMs = MaxTimeoutSeconds * 1000,

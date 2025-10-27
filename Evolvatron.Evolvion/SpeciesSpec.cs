@@ -7,8 +7,8 @@ namespace Evolvatron.Evolvion;
 public class SpeciesSpec
 {
     /// <summary>
-    /// Number of nodes per row (includes bias row at index 0)
-    /// Example: [1, 6, 8, 6, 3] = bias(1), input(6), hidden(8), hidden(6), output(3)
+    /// Number of nodes per row
+    /// Example: [6, 8, 6, 3] = input(6), hidden(8), hidden(6), output(3)
     /// </summary>
     public int[] RowCounts { get; set; } = Array.Empty<int>();
 
@@ -45,7 +45,7 @@ public class SpeciesSpec
     public int TotalEdges => Edges.Count;
 
     /// <summary>
-    /// Number of rows (including bias row at index 0)
+    /// Number of rows
     /// </summary>
     public int RowCount => RowCounts.Length;
 
@@ -83,9 +83,6 @@ public class SpeciesSpec
     {
         if (RowCounts.Length == 0)
             throw new InvalidOperationException("RowCounts must not be empty");
-
-        if (RowCounts[0] != 1)
-            throw new InvalidOperationException("Row 0 (bias) must have exactly 1 node");
 
         if (RowCounts.Any(c => c <= 0))
             throw new InvalidOperationException("All row counts must be positive");

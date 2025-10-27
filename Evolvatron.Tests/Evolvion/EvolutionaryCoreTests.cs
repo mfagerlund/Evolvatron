@@ -536,38 +536,14 @@ public class EvolutionaryCoreTests
     private SpeciesSpec CreateSimpleTopology()
     {
         // Simple 3-layer network: 1 bias, 2 inputs, 4 hidden, 2 outputs
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 4, 2 },
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b11111111111, // Bias: all activations
-                0b11111111111, // Inputs: all activations
-                0b11111111111, // Hidden: all activations
-                0b00000000011  // Outputs: Linear, Tanh only
-            },
-            MaxInDegree = 6,
-            Edges = new List<(int, int)>()
-        };
-
-        // Add some edges (fully connect layers)
-        for (int src = 0; src < 3; src++) // Bias + inputs
-        {
-            for (int dst = 3; dst < 7; dst++) // Hidden layer
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        for (int src = 3; src < 7; src++) // Hidden layer
-        {
-            for (int dst = 7; dst < 9; dst++) // Output layer
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        return topology;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .Build();
     }
 
     private Individual CreateTestIndividual(SpeciesSpec topology, float fitness)

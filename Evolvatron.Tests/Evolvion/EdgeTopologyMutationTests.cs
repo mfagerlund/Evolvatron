@@ -78,18 +78,13 @@ public class EdgeTopologyMutationTests
     [Fact]
     public void EdgeAdd_RespectsMaxInDegree()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 2,
-            Edges = new List<(int, int)>
-            {
-                (0, 3), // bias -> output
-                (1, 3)  // input[0] -> output (in-degree = 2, at max)
-            }
-        };
-        spec.BuildRowPlans();
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(0, 3)
+            .AddEdge(1, 3)
+            .WithMaxInDegree(2)
+            .Build();
 
         var random = new Random(42);
 
@@ -567,76 +562,60 @@ public class EdgeTopologyMutationTests
 
     private static SpeciesSpec CreateSimpleSpec()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 6,
-            Edges = new List<(int, int)>
-            {
-                (0, 3), (0, 4),
-                (1, 3), (2, 4)
-            }
-        };
-        spec.BuildRowPlans();
-        return spec;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .AddEdge(0, 3)
+            .AddEdge(0, 4)
+            .AddEdge(1, 3)
+            .AddEdge(2, 4)
+            .Build();
     }
 
     private static SpeciesSpec CreateSimpleConnectedSpec()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 3 },
-            MaxInDegree = 6,
-            Edges = new List<(int, int)>
-            {
-                (0, 3), // bias -> output
-                (1, 3), // input0 -> output
-                (2, 3)  // input1 -> output
-            }
-        };
-        spec.BuildRowPlans();
-        return spec;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .ConnectBiasToAll()
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .Build();
     }
 
     private static SpeciesSpec CreateWellConnectedSpec()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 4, 2 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            MaxInDegree = 8,
-            Edges = new List<(int, int)>
-            {
-                // Bias to hidden
-                (0, 3), (0, 4), (0, 5), (0, 6),
-                // Inputs to hidden
-                (1, 3), (1, 4), (2, 5), (2, 6),
-                // Hidden to output
-                (3, 7), (4, 7), (5, 8), (6, 8)
-            }
-        };
-        spec.BuildRowPlans();
-        return spec;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .ConnectBiasToAll()
+            .AddEdge(1, 3)
+            .AddEdge(1, 4)
+            .AddEdge(2, 5)
+            .AddEdge(2, 6)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .WithMaxInDegree(8)
+            .Build();
     }
 
     private static SpeciesSpec CreateDeepSpec()
     {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 2, 3, 3, 1 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            MaxInDegree = 8,
-            Edges = new List<(int, int)>
-            {
-                (0, 3), (1, 3), (2, 4),
-                (3, 6), (4, 7), (5, 8),
-                (6, 9), (7, 9), (8, 9)
-            }
-        };
-        spec.BuildRowPlans();
-        return spec;
+        return new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(3, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddHiddenRow(3, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .AddEdge(0, 3)
+            .AddEdge(1, 3)
+            .AddEdge(2, 4)
+            .AddEdge(3, 6)
+            .AddEdge(4, 7)
+            .AddEdge(5, 8)
+            .AddEdge(6, 9)
+            .AddEdge(7, 9)
+            .AddEdge(8, 9)
+            .WithMaxInDegree(8)
+            .Build();
     }
 
     #endregion

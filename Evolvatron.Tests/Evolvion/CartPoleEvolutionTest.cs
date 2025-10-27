@@ -133,36 +133,14 @@ public class CartPoleEvolutionTest
         // 4 inputs (cart_pos, cart_vel, pole_angle, pole_angular_vel)
         // 8 hidden neurons (more capacity than XOR)
         // 1 output (force)
-        var topology = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 4, 8, 1 }, // Bias, 4 inputs, 8 hidden, 1 output
-            AllowedActivationsPerRow = new uint[]
-            {
-                0b11111111111, // Bias: all activations
-                0b11111111111, // Inputs: all activations
-                0b11111111111, // Hidden: all activations
-                0b00000000011  // Output: Linear or Tanh only
-            },
-            MaxInDegree = 8,
-            Edges = new List<(int, int)>()
-        };
-
-        // Fully connect: bias + inputs -> hidden
-        for (int src = 0; src < 5; src++) // 0=bias, 1-4=inputs
-        {
-            for (int dst = 5; dst < 13; dst++) // 5-12=hidden (8 nodes)
-            {
-                topology.Edges.Add((src, dst));
-            }
-        }
-
-        // Fully connect: hidden -> output
-        for (int src = 5; src < 13; src++) // 5-12=hidden
-        {
-            topology.Edges.Add((src, 13)); // 13=output
-        }
-
-        topology.BuildRowPlans();
-        return topology;
+        return new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddHiddenRow(8, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 2, toRow: 3)
+            .WithMaxInDegree(8)
+            .Build();
     }
 }
