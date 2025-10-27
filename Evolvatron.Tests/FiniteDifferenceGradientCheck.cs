@@ -34,10 +34,10 @@ public class FiniteDifferenceGradientCheck
         float denom = uu * vv + 1e-12f;
 
         // Analytical gradients: ∂θ/∂u and ∂θ/∂v
-        float dθ_du_x_analytical = (c * (-vy) - s * vx) / denom;
-        float dθ_du_y_analytical = (c * ( vx) - s * vy) / denom;
+        float dθ_du_x_analytical = (c * vy - s * vx) / denom;
+        float dθ_du_y_analytical = (-c * vx - s * vy) / denom;
         float dθ_dv_x_analytical = (c * (-uy) - s * ux) / denom;
-        float dθ_dv_y_analytical = (c * ( ux) - s * uy) / denom;
+        float dθ_dv_y_analytical = (c * ux - s * uy) / denom;
 
         // Compute numerical gradients via finite differences (DON'T wrap!)
         var (dθ_du_x_numerical, dθ_du_y_numerical, dθ_dv_x_numerical, dθ_dv_y_numerical) =
@@ -125,10 +125,10 @@ public class FiniteDifferenceGradientCheck
             float s = unx * vny - uny * vnx;
             float denom = uu * vv + 1e-12f;
 
-            float dθ_du_x_analytical = (c * (-vny) - s * vnx) / denom;
-            float dθ_du_y_analytical = (c * ( vnx) - s * vny) / denom;
+            float dθ_du_x_analytical = (c * vny - s * vnx) / denom;
+            float dθ_du_y_analytical = (-c * vnx - s * vny) / denom;
             float dθ_dv_x_analytical = (c * (-uny) - s * unx) / denom;
-            float dθ_dv_y_analytical = (c * ( unx) - s * uny) / denom;
+            float dθ_dv_y_analytical = (c * unx - s * uny) / denom;
 
             var (dθ_du_x_numerical, dθ_du_y_numerical, dθ_dv_x_numerical, dθ_dv_y_numerical) =
                 FD_AngleGrads(unx, uny, vnx, vny, Eps);
@@ -147,23 +147,25 @@ public class FiniteDifferenceGradientCheck
     private static (float dθdux, float dθduy, float dθdvx, float dθdvy) FD_AngleGrads(
         float ux, float uy, float vx, float vy, float eps)
     {
-        // Raw angle function (NO wrapping!)
-        float Theta(float ax, float ay, float bx, float by)
+        double uxD = ux;
+        double uyD = uy;
+        double vxD = vx;
+        double vyD = vy;
+        double epsD = eps;
+
+        static double Theta(double ax, double ay, double bx, double by)
         {
-            float c = ax * bx + ay * by;  // dot
-            float s = ax * by - ay * bx;  // cross
-            return MathF.Atan2(s, c);
+            double c = ax * bx + ay * by;  // dot
+            double s = ax * by - ay * bx;  // cross
+            return Math.Atan2(s, c);
         }
 
-        float θ = Theta(ux, uy, vx, vy);
+        double thetaUx = (Theta(uxD + epsD, uyD, vxD, vyD) - Theta(uxD - epsD, uyD, vxD, vyD)) / (2.0 * epsD);
+        double thetaUy = (Theta(uxD, uyD + epsD, vxD, vyD) - Theta(uxD, uyD - epsD, vxD, vyD)) / (2.0 * epsD);
+        double thetaVx = (Theta(uxD, uyD, vxD + epsD, vyD) - Theta(uxD, uyD, vxD - epsD, vyD)) / (2.0 * epsD);
+        double thetaVy = (Theta(uxD, uyD, vxD, vyD + epsD) - Theta(uxD, uyD, vxD, vyD - epsD)) / (2.0 * epsD);
 
-        // Central differences for better accuracy
-        float θux = (Theta(ux + eps, uy, vx, vy) - Theta(ux - eps, uy, vx, vy)) / (2f * eps);
-        float θuy = (Theta(ux, uy + eps, vx, vy) - Theta(ux, uy - eps, vx, vy)) / (2f * eps);
-        float θvx = (Theta(ux, uy, vx + eps, vy) - Theta(ux, uy, vx - eps, vy)) / (2f * eps);
-        float θvy = (Theta(ux, uy, vx, vy + eps) - Theta(ux, uy, vx, vy - eps)) / (2f * eps);
-
-        return (θux, θuy, θvx, θvy);
+        return ((float)thetaUx, (float)thetaUy, (float)thetaVx, (float)thetaVy);
     }
 
     /// <summary>

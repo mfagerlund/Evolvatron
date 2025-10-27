@@ -15,8 +15,28 @@ public static class GraphicalDemo
     private const int ScreenHeight = 720;
     private const float MetersToPixels = 40f; // 40 pixels = 1 meter
 
+    // Scene registry - add new scenes here!
+    private static readonly (string Name, Action<WorldState, List<int>, List<int>> BuildFunc)[] Scenes =
+    {
+        ("Capsule Test", (w, _, _) => BuildSceneCapsuleTest(w)),
+        ("Rigid Bodies", (w, _, _) => BuildSceneRigidBodies(w)),
+        ("RB Rain", (w, _, _) => BuildSceneFallingStick(w)),
+        ("Pendulum", (w, _, _) => BuildScenePendulum(w)),
+        ("Mixed", (w, _, _) => BuildSceneMixed(w)),
+        ("RB Rocket+Joints", (w, _, _) => BuildSceneRigidBodyRocket(w)),
+        ("Particle Grid (Cloth)", (w, _, _) => BuildSceneParticleGrid(w)),
+        ("Slithering Snakes", (w, a, d) => BuildSceneParticleBoxes(w, a, d)),
+        ("Angle Constraints (30 L-Shapes)", (w, _, _) => BuildSceneAngleConstraints(w)),
+        ("Soft Polygons (Variable Stiffness)", (w, _, _) => BuildSceneSoftPolygons(w))
+    };
+
+    private static int SceneCount => Scenes.Length;
+
     public static void Run()
     {
+        // Suppress Raylib info spam (only show warnings/errors)
+        Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
+
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "Evolvatron - Physics Simulation");
         Raylib.SetTargetFPS(60);
 
@@ -34,7 +54,8 @@ public static class GraphicalDemo
             MotorCompliance = 1e-6f,
             FrictionMu = 0.6f,
             VelocityStabilizationBeta = 1.0f,
-            GlobalDamping = 0.05f  // Normal damping - friction now works properly
+            GlobalDamping = 0.05f,  // Normal damping - friction now works properly
+            AngularDamping = 0.1f   // Default angular damping
         };
 
         var stepper = new CPUStepper();
@@ -55,6 +76,7 @@ public static class GraphicalDemo
 
         // Build initial scene
         BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
+        ApplySceneConfigOverrides(config, sceneIndex);
 
         while (!Raylib.WindowShouldClose())
         {
@@ -71,26 +93,29 @@ public static class GraphicalDemo
                 angleConstraintParticles.Clear();
                 diagonalBracingParticles.Clear();
                 BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
+                ApplySceneConfigOverrides(config, sceneIndex);
                 simTime = 0f;
             }
 
             if (Raylib.IsKeyPressed(KeyboardKey.Right))
             {
-                sceneIndex = (sceneIndex + 1) % 8;  // Updated to 8 scenes
+                sceneIndex = (sceneIndex + 1) % SceneCount;
                 world.Clear();
                 angleConstraintParticles.Clear();
                 diagonalBracingParticles.Clear();
                 BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
+                ApplySceneConfigOverrides(config, sceneIndex);
                 simTime = 0f;
             }
 
             if (Raylib.IsKeyPressed(KeyboardKey.Left))
             {
-                sceneIndex = (sceneIndex - 1 + 8) % 8;  // Updated to 8 scenes
+                sceneIndex = (sceneIndex - 1 + SceneCount) % SceneCount;
                 world.Clear();
                 angleConstraintParticles.Clear();
                 diagonalBracingParticles.Clear();
                 BuildScene(world, sceneIndex, angleConstraintParticles, diagonalBracingParticles);
+                ApplySceneConfigOverrides(config, sceneIndex);
                 simTime = 0f;
             }
 
@@ -203,31 +228,25 @@ public static class GraphicalDemo
 
     private static void BuildScene(WorldState world, int index, List<int> angleConstraintParticles, List<int> diagonalBracingParticles)
     {
-        switch (index)
+        if (index >= 0 && index < Scenes.Length)
         {
-            case 0:
-                BuildSceneCapsuleTest(world);
-                break;
-            case 1:
-                BuildSceneRigidBodies(world);
-                break;
-            case 2:
-                BuildSceneFallingStick(world);
-                break;
-            case 3:
-                BuildScenePendulum(world);
-                break;
-            case 4:
-                BuildSceneMixed(world);
-                break;
-            case 5:
-                BuildSceneRigidBodyRocket(world);
-                break;
-            case 6:
-                BuildSceneParticleGrid(world);
-                break;
-            case 7:
-                BuildSceneParticleBoxes(world, angleConstraintParticles, diagonalBracingParticles);
+            Scenes[index].BuildFunc(world, angleConstraintParticles, diagonalBracingParticles);
+        }
+    }
+
+    private static void ApplySceneConfigOverrides(SimulationConfig config, int sceneIndex)
+    {
+        // Reset to defaults first
+        config.GlobalDamping = 0.05f;
+        config.AngularDamping = 0.1f;
+        config.XpbdIterations = 12;
+
+        // Apply scene-specific overrides
+        switch (sceneIndex)
+        {
+            case 9: // Soft Polygons
+                config.AngularDamping = 0.8f;
+                config.XpbdIterations = 20;
                 break;
         }
     }
@@ -1146,11 +1165,11 @@ public static class GraphicalDemo
 
     private static void DrawUI(WorldState world, float simTime, bool paused, int sceneIndex, float zoom)
     {
-        string[] sceneNames = { "Capsule Test", "Rigid Bodies", "RB Rain", "Pendulum", "Mixed", "RB Rocket+Joints", "Particle Grid (Cloth)", "Slithering Snakes (Virtual Particles)" };
+        string sceneName = (sceneIndex >= 0 && sceneIndex < Scenes.Length) ? Scenes[sceneIndex].Name : "Unknown";
 
         Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 10, 20, Color.Green);
         Raylib.DrawText($"Time: {simTime:F2}s", 10, 35, 20, Color.Green);
-        Raylib.DrawText($"Scene: {sceneNames[sceneIndex]} ({sceneIndex + 1}/8)", 10, 60, 20, Color.Green);
+        Raylib.DrawText($"Scene: {sceneName} ({sceneIndex + 1}/{SceneCount})", 10, 60, 20, Color.Green);
         Raylib.DrawText($"Particles: {world.ParticleCount}, Rigid Bodies: {world.RigidBodies.Count}", 10, 85, 20, Color.Green);
         Raylib.DrawText($"Zoom: {zoom:F1}x", 10, 110, 20, Color.Green);
 
@@ -1176,5 +1195,181 @@ public static class GraphicalDemo
         Raylib.DrawText("  LEFT/RIGHT - Change Scene", 10, y + 85, 18, Color.LightGray);
         Raylib.DrawText("  WASD - Pan Camera", 10, y + 105, 18, Color.LightGray);
         Raylib.DrawText("  MOUSE WHEEL - Zoom", 10, y + 125, 18, Color.LightGray);
+    }
+
+    private static void BuildSceneAngleConstraints(WorldState world)
+    {
+        // ANGLE CONSTRAINT STRESS TEST - 30 L-shapes with various angles
+        // Every 3rd shape: 90° angle (perfectly stable)
+        // Others: Random 30-150° angles (stress test for solver)
+        var random = new Random(42);
+
+        // Ground platform
+        world.Obbs.Add(OBBCollider.AxisAligned(0f, -8f, 30f, 0.5f));
+
+        // Spawn 30 L-shapes in 3 rows of 10
+        int shapesPerRow = 10;
+        int rows = 3;
+        float spacing = 2.5f;
+        float startX = -(shapesPerRow - 1) * spacing / 2f;
+        float startY = 5f;
+
+        int shapeIndex = 0;
+        for (int row = 0; row < rows; row++)
+        {
+            for (int col = 0; col < shapesPerRow; col++)
+            {
+                float x = startX + col * spacing;
+                float y = startY + row * 4f;
+
+                // Every 3rd shape gets 90°, others get random angles
+                float angleDegrees = (shapeIndex % 3 == 0) ? 90f : 30f + (float)random.NextDouble() * 120f;
+                float angleRadians = angleDegrees * MathF.PI / 180f;
+
+                // Random initial rotation
+                float rotationRadians = (float)random.NextDouble() * MathF.PI * 2f;
+
+                CreateLShapeForScene(world, x, y, angleRadians, rotationRadians);
+                shapeIndex++;
+            }
+        }
+    }
+
+    private static void CreateLShapeForScene(WorldState world, float centerX, float centerY, float targetAngle, float rotation)
+    {
+        float armLength = 0.8f;
+        float mass = 1f;
+        float radius = 0.05f;
+
+        // Create L-shape: p0 (left), p1 (vertex), p2 (angled from p0)
+        // The angle constraint measures angle from edge (i→j) to edge (j→k)
+        // So u = (p0 - p1) points LEFT (π radians)
+        // And v = (p2 - p1) should be at angle (π + targetAngle) to give correct angle
+        float p0x = -armLength;
+        float p0y = 0f;
+
+        float p1x = 0f;
+        float p1y = 0f;
+
+        // Place p2 at angle (π + targetAngle) from the positive X axis
+        float p2Angle = MathF.PI + targetAngle;
+        float p2x = armLength * MathF.Cos(p2Angle);
+        float p2y = armLength * MathF.Sin(p2Angle);
+
+        // Apply rotation
+        float cos = MathF.Cos(rotation);
+        float sin = MathF.Sin(rotation);
+
+        void RotateAndTranslate(ref float x, ref float y)
+        {
+            float rx = x * cos - y * sin;
+            float ry = x * sin + y * cos;
+            x = rx + centerX;
+            y = ry + centerY;
+        }
+
+        RotateAndTranslate(ref p0x, ref p0y);
+        RotateAndTranslate(ref p1x, ref p1y);
+        RotateAndTranslate(ref p2x, ref p2y);
+
+        // Add particles
+        int i0 = world.AddParticle(p0x, p0y, 0f, 0f, mass, radius);
+        int i1 = world.AddParticle(p1x, p1y, 0f, 0f, mass, radius);
+        int i2 = world.AddParticle(p2x, p2y, 0f, 0f, mass, radius);
+
+        // Add rods
+        world.Rods.Add(new Rod(i0, i1, armLength, 0f));
+        world.Rods.Add(new Rod(i1, i2, armLength, 0f));
+
+        // Add angle constraint
+        world.Angles.Add(new Angle(i0, i1, i2, targetAngle, 0f));
+    }
+
+    private static void BuildSceneSoftPolygons(WorldState world)
+    {
+        // SOFT POLYGON DEMO - Variable stiffness circular structures
+        // Shows how rod/angle compliance affects deformability
+        // Different polygon counts (5-10 sides) and different stiffnesses
+
+        // Ground
+        world.Obbs.Add(OBBCollider.AxisAligned(0f, -8f, 20f, 0.5f));
+
+        // Polygon configurations: (sides, radius, rodCompliance, angleCompliance, name)
+        var configs = new[]
+        {
+            (5, 1.0f, 0f, 0f, "Pentagon (Rigid)"),
+            (6, 1.2f, 0.0001f, 0.0001f, "Hexagon (Very Stiff)"),
+            (7, 1.0f, 0.001f, 0.001f, "Heptagon (Stiff)"),
+            (8, 1.2f, 0.01f, 0.01f, "Octagon (Medium)"),
+            (9, 1.0f, 0.1f, 0.1f, "Nonagon (Soft)"),
+            (10, 1.2f, 0.5f, 0.5f, "Decagon (Very Soft)")
+        };
+
+        // Spawn polygons in 2 rows
+        int perRow = 3;
+        float spacingX = 6f;
+        float spacingY = 6f;
+        float startX = -6f;
+        float startY = 8f;
+
+        for (int i = 0; i < configs.Length; i++)
+        {
+            int row = i / perRow;
+            int col = i % perRow;
+            float x = startX + col * spacingX;
+            float y = startY + row * spacingY;
+
+            var (sides, radius, rodComp, angleComp, name) = configs[i];
+            CreateSoftPolygon(world, x, y, sides, radius, rodComp, angleComp);
+        }
+
+        // Add some obstacles
+        world.Circles.Add(new CircleCollider(-5f, -3f, 0.8f));
+        world.Circles.Add(new CircleCollider(5f, -3f, 0.8f));
+    }
+
+    private static void CreateSoftPolygon(WorldState world, float centerX, float centerY,
+        int sides, float radius, float rodCompliance, float angleCompliance)
+    {
+        // Create a regular polygon from particles, rods, and angle constraints
+        float particleMass = 0.5f;
+        float particleRadius = 0.08f;
+
+        // Calculate interior angle for regular polygon
+        float interiorAngle = (sides - 2) * MathF.PI / sides;
+
+        // Create particles in a circle
+        int[] particleIndices = new int[sides];
+        for (int i = 0; i < sides; i++)
+        {
+            float angle = i * 2f * MathF.PI / sides;
+            float px = centerX + radius * MathF.Cos(angle);
+            float py = centerY + radius * MathF.Sin(angle);
+            particleIndices[i] = world.AddParticle(px, py, 0f, 0f, particleMass, particleRadius);
+        }
+
+        // Connect with rods (edges)
+        for (int i = 0; i < sides; i++)
+        {
+            int next = (i + 1) % sides;
+            float edgeLength = 2f * radius * MathF.Sin(MathF.PI / sides);
+            world.Rods.Add(new Rod(particleIndices[i], particleIndices[next], edgeLength, rodCompliance));
+        }
+
+        // Add angle constraints at each vertex
+        for (int i = 0; i < sides; i++)
+        {
+            int prev = (i - 1 + sides) % sides;
+            int curr = i;
+            int next = (i + 1) % sides;
+
+            // Angle constraint maintains the interior angle
+            world.Angles.Add(new Angle(
+                particleIndices[prev],
+                particleIndices[curr],
+                particleIndices[next],
+                interiorAngle,
+                angleCompliance));
+        }
     }
 }

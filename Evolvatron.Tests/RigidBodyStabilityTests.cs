@@ -941,4 +941,184 @@ public class RigidBodyStabilityTests
         Assert.True(bodyAngleDrift < 15f,
             $"Body tipped over! Angle drift from vertical: {bodyAngleDrift:F1}°");
     }
+
+    [Fact]
+    public void SoftPolygon_DroppedOnGround_DoesntAccumulateAngularMomentum()
+    {
+        // This test verifies that a soft polygon (particle-based circle)
+        // doesn't accumulate excessive angular momentum when dropped onto the ground.
+
+        // Arrange
+        var world = new WorldState(128);
+        var config = new SimulationConfig
+        {
+            Dt = 1f / 240f,
+            Substeps = 1,
+            XpbdIterations = 12,
+            GravityX = 0f,
+            GravityY = -9.81f,
+            ContactCompliance = 1e-8f,
+            RodCompliance = 0f,        // Rigid structure
+            AngleCompliance = 0f,      // Rigid angles
+            FrictionMu = 0.6f,
+            VelocityStabilizationBeta = 1.0f,
+            GlobalDamping = 0.01f,
+            AngularDamping = 0.3f      // Dampen rotation
+        };
+
+        var stepper = new CPUStepper();
+
+        // Ground
+        world.Obbs.Add(OBBCollider.AxisAligned(0f, -5f, 20f, 0.5f));
+
+        // Create octagon (8-sided polygon) at height 5m
+        int sides = 8;
+        float radius = 1.0f;
+        float centerX = 0f;
+        float centerY = 5f;
+        float particleMass = 0.5f;
+        float particleRadius = 0.08f;
+
+        // Calculate interior angle for regular polygon
+        float interiorAngle = (sides - 2) * MathF.PI / sides;
+
+        // Create particles in a circle
+        int[] particleIndices = new int[sides];
+        for (int i = 0; i < sides; i++)
+        {
+            float angle = i * 2f * MathF.PI / sides;
+            float px = centerX + radius * MathF.Cos(angle);
+            float py = centerY + radius * MathF.Sin(angle);
+            particleIndices[i] = world.AddParticle(px, py, 0f, 0f, particleMass, particleRadius);
+        }
+
+        // Connect with rods (edges)
+        for (int i = 0; i < sides; i++)
+        {
+            int next = (i + 1) % sides;
+            float edgeLength = 2f * radius * MathF.Sin(MathF.PI / sides);
+            world.Rods.Add(new Rod(particleIndices[i], particleIndices[next], edgeLength, config.RodCompliance));
+        }
+
+        // Add angle constraints at each vertex
+        for (int i = 0; i < sides; i++)
+        {
+            int prev = (i - 1 + sides) % sides;
+            int curr = i;
+            int next = (i + 1) % sides;
+
+            // Angle constraint maintains the interior angle
+            world.Angles.Add(new Angle(
+                particleIndices[prev],
+                particleIndices[curr],
+                particleIndices[next],
+                interiorAngle,
+                config.AngleCompliance));
+        }
+
+        _output.WriteLine($"Created octagon with {sides} particles at height {centerY}m");
+
+        // Helper function to compute angular momentum L = Σ (r × v) where r is relative to COM
+        float ComputeAngularMomentum()
+        {
+            // Compute center of mass
+            float comX = 0f, comY = 0f;
+            foreach (int idx in particleIndices)
+            {
+                comX += world.PosX[idx];
+                comY += world.PosY[idx];
+            }
+            comX /= sides;
+            comY /= sides;
+
+            // Compute angular momentum
+            float L = 0f;
+            foreach (int idx in particleIndices)
+            {
+                float rx = world.PosX[idx] - comX;
+                float ry = world.PosY[idx] - comY;
+                float vx = world.VelX[idx];
+                float vy = world.VelY[idx];
+                float invMass = world.InvMass[idx];
+                float mass = (invMass > 0f) ? 1f / invMass : 0f;
+
+                // L += m * (r × v) = m * (rx * vy - ry * vx)
+                L += mass * (rx * vy - ry * vx);
+            }
+            return L;
+        }
+
+        // Act - Simulate for 5 seconds
+        float simTime = 0f;
+        float maxTime = 5f;
+        int stepCount = 0;
+        float maxAbsAngularMomentum = 0f;
+
+        while (simTime < maxTime)
+        {
+            stepper.Step(world, config);
+            simTime += config.Dt;
+            stepCount++;
+
+            if (stepCount % 60 == 0) // Every 0.25 seconds
+            {
+                float L = ComputeAngularMomentum();
+                maxAbsAngularMomentum = MathF.Max(maxAbsAngularMomentum, MathF.Abs(L));
+
+                // Compute COM for logging
+                float comX = 0f, comY = 0f;
+                foreach (int idx in particleIndices)
+                {
+                    comX += world.PosX[idx];
+                    comY += world.PosY[idx];
+                }
+                comX /= sides;
+                comY /= sides;
+
+                // Compute average speed
+                float avgSpeed = 0f;
+                foreach (int idx in particleIndices)
+                {
+                    float vx = world.VelX[idx];
+                    float vy = world.VelY[idx];
+                    avgSpeed += MathF.Sqrt(vx * vx + vy * vy);
+                }
+                avgSpeed /= sides;
+
+                if (stepCount % 240 == 0) // Log every second
+                {
+                    _output.WriteLine($"[t={simTime:F2}s] COM=({comX:F2}, {comY:F2}), " +
+                                    $"avgSpeed={avgSpeed:F2} m/s, L={L:F4} kg⋅m²/s");
+                }
+            }
+        }
+
+        // Final state
+        float finalL = ComputeAngularMomentum();
+        float finalComY = 0f;
+        foreach (int idx in particleIndices)
+        {
+            finalComY += world.PosY[idx];
+        }
+        finalComY /= sides;
+
+        _output.WriteLine($"\nFinal state after {maxTime}s:");
+        _output.WriteLine($"  Final angular momentum: L={finalL:F4} kg⋅m²/s");
+        _output.WriteLine($"  Max angular momentum seen: L={maxAbsAngularMomentum:F4} kg⋅m²/s");
+        _output.WriteLine($"  Final COM Y: {finalComY:F2}m");
+
+        // Assert - Polygon should have settled without spinning
+        // After 5 seconds with damping, angular momentum should be very small
+        Assert.True(MathF.Abs(finalL) < 1.0f,
+            $"Polygon spinning! Final angular momentum: L={finalL:F4} kg⋅m²/s");
+
+        // Polygon should have landed (not fallen through ground)
+        Assert.True(finalComY > -5f,
+            $"Polygon fell through ground! COM Y={finalComY:F2}m");
+
+        // Max angular momentum during fall shouldn't be excessive
+        // (some rotation during fall is OK, but not wild spinning)
+        Assert.True(maxAbsAngularMomentum < 10.0f,
+            $"Polygon accumulated excessive angular momentum! Max L={maxAbsAngularMomentum:F4} kg⋅m²/s");
+    }
 }

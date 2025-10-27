@@ -44,14 +44,25 @@ public class ConstraintGradientTests
         float gradJy = dy / len;
 
         // Numerical gradients via finite differences
-        float numGradIx = ComputeNumericalGradient(() => RodConstraintValue(world, i, j, restLength),
-            () => world.PosX[i], val => world.PosX[i] = val);
-        float numGradIy = ComputeNumericalGradient(() => RodConstraintValue(world, i, j, restLength),
-            () => world.PosY[i], val => world.PosY[i] = val);
-        float numGradJx = ComputeNumericalGradient(() => RodConstraintValue(world, i, j, restLength),
-            () => world.PosX[j], val => world.PosX[j] = val);
-        float numGradJy = ComputeNumericalGradient(() => RodConstraintValue(world, i, j, restLength),
-            () => world.PosY[j], val => world.PosY[j] = val);
+        double eps = Epsilon;
+
+        double ix = world.PosX[i];
+        double iy = world.PosY[i];
+        double jx = world.PosX[j];
+        double jy = world.PosY[j];
+        double rest = restLength;
+
+        static double RodValue(double px0, double py0, double px1, double py1, double restLen)
+        {
+            double dx = px1 - px0;
+            double dy = py1 - py0;
+            return Math.Sqrt(dx * dx + dy * dy) - restLen;
+        }
+
+        float numGradIx = (float)((RodValue(ix + eps, iy, jx, jy, rest) - RodValue(ix - eps, iy, jx, jy, rest)) / (2.0 * eps));
+        float numGradIy = (float)((RodValue(ix, iy + eps, jx, jy, rest) - RodValue(ix, iy - eps, jx, jy, rest)) / (2.0 * eps));
+        float numGradJx = (float)((RodValue(ix, iy, jx + eps, jy, rest) - RodValue(ix, iy, jx - eps, jy, rest)) / (2.0 * eps));
+        float numGradJy = (float)((RodValue(ix, iy, jx, jy + eps, rest) - RodValue(ix, iy, jx, jy - eps, rest)) / (2.0 * eps));
 
         // Verify analytical matches numerical
         Assert.True(MathF.Abs(gradIx - numGradIx) < Tolerance,
@@ -129,10 +140,10 @@ public class ConstraintGradientTests
         float denom = uu * vv + 1e-12f;
 
         // Analytical gradients (corrected formula)
-        float dθ_du_x = (c * (-vy) - s * vx) / denom;
-        float dθ_du_y = (c * ( vx) - s * vy) / denom;
+        float dθ_du_x = (c * vy - s * vx) / denom;
+        float dθ_du_y = (-c * vx - s * vy) / denom;
         float dθ_dv_x = (c * (-uy) - s * ux) / denom;
-        float dθ_dv_y = (c * ( ux) - s * uy) / denom;
+        float dθ_dv_y = (c * ux - s * uy) / denom;
 
         float gradIx = dθ_du_x;
         float gradIy = dθ_du_y;
@@ -213,10 +224,10 @@ public class ConstraintGradientTests
         float s = ux * vy - uy * vx;
         float denom = uu * vv + 1e-12f;
 
-        float dθ_du_x = (c * (-vy) - s * vx) / denom;
-        float dθ_du_y = (c * ( vx) - s * vy) / denom;
+        float dθ_du_x = (c * vy - s * vx) / denom;
+        float dθ_du_y = (-c * vx - s * vy) / denom;
         float dθ_dv_x = (c * (-uy) - s * ux) / denom;
-        float dθ_dv_y = (c * ( ux) - s * uy) / denom;
+        float dθ_dv_y = (c * ux - s * uy) / denom;
 
         float gradIx = dθ_du_x;
         float gradIy = dθ_du_y;
@@ -311,46 +322,47 @@ public class ConstraintGradientTests
     }
 
     // Helper: Compute numerical gradient using finite differences
-    private float ComputeNumericalGradient(Func<float> constraintFunc, Func<float> getVar, Action<float> setVar)
+    private float ComputeNumericalGradient(Func<double> constraintFunc, Func<float> getVar, Action<float> setVar)
     {
         float originalValue = getVar();
+        double original = originalValue;
+        double eps = Epsilon;
 
-        // Forward difference: f'(x) ≈ (f(x + ε) - f(x)) / ε
-        setVar(originalValue + Epsilon);
-        float fPlus = constraintFunc();
+        setVar((float)(original + eps));
+        double fPlus = constraintFunc();
 
-        setVar(originalValue - Epsilon);
-        float fMinus = constraintFunc();
+        setVar((float)(original - eps));
+        double fMinus = constraintFunc();
 
         setVar(originalValue); // Restore
 
-        // Central difference: f'(x) ≈ (f(x + ε) - f(x - ε)) / (2ε)
-        return (fPlus - fMinus) / (2f * Epsilon);
+        return (float)((fPlus - fMinus) / (2.0 * eps));
     }
 
     // Helper: Evaluate rod constraint value
-    private float RodConstraintValue(WorldState world, int i, int j, float restLength)
+    private double RodConstraintValue(WorldState world, int i, int j, float restLength)
     {
-        float dx = world.PosX[j] - world.PosX[i];
-        float dy = world.PosY[j] - world.PosY[i];
-        float len = MathF.Sqrt(dx * dx + dy * dy);
+        double dx = world.PosX[j] - world.PosX[i];
+        double dy = world.PosY[j] - world.PosY[i];
+        double len = Math.Sqrt(dx * dx + dy * dy);
         return len - restLength;
     }
 
     // Helper: Evaluate angle constraint value (with wrapping)
     private float AngleConstraintValue(WorldState world, int i, int j, int k, float targetAngle)
     {
-        float ux = world.PosX[i] - world.PosX[j];
-        float uy = world.PosY[i] - world.PosY[j];
-        float vx = world.PosX[k] - world.PosX[j];
-        float vy = world.PosY[k] - world.PosY[j];
+        double ux = world.PosX[i] - world.PosX[j];
+        double uy = world.PosY[i] - world.PosY[j];
+        double vx = world.PosX[k] - world.PosX[j];
+        double vy = world.PosY[k] - world.PosY[j];
 
-        float c = ux * vx + uy * vy;
-        float s = ux * vy - uy * vx;
-        float currentAngle = MathF.Atan2(s, c);
+        double c = ux * vx + uy * vy;
+        double s = ux * vy - uy * vx;
+        double currentAngle = Math.Atan2(s, c);
 
-        // Return wrapped difference (important for gradient continuity!)
-        return Math2D.WrapAngle(currentAngle - targetAngle);
+        double diff = currentAngle - targetAngle;
+        double wrapped = Math.Atan2(Math.Sin(diff), Math.Cos(diff));
+        return (float)wrapped;
     }
 
     // Helper: Compute contact penetration depth

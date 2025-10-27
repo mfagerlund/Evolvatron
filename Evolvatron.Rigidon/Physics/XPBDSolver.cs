@@ -138,12 +138,12 @@ public static class XPBDSolver
 
             float denom = uu * vv + 1e-12f;
 
-            // perp(v) = (-vy, vx), perp(u) = (-uy, ux)
-            float dθ_du_x = (c * (-vy) - s * vx) / denom;
-            float dθ_du_y = (c * ( vx) - s * vy) / denom;
+            // perp(v) = (vy, -vx), perp(u) = (-uy, ux)
+            float dθ_du_x = (c * vy - s * vx) / denom;
+            float dθ_du_y = (-c * vx - s * vy) / denom;
 
             float dθ_dv_x = (c * (-uy) - s * ux) / denom;
-            float dθ_dv_y = (c * ( ux) - s * uy) / denom;
+            float dθ_dv_y = (c * ux - s * uy) / denom;
 
             // Map to particle gradients
             float gradIx = dθ_du_x;
@@ -218,39 +218,27 @@ public static class XPBDSolver
             float vx = posX[k] - posX[j];
             float vy = posY[k] - posY[j];
 
-            float lenUSq = ux * ux + uy * uy;
-            float lenVSq = vx * vx + vy * vy;
+            float uu = ux * ux + uy * uy;
+            float vv = vx * vx + vy * vy;
 
-            if (lenUSq < Epsilon * Epsilon || lenVSq < Epsilon * Epsilon)
+            if (uu < Epsilon || vv < Epsilon)
                 continue;
 
-            float lenU = MathF.Sqrt(lenUSq);
-            float lenV = MathF.Sqrt(lenVSq);
+            float c = ux * vx + uy * vy;
+            float s = ux * vy - uy * vx;
+            float currentAngle = MathF.Atan2(s, c);
 
-            // Normalize to unit vectors
-            float unx = ux / lenU;
-            float uny = uy / lenU;
-            float vnx = vx / lenV;
-            float vny = vy / lenV;
-
-            // Compute current angle
-            float cross = unx * vny - uny * vnx;
-            float dot = unx * vnx + uny * vny;
-            float currentAngle = MathF.Atan2(cross, dot);
-
-            // Constraint value (target comes from motor)
             float C = Math2D.WrapAngle(currentAngle - motor.Target);
 
             if (MathF.Abs(C) < Epsilon)
                 continue;
 
-            // Stable gradients
-            float gradIx = -uny / lenU;
-            float gradIy = unx / lenU;
+            float denom = uu * vv + 1e-12f;
 
-            float gradKx = vny / lenV;
-            float gradKy = -vnx / lenV;
-
+            float gradIx = (c * vy - s * vx) / denom;
+            float gradIy = (-c * vx - s * vy) / denom;
+            float gradKx = (c * (-uy) - s * ux) / denom;
+            float gradKy = (c * ux - s * uy) / denom;
             float gradJx = -(gradIx + gradKx);
             float gradJy = -(gradIy + gradKy);
 

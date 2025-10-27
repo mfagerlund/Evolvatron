@@ -136,27 +136,21 @@ public static class GPUKernels
         if (invMass[i] == 0f && invMass[j] == 0f && invMass[k] == 0f)
             return;
 
-        // Edge vectors
-        float e1x = posX[i] - posX[j];
-        float e1y = posY[i] - posY[j];
-        float e2x = posX[k] - posX[j];
-        float e2y = posY[k] - posY[j];
+        // Edge vectors (unnormalized)
+        float ux = posX[i] - posX[j];
+        float uy = posY[i] - posY[j];
+        float vx = posX[k] - posX[j];
+        float vy = posY[k] - posY[j];
 
-        float len1 = XMath.Sqrt(e1x * e1x + e1y * e1y);
-        float len2 = XMath.Sqrt(e2x * e2x + e2y * e2y);
+        float uu = ux * ux + uy * uy;
+        float vv = vx * vx + vy * vy;
 
-        if (len1 < Epsilon || len2 < Epsilon)
+        if (uu < Epsilon || vv < Epsilon)
             return;
 
-        e1x /= len1;
-        e1y /= len1;
-        e2x /= len2;
-        e2y /= len2;
-
-        // Current angle
-        float cross = e1x * e2y - e1y * e2x;
-        float dot = e1x * e2x + e1y * e2y;
-        float currentAngle = XMath.Atan2(cross, dot);
+        float c = ux * vx + uy * vy;
+        float s = ux * vy - uy * vx;
+        float currentAngle = XMath.Atan2(s, c);
 
         // Constraint value (wrap to [-π, π])
         float C = currentAngle - angle.Theta0;
@@ -166,11 +160,13 @@ public static class GPUKernels
         if (XMath.Abs(C) < Epsilon)
             return;
 
-        // Gradients
-        float gradIx = -e1y / len1;
-        float gradIy = e1x / len1;
-        float gradKx = e2y / len2;
-        float gradKy = -e2x / len2;
+        float denom = uu * vv + 1e-12f;
+
+        // Gradients (match CPU solver)
+        float gradIx = (c * vy - s * vx) / denom;
+        float gradIy = (-c * vx - s * vy) / denom;
+        float gradKx = (c * (-uy) - s * ux) / denom;
+        float gradKy = (c * ux - s * uy) / denom;
         float gradJx = -(gradIx + gradKx);
         float gradJy = -(gradIy + gradKy);
 
@@ -217,25 +213,20 @@ public static class GPUKernels
             return;
 
         // Same as angle constraint but uses Target
-        float e1x = posX[i] - posX[j];
-        float e1y = posY[i] - posY[j];
-        float e2x = posX[k] - posX[j];
-        float e2y = posY[k] - posY[j];
+        float ux = posX[i] - posX[j];
+        float uy = posY[i] - posY[j];
+        float vx = posX[k] - posX[j];
+        float vy = posY[k] - posY[j];
 
-        float len1 = XMath.Sqrt(e1x * e1x + e1y * e1y);
-        float len2 = XMath.Sqrt(e2x * e2x + e2y * e2y);
+        float uu = ux * ux + uy * uy;
+        float vv = vx * vx + vy * vy;
 
-        if (len1 < Epsilon || len2 < Epsilon)
+        if (uu < Epsilon || vv < Epsilon)
             return;
 
-        e1x /= len1;
-        e1y /= len1;
-        e2x /= len2;
-        e2y /= len2;
-
-        float cross = e1x * e2y - e1y * e2x;
-        float dot = e1x * e2x + e1y * e2y;
-        float currentAngle = XMath.Atan2(cross, dot);
+        float c = ux * vx + uy * vy;
+        float s = ux * vy - uy * vx;
+        float currentAngle = XMath.Atan2(s, c);
 
         float C = currentAngle - motor.Target;
         while (C > XMath.PI) C -= 2f * XMath.PI;
@@ -244,10 +235,12 @@ public static class GPUKernels
         if (XMath.Abs(C) < Epsilon)
             return;
 
-        float gradIx = -e1y / len1;
-        float gradIy = e1x / len1;
-        float gradKx = e2y / len2;
-        float gradKy = -e2x / len2;
+        float denom = uu * vv + 1e-12f;
+
+        float gradIx = (c * vy - s * vx) / denom;
+        float gradIy = (-c * vx - s * vy) / denom;
+        float gradKx = (c * (-uy) - s * ux) / denom;
+        float gradKy = (c * ux - s * uy) / denom;
         float gradJx = -(gradIx + gradKx);
         float gradJy = -(gradIy + gradKy);
 
