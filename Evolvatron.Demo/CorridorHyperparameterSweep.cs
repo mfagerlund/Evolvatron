@@ -16,7 +16,7 @@ public static class CorridorHyperparameterSweep
     private const int MaxTimeoutSeconds = 120;
     private const int SeedsPerConfig = 3;
     private const float SolvedThreshold = 1.0f; // 100% completion
-    private const int MaxStepsForSuccess = 250; // Must complete in 250 steps (not full 320)
+    private const int MaxStepsForSuccess = 200; // Must complete in 200 steps (not full 320)
 
     public static void Run()
     {

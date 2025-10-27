@@ -194,6 +194,18 @@ public static class FollowTheCorridorDemo
                     totalEvolutionMs += sw.ElapsedMilliseconds;
                     generation++;
 
+                    // Rebuild evaluators and individuals lists to match new topologies
+                    evaluators.Clear();
+                    individuals.Clear();
+                    foreach (var species in population.AllSpecies)
+                    {
+                        foreach (var individual in species.Individuals)
+                        {
+                            evaluators.Add(new CPUEvaluator(species.Topology));
+                            individuals.Add(individual);
+                        }
+                    }
+
                     // Mark elites (first config.Elites individuals in each species)
                     Array.Fill(isElite, false);
                     for (int i = 0, idx = 0; i < population.AllSpecies.Count; i++)
