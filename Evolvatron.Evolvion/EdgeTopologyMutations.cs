@@ -118,6 +118,157 @@ public static class EdgeTopologyMutations
         return true;
     }
 
+    /// <summary>
+    /// EdgeSplitSmart: Insert intermediate INACTIVE node with minimal network disruption.
+    ///
+    /// Process:
+    /// 1. Pick a link separated by at least one layer
+    /// 2. Pick an INACTIVE node (not currently connected to output) between the layers
+    /// 3. Remove the link and replace with two links through that node
+    /// 4. Pick ANOTHER active node above intermediate, connect with very low weight
+    /// 5. Pick ANOTHER active node below intermediate, connect with very low weight
+    ///
+    /// This operator gives us an almost unchanged network (except for the activator function)
+    /// that can gradually mutate the new weights.
+    ///
+    /// NOTE: Weight initialization happens externally - this only modifies topology.
+    /// The caller should initialize new edge weights to very low values (~0.01).
+    /// </summary>
+    /// <param name="spec">Species topology</param>
+    /// <param name="random">Random generator</param>
+    /// <param name="newEdgeIndices">Output: indices of the 4 new edges added (for weight initialization)</param>
+    /// <returns>True if mutation succeeded</returns>
+    public static bool TryEdgeSplitSmart(
+        SpeciesSpec spec,
+        Random random,
+        out List<int> newEdgeIndices)
+    {
+        newEdgeIndices = new List<int>();
+
+        if (spec.Edges.Count == 0)
+            return false;
+
+        // Compute active nodes (connected to outputs)
+        var activeNodes = ConnectivityValidator.ComputeActiveNodes(spec);
+
+        // Find edges that span at least 2 layers
+        var candidateEdges = spec.Edges
+            .Where(e =>
+            {
+                int srcRow = spec.GetRowForNode(e.Source);
+                int dstRow = spec.GetRowForNode(e.Dest);
+                return dstRow - srcRow >= 2; // At least one intermediate layer
+            })
+            .ToList();
+
+        if (candidateEdges.Count == 0)
+            return false; // No suitable edges
+
+        // Try multiple times to find suitable edge + inactive node
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            var edge = candidateEdges[random.Next(candidateEdges.Count)];
+            int srcRow = spec.GetRowForNode(edge.Source);
+            int dstRow = spec.GetRowForNode(edge.Dest);
+
+            // Pick intermediate row
+            int intermediateRow = random.Next(srcRow + 1, dstRow);
+            var intermediatePlan = spec.RowPlans[intermediateRow];
+
+            // Find INACTIVE nodes in intermediate row
+            var inactiveNodes = new List<int>();
+            for (int i = 0; i < intermediatePlan.NodeCount; i++)
+            {
+                int nodeIdx = intermediatePlan.NodeStart + i;
+                if (!activeNodes[nodeIdx])
+                {
+                    // Check in-degree constraint (will receive 2 edges)
+                    int currentInDegree = spec.Edges.Count(e => e.Dest == nodeIdx);
+                    if (currentInDegree + 2 <= spec.MaxInDegree)
+                    {
+                        inactiveNodes.Add(nodeIdx);
+                    }
+                }
+            }
+
+            if (inactiveNodes.Count == 0)
+                continue; // Try different edge
+
+            int intermediateNode = inactiveNodes[random.Next(inactiveNodes.Count)];
+
+            // Find active nodes above intermediate (for additional input)
+            var activeNodesAbove = new List<int>();
+            for (int row = srcRow; row <= intermediateRow; row++)
+            {
+                var plan = spec.RowPlans[row];
+                for (int i = 0; i < plan.NodeCount; i++)
+                {
+                    int nodeIdx = plan.NodeStart + i;
+                    if (activeNodes[nodeIdx] && nodeIdx != edge.Source && nodeIdx != intermediateNode)
+                    {
+                        activeNodesAbove.Add(nodeIdx);
+                    }
+                }
+            }
+
+            // Find active nodes below intermediate (for additional output)
+            var activeNodesBelow = new List<int>();
+            for (int row = intermediateRow; row < spec.RowCounts.Length; row++)
+            {
+                var plan = spec.RowPlans[row];
+                for (int i = 0; i < plan.NodeCount; i++)
+                {
+                    int nodeIdx = plan.NodeStart + i;
+                    if (activeNodes[nodeIdx] && nodeIdx != edge.Dest && nodeIdx != intermediateNode)
+                    {
+                        // Check in-degree constraint
+                        int currentInDegree = spec.Edges.Count(e => e.Dest == nodeIdx);
+                        if (currentInDegree < spec.MaxInDegree)
+                        {
+                            activeNodesBelow.Add(nodeIdx);
+                        }
+                    }
+                }
+            }
+
+            if (activeNodesAbove.Count == 0 || activeNodesBelow.Count == 0)
+                continue; // Try different edge
+
+            // SUCCESS - perform the mutation
+
+            // Store original edge index for tracking
+            int originalEdgeIdx = spec.Edges.IndexOf(edge);
+
+            // Remove original edge
+            spec.Edges.Remove(edge);
+
+            // Add main split edges
+            spec.Edges.Add((edge.Source, intermediateNode));
+            spec.Edges.Add((intermediateNode, edge.Dest));
+
+            // Add additional stabilization edges
+            int additionalSourceAbove = activeNodesAbove[random.Next(activeNodesAbove.Count)];
+            spec.Edges.Add((additionalSourceAbove, intermediateNode));
+
+            int additionalDestBelow = activeNodesBelow[random.Next(activeNodesBelow.Count)];
+            spec.Edges.Add((intermediateNode, additionalDestBelow));
+
+            // Rebuild and sort edges
+            spec.BuildRowPlans();
+
+            // Find indices of new edges (after sorting)
+            // These should be initialized with low weights externally
+            newEdgeIndices.Add(spec.Edges.FindIndex(e => e == (edge.Source, intermediateNode)));
+            newEdgeIndices.Add(spec.Edges.FindIndex(e => e == (intermediateNode, edge.Dest)));
+            newEdgeIndices.Add(spec.Edges.FindIndex(e => e == (additionalSourceAbove, intermediateNode)));
+            newEdgeIndices.Add(spec.Edges.FindIndex(e => e == (intermediateNode, additionalDestBelow)));
+
+            return true;
+        }
+
+        return false; // Failed to find suitable configuration
+    }
+
     #endregion
 
     #region Advanced Mutations
