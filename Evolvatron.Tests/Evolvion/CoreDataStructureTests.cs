@@ -299,43 +299,6 @@ public class CoreDataStructureTests
     }
 
     [Fact]
-    public void SpeciesSpec_Validate_RejectsExcessiveParallelEdges()
-    {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 6, 8, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (1, 7),
-                (1, 7), // First duplicate (allowed)
-                (1, 7)  // Second duplicate (exceeds limit of 2)
-            }
-        };
-
-        var ex = Assert.Throws<InvalidOperationException>(() => spec.Validate());
-        Assert.Contains("parallel", ex.Message.ToLower());
-    }
-
-    [Fact]
-    public void SpeciesSpec_Validate_AllowsUpToTwoParallelEdges()
-    {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 1, 6, 8, 3 },
-            AllowedActivationsPerRow = new uint[] { 0, 0xFFFFFFFF, 0xFFFFFFFF, 3 },
-            Edges = new List<(int, int)>
-            {
-                (1, 7),
-                (1, 7)  // One duplicate is allowed
-            }
-        };
-
-        // Should not throw - up to 2 parallel edges allowed
-        spec.Validate();
-    }
-
-    [Fact]
     public void SpeciesSpec_Validate_RejectsExcessiveInDegree()
     {
         var spec = new SpeciesSpec

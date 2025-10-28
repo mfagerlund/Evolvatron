@@ -243,95 +243,6 @@ public class EdgeTopologyMutationTests
 
     #endregion
 
-    #region EdgeDuplicate Tests
-
-    [Fact]
-    public void EdgeDuplicate_CreatesParallelEdge()
-    {
-        var spec = CreateSimpleSpec();
-        int initialCount = spec.Edges.Count;
-
-        var random = new Random(42);
-        bool success = EdgeTopologyMutations.TryEdgeDuplicate(spec, random);
-
-        if (success)
-        {
-            Assert.Equal(initialCount + 1, spec.Edges.Count);
-
-            // Should have at least one pair of parallel edges
-            var groups = spec.Edges.GroupBy(e => e).Where(g => g.Count() > 1);
-            Assert.NotEmpty(groups);
-        }
-    }
-
-    [Fact]
-    public void EdgeDuplicate_LimitsTwoParallelEdges()
-    {
-        var spec = CreateSimpleSpec();
-        var random = new Random(42);
-
-        // Try duplicating many times
-        for (int i = 0; i < 50; i++)
-        {
-            EdgeTopologyMutations.TryEdgeDuplicate(spec, random);
-        }
-
-        // No edge should have more than 2 duplicates
-        var maxDuplicates = spec.Edges.GroupBy(e => e).Max(g => g.Count());
-        Assert.True(maxDuplicates <= 2);
-    }
-
-    #endregion
-
-    #region EdgeMerge Tests
-
-    [Fact(Skip = "EdgeMerge has index mapping issue after BuildRowPlans sorting - needs refactor")]
-    public void EdgeMerge_CombinesParallelEdges()
-    {
-        var spec = CreateSimpleSpec();
-        int originalEdgeCount = spec.Edges.Count;
-
-        // Add duplicate edge manually (same as first edge)
-        var firstEdge = spec.Edges[0];
-        spec.Edges.Add(firstEdge);
-        // Don't call BuildRowPlans yet - individuals need to match current edge count
-
-        // Create individuals with weights matching current edge count
-        var individuals = new List<Individual>
-        {
-            new Individual(originalEdgeCount + 1, spec.TotalNodes)
-        };
-
-        // Initialize weights - first occurrence and duplicate
-        individuals[0].Weights[0] = 2.0f;
-        individuals[0].Weights[originalEdgeCount] = 3.0f; // Duplicate edge (last one)
-
-        // Now build row plans
-        spec.BuildRowPlans();
-
-        int initialCount = spec.Edges.Count;
-        bool success = EdgeTopologyMutations.TryEdgeMerge(spec, individuals);
-
-        if (success)
-        {
-            Assert.Equal(initialCount - 1, spec.Edges.Count);
-
-            // After merge, we should have original edge count
-            Assert.Equal(originalEdgeCount, spec.Edges.Count);
-
-            // Weight array should be shorter
-            Assert.Equal(originalEdgeCount, individuals[0].Weights.Length);
-
-            // The first edge's weight should be summed (could be at any index after sort)
-            // Just verify the sum exists somewhere
-            float maxWeight = individuals[0].Weights.Max();
-            Assert.True(maxWeight >= 4.9f && maxWeight <= 5.1f,
-                $"Expected sum of 5.0, but max weight is {maxWeight}");
-        }
-    }
-
-    #endregion
-
     #region EdgeSwap Tests
 
     [Fact]
@@ -535,7 +446,6 @@ public class EdgeTopologyMutationTests
             EdgeAdd = 0.3f,
             EdgeDeleteRandom = 0.2f,
             EdgeRedirect = 0.2f,
-            EdgeDuplicate = 0.1f,
             EdgeSwap = 0.1f
         };
 
@@ -573,10 +483,11 @@ public class EdgeTopologyMutationTests
 
     private static SpeciesSpec CreateSimpleConnectedSpec()
     {
+        var random = new Random(42);
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
+            .InitializeSparse(random)
             .Build();
     }
 
@@ -590,7 +501,6 @@ public class EdgeTopologyMutationTests
             .AddEdge(0, 3)
             .AddEdge(1, 4)
             .AddEdge(1, 5)
-            .FullyConnect(fromRow: 1, toRow: 2)
             .WithMaxInDegree(8)
             .Build();
     }

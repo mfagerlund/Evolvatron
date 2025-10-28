@@ -112,11 +112,6 @@ public class SpeciesSpec
                 throw new InvalidOperationException($"Edge ({source}, {dest}) violates acyclic constraint: source row {sourceRow} >= dest row {destRow}");
         }
 
-        // Check for excessive parallel edges (allow up to 2 parallel edges)
-        var edgeGroups = Edges.GroupBy(e => e).Where(g => g.Count() > 2);
-        if (edgeGroups.Any())
-            throw new InvalidOperationException("More than 2 parallel edges detected between same nodes");
-
         // Validate in-degree constraint
         var inDegrees = new int[TotalNodes];
         foreach (var (_, dest) in Edges)

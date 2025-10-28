@@ -535,13 +535,13 @@ public class EvolutionaryCoreTests
 
     private SpeciesSpec CreateSimpleTopology()
     {
+        var random = new Random(42);
         // Simple 3-layer network: 2 inputs, 4 hidden, 2 outputs
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
-            .FullyConnect(fromRow: 1, toRow: 2)
+            .InitializeSparse(random)
             .Build();
     }
 

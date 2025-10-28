@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <!-- Suppress all nullable reference warnings -->
+    <NoWarn>$(NoWarn);CS8602;CS8629;CS8605;CS8600</NoWarn>
+
+    <!-- Suppress unused variable warnings -->
+    <NoWarn>$(NoWarn);CS0219</NoWarn>
+
+    <!-- Suppress xUnit analyzer warnings -->
+    <NoWarn>$(NoWarn);xUnit1013;xUnit2002;xUnit2013;xUnit2017;xUnit2012</NoWarn>
+
+    <!-- Disable restore output -->
+    <RestoreNoCache>false</RestoreNoCache>
+    <RestoreForce>false</RestoreForce>
+
+    <!-- Minimal console logging -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

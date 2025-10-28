@@ -23,8 +23,7 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(3)
             .AddHiddenRow(4, ActivationType.ReLU, ActivationType.Tanh)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
+            .InitializeSparse(random)
             .Build();
 
         var parentSpecies = new Species(parentTopology);
@@ -77,8 +76,7 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
+            .InitializeSparse(random)
             .Build();
 
         var parentSpecies = new Species(parentTopology);
@@ -246,8 +244,6 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         var parentSpecies = new Species(topology);
@@ -309,16 +305,12 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         var topology2 = new SpeciesBuilder()
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.Tanh) // Different activations OK
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         // Use reflection to access private method
@@ -362,10 +354,11 @@ public class SpeciesFoundingAndInheritanceTests
     [Fact]
     public void TopologiesCompatible_DetectsDifferentEdgeCounts()
     {
+        var random = new Random(42);
         var topology1 = new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1) // 2 edges
+            .InitializeSparse(random)
             .Build();
 
         var topology2 = new SpeciesBuilder()
@@ -400,8 +393,6 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.ReLU, ActivationType.Tanh)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         var parentSpecies = new Species(topology);
@@ -458,8 +449,6 @@ public class SpeciesFoundingAndInheritanceTests
             .AddInputRow(2)
             .AddHiddenRow(3, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         var species = new Species(topology);
@@ -571,8 +560,6 @@ public class SpeciesFoundingAndInheritanceTests
             .AddHiddenRow(10, ActivationType.ReLU) // Large hidden layer
             .AddOutputRow(1, ActivationType.Tanh)
             .WithMaxInDegree(15) // Set higher to accommodate fully connected layer
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         int originalEdgeCount = topology.Edges.Count;

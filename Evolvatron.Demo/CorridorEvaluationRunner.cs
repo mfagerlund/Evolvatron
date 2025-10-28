@@ -165,7 +165,8 @@ public class CorridorEvaluationRunner
 
     private void Initialize()
     {
-        var topology = CreateCorridorTopology();
+        var random = new Random(_config.EvolutionSeed);
+        var topology = CreateCorridorTopology(random);
 
         var evolutionConfig = new EvolutionConfig
         {
@@ -289,15 +290,14 @@ public class CorridorEvaluationRunner
         }
     }
 
-    public static SpeciesSpec CreateCorridorTopology()
+    public static SpeciesSpec CreateCorridorTopology(Random random)
     {
         return new SpeciesBuilder()
             .AddInputRow(9)
             .AddHiddenRow(12, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
-            .FullyConnect(fromRow: 1, toRow: 2)
             .WithMaxInDegree(12)
+            .InitializeSparse(random)
             .Build();
     }
 }

@@ -249,8 +249,7 @@ public class EdgeSplitSmartTests
             .AddHiddenRow(2, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Tanh)
             .WithMaxInDegree(8)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
+            .InitializeSparse(random)
             .Build();
 
         // All hidden nodes are active (connected to output)

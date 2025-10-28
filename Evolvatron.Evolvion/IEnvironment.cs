@@ -40,4 +40,10 @@ public interface IEnvironment
     /// Check if the episode is complete.
     /// </summary>
     bool IsTerminal();
+
+    /// <summary>
+    /// Get final fitness based on terminal state (optional, defaults to cumulative reward).
+    /// Return 0 to use cumulative reward instead.
+    /// </summary>
+    float GetFinalFitness() => 0f;
 }

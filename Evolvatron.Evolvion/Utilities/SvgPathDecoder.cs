@@ -26,7 +26,7 @@ public static class SvgPathDecoder
         }
 
         var paths = new List<List<Vector2>>();
-        List<Vector2> path = null;
+        List<Vector2>? path = null;
         var currentPos = new Vector2(float.NaN, float.NaN);
 
         void MoveTo(Vector2 newPos)

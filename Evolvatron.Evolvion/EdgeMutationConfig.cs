@@ -12,8 +12,6 @@ public class EdgeMutationConfig
 
     // Advanced topology mutations
     public float EdgeRedirect { get; set; } = 0.03f;
-    public float EdgeDuplicate { get; set; } = 0.01f;
-    public float EdgeMerge { get; set; } = 0.02f;
     public float EdgeSwap { get; set; } = 0.02f;
 
     // Weak edge pruning configuration

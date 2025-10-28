@@ -48,7 +48,10 @@ public class SimpleFitnessEvaluator
             step++;
         }
 
-        return totalReward;
+        // Return final fitness from environment (for goal-based tasks)
+        // Falls back to cumulative reward if GetFinalFitness returns 0
+        float finalFitness = environment.GetFinalFitness();
+        return finalFitness != 0f ? finalFitness : totalReward;
     }
 
     /// <summary>

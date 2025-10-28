@@ -14,8 +14,8 @@ public enum ActivationTypeX
 
 public class SpeciesEx
 {
-    public float[] Weights { get; set; }
-    public float[] Biases { get; set; }
+    public float[] Weights { get; set; } = Array.Empty<float>();
+    public float[] Biases { get; set; } = Array.Empty<float>();
 }
 
 public class NodeEx

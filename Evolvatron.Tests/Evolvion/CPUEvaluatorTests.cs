@@ -268,8 +268,6 @@ public class CPUEvaluatorTests
             .AddInputRow(2)
             .AddHiddenRow(2, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
-            .FullyConnect(fromRow: 1, toRow: 2)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
@@ -362,10 +360,11 @@ public class CPUEvaluatorTests
 
     private static SpeciesSpec CreateSimpleSpec()
     {
+        var random = new Random(42);
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(3, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
+            .InitializeSparse(random)
             .Build();
     }
 

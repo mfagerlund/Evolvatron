@@ -11,7 +11,7 @@ public static class CorridorHyperparameterSweep
     private const int MaxTimeoutSeconds = 60; // 1 minute per trial - very tight
     private const int SeedsPerConfig = 3; // Multiple seeds for statistical validity
     private const float SolvedThreshold = 1.0f; // 100% completion - must finish!
-    private const int MaxStepsForSuccess = 20; // Extremely tight generation limit
+    private const int MaxEvaluations = 50000; // Fair comparison: same budget for all configs
 
     public static void Run()
     {
@@ -19,6 +19,7 @@ public static class CorridorHyperparameterSweep
         Console.WriteLine($"Max timeout: {MaxTimeoutSeconds}s per trial");
         Console.WriteLine($"Seeds per config: {SeedsPerConfig}");
         Console.WriteLine($"Solved threshold: {SolvedThreshold * 100}%");
+        Console.WriteLine($"Max evaluations: {MaxEvaluations} (fair comparison across all population sizes)");
         Console.WriteLine();
 
         var configs = GenerateConfigurations();
@@ -141,6 +142,10 @@ public static class CorridorHyperparameterSweep
         progress.Generation = -1;
         progress.ElapsedMs = 0;
 
+        // Calculate fair generation limit based on evaluation budget
+        int populationSize = config.SpeciesCount * config.IndividualsPerSpecies;
+        int maxGenerations = MaxEvaluations / populationSize;
+
         var runConfig = new CorridorEvaluationRunner.RunConfig
         {
             SpeciesCount = config.SpeciesCount,
@@ -150,7 +155,7 @@ public static class CorridorHyperparameterSweep
             ParentPoolPercentage = config.ParentPoolPercentage,
             MinSpeciesCount = 4,
             EvolutionSeed = seed,
-            MaxGenerations = MaxStepsForSuccess,
+            MaxGenerations = maxGenerations,
             SolvedThreshold = SolvedThreshold,
             MaxTimeoutMs = MaxTimeoutSeconds * 1000,
             MaxStepsPerEpisode = 250

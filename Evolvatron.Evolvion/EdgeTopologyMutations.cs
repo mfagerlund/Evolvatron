@@ -346,121 +346,6 @@ public static class EdgeTopologyMutations
     }
 
     /// <summary>
-    /// EdgeDuplicate: Create parallel edge with similar weight
-    /// </summary>
-    public static bool TryEdgeDuplicate(SpeciesSpec spec, Random random)
-    {
-        if (spec.Edges.Count == 0)
-            return false;
-
-        // Try multiple times to find duplicatable edge
-        for (int attempt = 0; attempt < 10; attempt++)
-        {
-            var edge = spec.Edges[random.Next(spec.Edges.Count)];
-
-            // Check if already has duplicate
-            int duplicateCount = spec.Edges.Count(e => e.Source == edge.Source && e.Dest == edge.Dest);
-            if (duplicateCount >= 2)
-                continue; // Limit to 2 parallel edges
-
-            // Check in-degree
-            int inDegree = spec.Edges.Count(e => e.Dest == edge.Dest);
-            if (inDegree >= spec.MaxInDegree)
-                continue;
-
-            // Add duplicate
-            spec.Edges.Add((edge.Source, edge.Dest));
-            spec.BuildRowPlans();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// EdgeMerge: Combine parallel edges
-    /// </summary>
-    public static bool TryEdgeMerge(SpeciesSpec spec, List<Individual> individuals)
-    {
-        // Find parallel edges (same source and destination)
-        var edgeGroups = spec.Edges
-            .Select((edge, index) => (edge, index))
-            .GroupBy(x => (x.edge.Source, x.edge.Dest))
-            .Where(g => g.Count() > 1)
-            .ToList();
-
-        if (edgeGroups.Count == 0)
-            return false;
-
-        // Pick random parallel edge group
-        var group = edgeGroups[new Random().Next(edgeGroups.Count)];
-        var edgePairs = group.ToList();
-
-        if (edgePairs.Count < 2)
-            return false;
-
-        // Keep first edge, sum weights from duplicates
-        var keepIndex = edgePairs[0].index;
-        var removeIndices = edgePairs.Skip(1).Select(x => x.index).OrderByDescending(x => x).ToList();
-
-        // Update weights for all individuals (BEFORE removing edges)
-        for (int i = 0; i < individuals.Count; i++)
-        {
-            var individual = individuals[i];
-
-            // Sum all parallel edge weights
-            float sumWeight = 0.0f;
-            foreach (var edgePair in edgePairs)
-            {
-                if (edgePair.index < individual.Weights.Length)
-                {
-                    sumWeight += individual.Weights[edgePair.index];
-                }
-            }
-
-            // Remove weights in reverse order to maintain indices, but first update keep index
-            var newWeights = individual.Weights.ToList();
-
-            // Remove from highest index to lowest (except keepIndex)
-            foreach (var removeIdx in removeIndices)
-            {
-                if (removeIdx < newWeights.Count)
-                {
-                    newWeights.RemoveAt(removeIdx);
-                }
-            }
-
-            // Update the remaining edge's weight
-            // After removal, keepIndex might have shifted
-            int finalKeepIndex = keepIndex;
-            foreach (var removeIdx in removeIndices)
-            {
-                if (removeIdx < keepIndex)
-                {
-                    finalKeepIndex--;
-                }
-            }
-
-            if (finalKeepIndex < newWeights.Count)
-            {
-                newWeights[finalKeepIndex] = sumWeight;
-            }
-
-            individual.Weights = newWeights.ToArray();
-            individuals[i] = individual;
-        }
-
-        // Remove duplicate edges
-        foreach (var removeIdx in removeIndices)
-        {
-            spec.Edges.RemoveAt(removeIdx);
-        }
-
-        spec.BuildRowPlans();
-        return true;
-    }
-
-    /// <summary>
     /// EdgeSwap: Swap destinations of two edges
     /// </summary>
     public static bool TryEdgeSwap(SpeciesSpec spec, Random random)
@@ -642,12 +527,6 @@ public static class EdgeTopologyMutations
         // Advanced mutations
         if (random.NextSingle() < config.EdgeRedirect)
             TryEdgeRedirect(spec, random);
-
-        if (random.NextSingle() < config.EdgeDuplicate)
-            TryEdgeDuplicate(spec, random);
-
-        if (random.NextSingle() < config.EdgeMerge)
-            TryEdgeMerge(spec, individuals);
 
         if (random.NextSingle() < config.EdgeSwap)
             TryEdgeSwap(spec, random);

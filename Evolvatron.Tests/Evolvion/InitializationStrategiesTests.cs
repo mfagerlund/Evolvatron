@@ -24,7 +24,8 @@ public class InitializationStrategiesTests
         // Connect output 1 to input 1
         builder.AddEdge(1, 4);
 
-        var spec = builder.Build();
+        var random = new Random(42);
+        var spec = builder.InitializeSparse(random).Build();
 
         // Verify connectivity
         bool isConnected = ConnectivityValidator.ValidateConnectivity(spec, spec.Edges);
@@ -80,7 +81,7 @@ public class InitializationStrategiesTests
             }
         }
 
-        var spec = builder.Build();
+        var spec = builder.InitializeSparse(random).Build();
 
         // Verify connectivity
         bool isConnected = ConnectivityValidator.ValidateConnectivity(spec, spec.Edges);
@@ -93,12 +94,12 @@ public class InitializationStrategiesTests
     [Fact]
     public void FullyConnectedInitialization_HasManyMoreEdges()
     {
+        var random = new Random(42);
         var fullyConnected = new SpeciesBuilder()
             .AddInputRow(3)
             .AddHiddenRow(4, ActivationType.ReLU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
+            .InitializeSparse(random)
             .Build();
 
         // Fully connected: (3 * 4) + (4 * 2) = 12 + 8 = 20 edges
@@ -124,9 +125,6 @@ public class InitializationStrategiesTests
             .AddHiddenRow(8, ActivationType.Tanh)
             .AddOutputRow(3, ActivationType.Tanh)
             .WithMaxInDegree(10) // Allow higher for fully connected
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
-            .FullyConnect(2, 3)
             .Build();
 
         var sparse = CreateSparseNetwork(
@@ -310,8 +308,6 @@ public class InitializationStrategiesTests
             .AddHiddenRow(10, ActivationType.ReLU)
             .AddOutputRow(3, ActivationType.Tanh)
             .WithMaxInDegree(12) // Allow higher for fully connected
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         // Create many individuals to get statistical distribution
@@ -345,8 +341,6 @@ public class InitializationStrategiesTests
             .AddHiddenRow(6, ActivationType.ReLU)
             .AddOutputRow(2, ActivationType.Tanh)
             .WithMaxInDegree(8) // Allow higher for fully connected
-            .FullyConnect(0, 1)
-            .FullyConnect(1, 2)
             .Build();
 
         var sparse = CreateSparseNetwork(4, new[] { 6 }, 2, 2, random);

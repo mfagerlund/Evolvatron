@@ -34,6 +34,17 @@ dotnet build Evolvatron.Demo/Evolvatron.Demo.csproj
 ```
 
 ### Running Tests
+
+**Test Framework**: This project uses **xUnit** (not NUnit).
+
+**Why xUnit over NUnit?**
+- **Simpler, more modern design**: xUnit was created by the original inventor of NUnit as a ground-up redesign
+- **Better isolation**: Each test class gets a new instance per test method by default (prevents shared state bugs)
+- **No [SetUp]/[TearDown] attributes**: Uses constructor/Dispose pattern instead (more explicit, better for async)
+- **Better parallel execution**: Designed for parallelization from the start (faster test runs)
+- **Theory/InlineData**: More elegant parameterized tests than NUnit's TestCase
+- **Community adoption**: Preferred by .NET Core team, ASP.NET Core, and modern .NET projects
+
 ```bash
 # Run all tests
 dotnet test Evolvatron.Tests/Evolvatron.Tests.csproj
@@ -45,6 +56,12 @@ dotnet test --filter "FullyQualifiedName~RigidBodyStabilityTests"
 # Run single test
 dotnet test --filter "FullyQualifiedName~DeterminismTests.TwoIdenticalSimulations_ProduceIdenticalResults"
 ```
+
+**xUnit test attributes:**
+- `[Fact]` - Single test method (like NUnit's `[Test]`)
+- `[Theory]` + `[InlineData(...)]` - Parameterized tests (like NUnit's `[TestCase]`)
+- Constructor/Dispose - Setup/teardown (instead of `[SetUp]`/`[TearDown]`)
+- `Assert.Equal(expected, actual)` - Note the order (xUnit convention)
 
 ### Running Demos
 ```bash

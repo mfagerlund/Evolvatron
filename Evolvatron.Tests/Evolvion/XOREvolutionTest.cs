@@ -124,13 +124,13 @@ public class XOREvolutionTest
 
     private SpeciesSpec CreateXORTopology()
     {
+        var random = new Random(42);
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
-            .FullyConnect(fromRow: 1, toRow: 2)
             .WithMaxInDegree(8)
+            .InitializeSparse(random)
             .Build();
     }
 }

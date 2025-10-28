@@ -28,6 +28,26 @@ class Program
             // Launch angle constraint demo
             AngleConstraintDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "mutations")
+        {
+            // Launch mutation progression visualization demo
+            MutationProgressionDemo.Run();
+        }
+        else if (args.Length > 0 && args[0] == "initial")
+        {
+            // Launch initial topology grid demo
+            InitialTopologyGridDemo.Run();
+        }
+        else if (args.Length > 0 && args[0] == "spiral")
+        {
+            // Launch spiral classification demo
+            SpiralClassificationDemo.Run();
+        }
+        else if (args.Length > 0 && args[0] == "landscape")
+        {
+            // Launch landscape benchmark demo
+            LandscapeBenchmarkDemo.Run();
+        }
         else
         {
             // Launch physics demo by default

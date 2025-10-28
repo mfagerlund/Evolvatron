@@ -186,16 +186,17 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_ChangesActivation()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddHiddenRow(3, ActivationType.ReLU, ActivationType.Tanh)
             .AddOutputRow(2, ActivationType.Linear)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(5, 5);
         individual.Activations[0] = ActivationType.ReLU; // Hidden node
 
         var originalActivation = individual.Activations[1];
-        var random = new Random(42);
 
         // Try multiple times to ensure swap happens
         bool swapped = false;
@@ -220,13 +221,14 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_RespectsAllowedActivations()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddHiddenRow(2, ActivationType.Linear)
             .AddOutputRow(2, ActivationType.Tanh)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(5, 4);
-        var random = new Random(42);
 
         // Try swapping row 0 nodes (should remain Linear)
         for (int i = 0; i < 50; i++)
@@ -241,16 +243,16 @@ public class MutationOperatorTests
     [Fact]
     public void ActivationSwap_UpdatesNodeParameters()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddHiddenRow(2, ActivationType.LeakyReLU, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Linear)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(5, 3);
         individual.Activations[1] = ActivationType.ReLU;
         individual.NodeParams[4] = 999.0f;
-
-        var random = new Random(42);
 
         for (int i = 0; i < 100; i++)
         {
@@ -377,13 +379,14 @@ public class MutationOperatorTests
     [Fact]
     public void InitializeWeights_FillsAllWeights()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddInputRow(3)
             .AddOutputRow(2)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(10, 6);
-        var random = new Random(42);
 
         // Initially zero
         for (int i = 0; i < individual.Weights.Length; i++)
@@ -403,9 +406,11 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_AppliesMultipleOperators()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddInputRow(4)
             .AddOutputRow(3, ActivationType.Tanh)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(15, 8);
@@ -424,7 +429,6 @@ public class MutationOperatorTests
             NodeParamMutate = 0.0f  // Never apply
         };
 
-        var random = new Random(42);
         MutationOperators.Mutate(individual, spec, config, random);
 
         // Weights should be jittered
@@ -435,9 +439,11 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_RespectsZeroProbabilities()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddInputRow(4)
             .AddOutputRow(3, ActivationType.Tanh)
+            .InitializeSparse(random)
             .Build();
 
         var individual = new Individual(15, 8);
@@ -453,8 +459,6 @@ public class MutationOperatorTests
             NodeParamMutate = 0.0f
         };
 
-        var random = new Random(42);
-
         var originalWeights = (float[])individual.Weights.Clone();
         MutationOperators.Mutate(individual, spec, config, random);
 
@@ -468,9 +472,11 @@ public class MutationOperatorTests
     [Fact]
     public void Mutate_DeterministicWithSameSeed()
     {
+        var random = new Random(42);
         var spec = new SpeciesBuilder()
             .AddInputRow(4)
             .AddOutputRow(3, ActivationType.Tanh)
+            .InitializeSparse(random)
             .Build();
 
         var config = new MutationConfig();

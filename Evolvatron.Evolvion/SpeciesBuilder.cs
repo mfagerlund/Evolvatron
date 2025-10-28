@@ -43,20 +43,142 @@ public class SpeciesBuilder
         return this;
     }
 
-    public SpeciesBuilder FullyConnect(int fromRow, int toRow)
+    public SpeciesBuilder InitializeSparse(Random random)
     {
-        int fromStart = GetRowStart(fromRow);
-        int fromEnd = fromStart + _rowCounts[fromRow];
-        int toStart = GetRowStart(toRow);
-        int toEnd = toStart + _rowCounts[toRow];
+        if (_rowCounts.Count < 2)
+            throw new InvalidOperationException("Cannot initialize sparse topology with less than 2 rows");
 
-        for (int src = fromStart; src < fromEnd; src++)
+        int numInputs = _rowCounts[0];
+        int numOutputs = _rowCounts[^1];
+        int totalHiddenNodes = _rowCounts.Skip(1).Take(_rowCounts.Count - 2).Sum();
+
+        // Calculate minimum edges: aim for 3-4 edges per input/output, more if hidden layers exist
+        int minEdges = (numInputs + numOutputs) * 3;
+        if (totalHiddenNodes > 0)
         {
-            for (int dst = toStart; dst < toEnd; dst++)
-            {
-                _edges.Add((src, dst));
-            }
+            // Add extra edges to ensure hidden layer connectivity
+            minEdges += Math.Min(totalHiddenNodes, (numInputs + numOutputs) * 2);
         }
+
+        // Build a temporary spec to use mutation methods
+        var tempSpec = new SpeciesSpec
+        {
+            RowCounts = _rowCounts.ToArray(),
+            AllowedActivationsPerRow = _allowedActivationsPerRow.ToArray(),
+            MaxInDegree = _maxInDegree,
+            Edges = new List<(int, int)>()
+        };
+        tempSpec.BuildRowPlans();
+
+        // Phase 1: Add edges using EdgeAdd only (guaranteed acyclic)
+        int edgeCount = 0;
+        while (edgeCount < minEdges)
+        {
+            bool success = EdgeTopologyMutations.TryEdgeAdd(tempSpec, random);
+            if (success)
+                edgeCount = tempSpec.Edges.Count;
+        }
+
+        // Phase 2: Ensure all inputs/outputs connected to ACTIVE nodes
+        int maxAttempts = 100;
+        int attempts = 0;
+        while (attempts < maxAttempts)
+        {
+            var activeNodes = ConnectivityValidator.ComputeActiveNodes(tempSpec);
+            bool needsFixing = false;
+
+            // Check if ANY nodes are active (besides inputs)
+            bool hasActiveNodes = activeNodes.Skip(numInputs).Any(a => a);
+            int outputStart = tempSpec.TotalNodes - numOutputs;
+
+            // Check inputs: each must connect to at least one active node
+            for (int i = 0; i < numInputs; i++)
+            {
+                bool connectedToActive = tempSpec.Edges
+                    .Where(e => e.Source == i)
+                    .Any(e => activeNodes[e.Dest]);
+
+                if (!connectedToActive)
+                {
+                    // If no active nodes, connect directly to output
+                    if (!hasActiveNodes)
+                    {
+                        int dest = outputStart + (i % numOutputs); // Spread inputs across outputs
+                        if (tempSpec.Edges.Count(e => e.Dest == dest) < tempSpec.MaxInDegree)
+                        {
+                            tempSpec.Edges.Add((i, dest));
+                            tempSpec.BuildRowPlans();
+                            needsFixing = true;
+                        }
+                    }
+                    else
+                    {
+                        // Connect to random active node
+                        var candidates = Enumerable.Range(numInputs, tempSpec.TotalNodes - numInputs)
+                            .Where(n => activeNodes[n])
+                            .Where(n => tempSpec.Edges.Count(e => e.Dest == n) < tempSpec.MaxInDegree)
+                            .ToList();
+                        if (candidates.Count > 0)
+                        {
+                            int dest = candidates[random.Next(candidates.Count)];
+                            tempSpec.Edges.Add((i, dest));
+                            tempSpec.BuildRowPlans();
+                            needsFixing = true;
+                        }
+                    }
+                }
+            }
+
+            // Check outputs: each must connect from at least one ACTIVE node (input counts as active)
+            for (int i = 0; i < numOutputs; i++)
+            {
+                int outputNode = outputStart + i;
+                bool connectedFromActive = tempSpec.Edges
+                    .Where(e => e.Dest == outputNode)
+                    .Any(e => activeNodes[e.Source]);
+
+                if (!connectedFromActive)
+                {
+                    // Connect from random input (inputs are always active)
+                    int currentInDegree = tempSpec.Edges.Count(e => e.Dest == outputNode);
+                    if (currentInDegree < tempSpec.MaxInDegree)
+                    {
+                        int src = random.Next(numInputs);
+                        tempSpec.Edges.Add((src, outputNode));
+                        tempSpec.BuildRowPlans();
+                        needsFixing = true;
+                    }
+                }
+            }
+
+            if (!needsFixing)
+                break;
+
+            attempts++;
+        }
+
+        // Final validation: ensure we have functional network
+        var finalActiveNodes = ConnectivityValidator.ComputeActiveNodes(tempSpec);
+        int finalOutputStart = tempSpec.TotalNodes - numOutputs;
+
+        // Check all inputs are connected
+        for (int i = 0; i < numInputs; i++)
+        {
+            if (!tempSpec.Edges.Any(e => e.Source == i && finalActiveNodes[e.Dest]))
+                throw new InvalidOperationException($"Failed to connect input {i} after {attempts} attempts");
+        }
+
+        // Check all outputs are connected
+        for (int i = 0; i < numOutputs; i++)
+        {
+            int outputNode = finalOutputStart + i;
+            if (!tempSpec.Edges.Any(e => e.Dest == outputNode && finalActiveNodes[e.Source]))
+                throw new InvalidOperationException($"Failed to connect output {i} after {attempts} attempts");
+        }
+
+        // Copy edges back to builder
+        _edges.Clear();
+        _edges.AddRange(tempSpec.Edges);
 
         return this;
     }

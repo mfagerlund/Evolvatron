@@ -130,6 +130,7 @@ public class CartPoleEvolutionTest
 
     private SpeciesSpec CreateCartPoleTopology()
     {
+        var random = new Random(42);
         // 4 inputs (cart_pos, cart_vel, pole_angle, pole_angular_vel)
         // 8 hidden neurons (more capacity than XOR)
         // 1 output (force)
@@ -137,9 +138,8 @@ public class CartPoleEvolutionTest
             .AddInputRow(4)
             .AddHiddenRow(8, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 1)
-            .FullyConnect(fromRow: 1, toRow: 2)
             .WithMaxInDegree(8)
+            .InitializeSparse(random)
             .Build();
     }
 }
