@@ -187,13 +187,12 @@ public class MutationOperatorTests
     public void ActivationSwap_ChangesActivation()
     {
         var spec = new SpeciesBuilder()
-            .AddBiasRow()
             .AddHiddenRow(3, ActivationType.ReLU, ActivationType.Tanh)
             .AddOutputRow(2, ActivationType.Linear)
             .Build();
 
-        var individual = new Individual(5, 6);
-        individual.Activations[1] = ActivationType.ReLU; // Input node
+        var individual = new Individual(5, 5);
+        individual.Activations[0] = ActivationType.ReLU; // Hidden node
 
         var originalActivation = individual.Activations[1];
         var random = new Random(42);
@@ -222,21 +221,20 @@ public class MutationOperatorTests
     public void ActivationSwap_RespectsAllowedActivations()
     {
         var spec = new SpeciesBuilder()
-            .AddBiasRow()
             .AddHiddenRow(2, ActivationType.Linear)
             .AddOutputRow(2, ActivationType.Tanh)
             .Build();
 
-        var individual = new Individual(5, 5);
+        var individual = new Individual(5, 4);
         var random = new Random(42);
 
-        // Try swapping row 1 nodes (should remain Linear)
+        // Try swapping row 0 nodes (should remain Linear)
         for (int i = 0; i < 50; i++)
         {
-            individual.Activations[1] = ActivationType.Linear;
+            individual.Activations[0] = ActivationType.Linear;
             MutationOperators.ApplyActivationSwap(individual, spec, random);
             // Should still be Linear (only option)
-            Assert.Equal(ActivationType.Linear, individual.Activations[1]);
+            Assert.Equal(ActivationType.Linear, individual.Activations[0]);
         }
     }
 
@@ -244,54 +242,30 @@ public class MutationOperatorTests
     public void ActivationSwap_UpdatesNodeParameters()
     {
         var spec = new SpeciesBuilder()
-            .AddBiasRow()
             .AddHiddenRow(2, ActivationType.LeakyReLU, ActivationType.ReLU)
             .AddOutputRow(1, ActivationType.Linear)
             .Build();
 
-        var individual = new Individual(5, 4);
-        individual.Activations[1] = ActivationType.ReLU; // No params needed
-        individual.NodeParams[4] = 999.0f; // Set some value
+        var individual = new Individual(5, 3);
+        individual.Activations[1] = ActivationType.ReLU;
+        individual.NodeParams[4] = 999.0f;
 
         var random = new Random(42);
 
-        // Swap until we get LeakyReLU
         for (int i = 0; i < 100; i++)
         {
             MutationOperators.ApplyActivationSwap(individual, spec, random);
             if (individual.Activations[1] == ActivationType.LeakyReLU)
             {
-                // Parameters should be updated to defaults
                 var params1 = individual.GetNodeParams(1);
-                Assert.Equal(0.01f, params1[0]); // Default LeakyReLU alpha
+                Assert.Equal(0.01f, params1[0]);
                 return;
             }
         }
     }
 
-    [Fact]
-    public void ActivationSwap_SkipsBiasNode()
-    {
-        var spec = new SpeciesBuilder()
-            .AddInputRow(2)
-            .AddOutputRow(1, ActivationType.Tanh)
-            .Build();
-
-        var individual = new Individual(5, 4);
-        individual.Activations[0] = ActivationType.Linear;
-
-        var random = new Random(42);
-
-        // Run many times
-        for (int i = 0; i < 100; i++)
-        {
-            MutationOperators.ApplyActivationSwap(individual, spec, random);
-            // Bias node should never change
-            Assert.Equal(ActivationType.Linear, individual.Activations[0]);
-        }
-    }
-
     #endregion
+
 
     #region Node Param Mutate Tests
 

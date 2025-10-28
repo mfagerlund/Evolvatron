@@ -128,9 +128,8 @@ public class XOREvolutionTest
             .AddInputRow(2)
             .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 0, toRow: 1)
             .FullyConnect(fromRow: 1, toRow: 2)
-            .FullyConnect(fromRow: 2, toRow: 3)
             .WithMaxInDegree(8)
             .Build();
     }

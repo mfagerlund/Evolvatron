@@ -344,6 +344,7 @@ public static class SpeciesDiversification
             Weights = new float[totalEdges],
             NodeParams = new float[totalNodes * 4], // 4 params per node
             Activations = new ActivationType[totalNodes],
+            Biases = new float[totalNodes],
             Fitness = 0f,
             Age = 0
         };

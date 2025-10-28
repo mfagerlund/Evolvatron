@@ -1,15 +1,13 @@
 using Evolvatron.Evolvion;
 
 var spec = new SpeciesBuilder()
-    .AddBiasRow()
     .AddInputRow(6)
     .AddHiddenRow(8, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid)
     .AddHiddenRow(6, ActivationType.Tanh, ActivationType.Swish)
     .AddOutputRow(3, ActivationType.Tanh)
-    .ConnectBiasToAll()
+    .FullyConnect(0, 1)
     .FullyConnect(1, 2)
     .FullyConnect(2, 3)
-    .FullyConnect(3, 4)
     .WithMaxInDegree(12)
     .Build();
 

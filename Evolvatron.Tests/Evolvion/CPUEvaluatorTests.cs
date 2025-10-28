@@ -86,12 +86,12 @@ public class CPUEvaluatorTests
         var spec = new SpeciesBuilder()
             .AddInputRow(1)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(1, 2)
+            .AddEdge(0, 1)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = 2.5f; // Scale by 2.5
-        individual.Activations[2] = ActivationType.Linear;
+        individual.Activations[1] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 1.0f });
@@ -101,26 +101,27 @@ public class CPUEvaluatorTests
 
     #endregion
 
-    #region Bias Node Tests
+    #region Bias Tests
 
     [Fact]
-    public void CPUEvaluator_BiasNode_AlwaysOutputsOne()
+    public void CPUEvaluator_IntrinsicBias_AddsCorrectly()
     {
         var spec = new SpeciesBuilder()
             .AddInputRow(1)
             .AddOutputRow(1, ActivationType.Linear)
-            .AddEdge(0, 2)
+            .AddEdge(0, 1)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
-        individual.Weights[0] = 3.0f;
-        individual.Activations[2] = ActivationType.Linear;
+        individual.Weights[0] = 2.0f;
+        individual.Biases[1] = 3.0f; // Set intrinsic bias for output node
+        individual.Activations[1] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
-        var outputs = evaluator.Evaluate(individual, new[] { 999.0f }); // Input irrelevant
+        var outputs = evaluator.Evaluate(individual, new[] { 1.0f });
 
-        // Bias is 1.0, weight is 3.0, so output should be 3.0
-        Assert.Equal(3.0f, outputs[0], precision: 6);
+        // output = 1.0 * 2.0 + 3.0 = 5.0
+        Assert.Equal(5.0f, outputs[0], precision: 6);
     }
 
     #endregion
@@ -135,10 +136,10 @@ public class CPUEvaluatorTests
             .AddInputRow(1)
             .AddHiddenRow(2, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(1, 2)
+            .AddEdge(0, 1)
+            .AddEdge(0, 2)
             .AddEdge(1, 3)
-            .AddEdge(2, 4)
-            .AddEdge(3, 4)
+            .AddEdge(2, 3)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
@@ -150,9 +151,9 @@ public class CPUEvaluatorTests
         individual.Weights[3] = 0.5f;  // hidden[1] -> output
 
         // Use linear activations for simplicity
+        individual.Activations[1] = ActivationType.Linear;
         individual.Activations[2] = ActivationType.Linear;
         individual.Activations[3] = ActivationType.Linear;
-        individual.Activations[4] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 1.0f });
@@ -169,23 +170,22 @@ public class CPUEvaluatorTests
         var spec = new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(1, ActivationType.Linear)
-            .AddEdge(0, 3)  // bias -> output
-            .AddEdge(1, 3)  // input[0] -> output
-            .AddEdge(2, 3)  // input[1] -> output
+            .AddEdge(0, 2)  // input[0] -> output
+            .AddEdge(1, 2)  // input[1] -> output
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         // After BuildRowPlans, edges are sorted by destination, then source
-        // All edges go to node 3, so they're sorted by source: 0, 1, 2
-        individual.Weights[0] = 0.5f;  // bias weight (edge 0->3)
-        individual.Weights[1] = 2.0f;  // input[0] weight (edge 1->3)
-        individual.Weights[2] = 3.0f;  // input[1] weight (edge 2->3)
-        individual.Activations[3] = ActivationType.Linear;
+        // All edges go to node 2, so they're sorted by source: 0, 1
+        individual.Weights[0] = 2.0f;  // input[0] weight (edge 0->2)
+        individual.Weights[1] = 3.0f;  // input[1] weight (edge 1->2)
+        individual.Biases[2] = 0.5f;   // intrinsic bias
+        individual.Activations[2] = ActivationType.Linear;
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 1.0f, 1.0f });
 
-        // output = 1.0*0.5 + 1.0*2.0 + 1.0*3.0 = 0.5 + 2.0 + 3.0 = 5.5
+        // output = 1.0*2.0 + 1.0*3.0 + 0.5 = 2.0 + 3.0 + 0.5 = 5.5
         Assert.Equal(5.5f, outputs[0], precision: 6);
     }
 
@@ -199,12 +199,12 @@ public class CPUEvaluatorTests
         var spec = new SpeciesBuilder()
             .AddInputRow(1)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(1, 2)
+            .AddEdge(0, 1)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = -2.0f; // Negative weight
-        individual.Activations[2] = ActivationType.ReLU;
+        individual.Activations[1] = ActivationType.ReLU;
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 1.0f });
@@ -219,12 +219,12 @@ public class CPUEvaluatorTests
         var spec = new SpeciesBuilder()
             .AddInputRow(1)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(1, 2)
+            .AddEdge(0, 1)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = 100.0f; // Very large weight
-        individual.Activations[2] = ActivationType.Tanh;
+        individual.Activations[1] = ActivationType.Tanh;
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 1.0f });
@@ -240,13 +240,13 @@ public class CPUEvaluatorTests
         var spec = new SpeciesBuilder()
             .AddInputRow(1)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(1, 2)
+            .AddEdge(0, 1)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
         individual.Weights[0] = -1.0f;
-        individual.Activations[2] = ActivationType.LeakyReLU;
-        individual.SetNodeParams(2, new[] { 0.1f, 0f, 0f, 0f }); // α = 0.1
+        individual.Activations[1] = ActivationType.LeakyReLU;
+        individual.SetNodeParams(1, new[] { 0.1f, 0f, 0f, 0f }); // α = 0.1
 
         var evaluator = new CPUEvaluator(spec);
         var outputs = evaluator.Evaluate(individual, new[] { 5.0f });
@@ -268,9 +268,8 @@ public class CPUEvaluatorTests
             .AddInputRow(2)
             .AddHiddenRow(2, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .ConnectBiasToAll()
+            .FullyConnect(fromRow: 0, toRow: 1)
             .FullyConnect(fromRow: 1, toRow: 2)
-            .FullyConnect(fromRow: 2, toRow: 3)
             .Build();
 
         var individual = new Individual(spec.TotalEdges, spec.TotalNodes);
@@ -279,9 +278,9 @@ public class CPUEvaluatorTests
         // Initialize with random weights
         MutationOperators.InitializeWeights(individual, spec, random);
 
+        individual.Activations[2] = ActivationType.ReLU;
         individual.Activations[3] = ActivationType.ReLU;
-        individual.Activations[4] = ActivationType.ReLU;
-        individual.Activations[5] = ActivationType.Tanh;
+        individual.Activations[4] = ActivationType.Tanh;
 
         var evaluator = new CPUEvaluator(spec);
 
@@ -366,8 +365,7 @@ public class CPUEvaluatorTests
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(3, ActivationType.Tanh)
-            .ConnectBiasToAll()
-            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 0, toRow: 1)
             .Build();
     }
 

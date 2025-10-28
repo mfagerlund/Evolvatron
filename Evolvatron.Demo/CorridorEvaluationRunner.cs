@@ -295,9 +295,8 @@ public class CorridorEvaluationRunner
             .AddInputRow(9)
             .AddHiddenRow(12, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 0, toRow: 1)
             .FullyConnect(fromRow: 1, toRow: 2)
-            .FullyConnect(fromRow: 2, toRow: 3)
             .WithMaxInDegree(12)
             .Build();
     }

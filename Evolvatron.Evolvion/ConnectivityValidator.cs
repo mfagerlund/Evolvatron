@@ -23,14 +23,13 @@ public static class ConnectivityValidator
     public static bool ValidateConnectivity(SpeciesSpec spec, List<(int Source, int Dest)> edges)
     {
         // Get input and output node ranges
-        var inputPlan = spec.RowPlans[1]; // Row 1 is input layer
+        var inputPlan = spec.RowPlans[0]; // Row 0 is input layer
         var outputPlan = spec.RowPlans[^1]; // Last row is output layer
 
         var inputNodes = Enumerable.Range(inputPlan.NodeStart, inputPlan.NodeCount).ToHashSet();
         var outputNodes = Enumerable.Range(outputPlan.NodeStart, outputPlan.NodeCount).ToHashSet();
 
         // Add bias node (always reachable)
-        inputNodes.Add(0);
 
         // Compute nodes reachable from input via forward BFS
         var reachableFromInput = ComputeReachableForward(edges, inputNodes, spec.TotalNodes);
@@ -130,12 +129,10 @@ public static class ConnectivityValidator
     /// </summary>
     public static bool[] ComputeActiveNodes(SpeciesSpec spec)
     {
-        var inputPlan = spec.RowPlans[1];
+        var inputPlan = spec.RowPlans[0];
         var outputPlan = spec.RowPlans[^1];
 
         var inputNodes = Enumerable.Range(inputPlan.NodeStart, inputPlan.NodeCount).ToHashSet();
-        inputNodes.Add(0); // Bias node
-
         var outputNodes = Enumerable.Range(outputPlan.NodeStart, outputPlan.NodeCount).ToHashSet();
 
         // Nodes reachable from input

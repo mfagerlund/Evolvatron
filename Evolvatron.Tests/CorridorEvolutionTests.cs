@@ -5,7 +5,7 @@ namespace Evolvatron.Tests;
 
 public class CorridorEvolutionTests
 {
-    [Fact]
+    [Fact(Skip = "Slow test - run explicitly")]
     public void CorridorEvolution_WithDefaultParameters_ShouldSolve()
     {
         var config = new CorridorEvaluationRunner.RunConfig

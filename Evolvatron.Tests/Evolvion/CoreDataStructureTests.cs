@@ -250,20 +250,6 @@ public class CoreDataStructureTests
     }
 
     [Fact]
-    public void SpeciesSpec_Validate_RequiresBiasRowHasOneNode()
-    {
-        var spec = new SpeciesSpec
-        {
-            RowCounts = new[] { 2, 6, 3 }, // Invalid: bias row has 2 nodes
-            AllowedActivationsPerRow = new uint[] { 0, 0, 0 }
-        };
-
-        var ex = Assert.Throws<InvalidOperationException>(() => spec.Validate());
-        Assert.Contains("bias", ex.Message.ToLower());
-        Assert.Contains("1", ex.Message);
-    }
-
-    [Fact]
     public void SpeciesSpec_Validate_RejectsNegativeRowCounts()
     {
         var spec = new SpeciesSpec

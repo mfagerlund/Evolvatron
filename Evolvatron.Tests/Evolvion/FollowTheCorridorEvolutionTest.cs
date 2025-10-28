@@ -62,17 +62,15 @@ public class FollowTheCorridorEvolutionTest
 
     private static SpeciesSpec CreateCorridorTopology()
     {
-        // Row 0: 1 bias
-        // Row 1: 9 sensors
-        // Row 2: 12 hidden
-        // Row 3: 2 outputs (steering, throttle)
+        // Row 0: 9 sensors
+        // Row 1: 12 hidden
+        // Row 2: 2 outputs (steering, throttle)
         return new SpeciesBuilder()
             .AddInputRow(9)
             .AddHiddenRow(12, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .FullyConnect(fromRow: 0, toRow: 2)
+            .FullyConnect(fromRow: 0, toRow: 1)
             .FullyConnect(fromRow: 1, toRow: 2)
-            .FullyConnect(fromRow: 2, toRow: 3)
             .WithMaxInDegree(12)
             .Build();
     }

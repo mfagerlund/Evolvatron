@@ -48,11 +48,10 @@ public class EdgeTopologyMutationTests
         var spec = CreateSimpleConnectedSpec();
         var activeNodes = ConnectivityValidator.ComputeActiveNodes(spec);
 
-        // Bias, inputs, and output should be active
-        Assert.True(activeNodes[0]); // Bias
+        // Inputs and output should be active
+        Assert.True(activeNodes[0]); // Input
         Assert.True(activeNodes[1]); // Input
-        Assert.True(activeNodes[2]); // Input
-        Assert.True(activeNodes[3]); // Output
+        Assert.True(activeNodes[2]); // Output
     }
 
     #endregion
@@ -81,8 +80,8 @@ public class EdgeTopologyMutationTests
         var spec = new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(0, 3)
-            .AddEdge(1, 3)
+            .AddEdge(0, 2)
+            .AddEdge(1, 2)
             .WithMaxInDegree(2)
             .Build();
 
@@ -95,7 +94,7 @@ public class EdgeTopologyMutationTests
         }
 
         // Count in-degree for output node
-        int outDegree = spec.Edges.Count(e => e.Dest == 3);
+        int outDegree = spec.Edges.Count(e => e.Dest == 2);
         Assert.True(outDegree <= spec.MaxInDegree);
     }
 
@@ -565,10 +564,10 @@ public class EdgeTopologyMutationTests
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(3, ActivationType.Tanh)
+            .AddEdge(0, 2)
             .AddEdge(0, 3)
-            .AddEdge(0, 4)
+            .AddEdge(1, 2)
             .AddEdge(1, 3)
-            .AddEdge(2, 4)
             .Build();
     }
 
@@ -577,8 +576,7 @@ public class EdgeTopologyMutationTests
         return new SpeciesBuilder()
             .AddInputRow(2)
             .AddOutputRow(1, ActivationType.Tanh)
-            .ConnectBiasToAll()
-            .FullyConnect(fromRow: 1, toRow: 2)
+            .FullyConnect(fromRow: 0, toRow: 1)
             .Build();
     }
 
@@ -588,12 +586,11 @@ public class EdgeTopologyMutationTests
             .AddInputRow(2)
             .AddHiddenRow(4, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(2, ActivationType.Tanh)
-            .ConnectBiasToAll()
-            .AddEdge(1, 3)
+            .AddEdge(0, 2)
+            .AddEdge(0, 3)
             .AddEdge(1, 4)
-            .AddEdge(2, 5)
-            .AddEdge(2, 6)
-            .FullyConnect(fromRow: 2, toRow: 3)
+            .AddEdge(1, 5)
+            .FullyConnect(fromRow: 1, toRow: 2)
             .WithMaxInDegree(8)
             .Build();
     }
@@ -605,15 +602,15 @@ public class EdgeTopologyMutationTests
             .AddHiddenRow(3, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddHiddenRow(3, ActivationType.Linear, ActivationType.Tanh, ActivationType.ReLU, ActivationType.Sigmoid, ActivationType.LeakyReLU, ActivationType.ELU, ActivationType.Softsign, ActivationType.Softplus, ActivationType.Sin, ActivationType.Gaussian, ActivationType.GELU)
             .AddOutputRow(1, ActivationType.Tanh)
-            .AddEdge(0, 3)
+            .AddEdge(0, 2)
+            .AddEdge(1, 2)
             .AddEdge(1, 3)
-            .AddEdge(2, 4)
+            .AddEdge(2, 5)
             .AddEdge(3, 6)
             .AddEdge(4, 7)
             .AddEdge(5, 8)
-            .AddEdge(6, 9)
-            .AddEdge(7, 9)
-            .AddEdge(8, 9)
+            .AddEdge(6, 8)
+            .AddEdge(7, 8)
             .WithMaxInDegree(8)
             .Build();
     }
