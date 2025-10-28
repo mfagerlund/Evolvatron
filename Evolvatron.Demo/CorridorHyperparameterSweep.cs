@@ -8,10 +8,10 @@ namespace Evolvatron.Demo;
 /// </summary>
 public static class CorridorHyperparameterSweep
 {
-    private const int MaxTimeoutSeconds = 300; // 5 minutes per trial (reduced from 15)
+    private const int MaxTimeoutSeconds = 60; // 1 minute per trial - very tight
     private const int SeedsPerConfig = 3; // Multiple seeds for statistical validity
     private const float SolvedThreshold = 1.0f; // 100% completion - must finish!
-    private const int MaxStepsForSuccess = 50; // Much tighter generation limit (reduced from 1000)
+    private const int MaxStepsForSuccess = 20; // Extremely tight generation limit
 
     public static void Run()
     {
