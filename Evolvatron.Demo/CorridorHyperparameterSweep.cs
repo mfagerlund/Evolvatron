@@ -153,7 +153,7 @@ public static class CorridorHyperparameterSweep
             MaxGenerations = MaxStepsForSuccess,
             SolvedThreshold = SolvedThreshold,
             MaxTimeoutMs = MaxTimeoutSeconds * 1000,
-            MaxStepsPerEpisode = 320
+            MaxStepsPerEpisode = 250
         };
 
         var runner = new CorridorEvaluationRunner(
