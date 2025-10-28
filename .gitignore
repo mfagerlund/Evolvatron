@@ -103,3 +103,9 @@ orleans.codegen.cs
 # OS files
 .DS_Store
 Thumbs.db
+
+# Claude Code project-specific config
+.claude/
+
+# Archives and build artifacts
+*.zip
