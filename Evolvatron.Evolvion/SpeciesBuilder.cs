@@ -33,6 +33,18 @@ public class SpeciesBuilder
         return this;
     }
 
+    /// <summary>
+    /// Add multiple hidden rows with the same configuration.
+    /// </summary>
+    public SpeciesBuilder AddHiddenRow(int nodeCount, ActivationType activation, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            AddHiddenRow(nodeCount, activation);
+        }
+        return this;
+    }
+
     public SpeciesBuilder AddOutputRow(int nodeCount, ActivationType activation = ActivationType.Tanh)
     {
         if (activation != ActivationType.Linear && activation != ActivationType.Tanh)
@@ -222,15 +234,28 @@ public class SpeciesBuilder
                     (candidateSources[i], candidateSources[j]) = (candidateSources[j], candidateSources[i]);
                 }
 
-                // Calculate number of connections for this node
-                int targetConnections = Math.Max(1, (int)Math.Round(srcRowCount * density));
-                targetConnections = Math.Min(targetConnections, _maxInDegree);
-                targetConnections = Math.Min(targetConnections, srcRowCount);
+                // Sample edges with per-edge probability (FIXED: was rounding which caused identical results)
+                var selectedSources = new List<int>();
+                foreach (var src in candidateSources)
+                {
+                    if (random.NextSingle() < density)
+                    {
+                        selectedSources.Add(src);
+                        if (selectedSources.Count >= _maxInDegree)
+                            break; // Respect max in-degree
+                    }
+                }
+
+                // Guarantee at least one connection per node (minimum connectivity)
+                if (selectedSources.Count == 0 && candidateSources.Count > 0)
+                {
+                    selectedSources.Add(candidateSources[0]);
+                }
 
                 // Add edges from selected sources
-                for (int i = 0; i < targetConnections; i++)
+                foreach (var src in selectedSources)
                 {
-                    _edges.Add((candidateSources[i], destNode));
+                    _edges.Add((src, destNode));
                 }
             }
         }
