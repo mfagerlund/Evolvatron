@@ -341,6 +341,7 @@ public class InitializationStrategiesTests
             .AddHiddenRow(6, ActivationType.ReLU)
             .AddOutputRow(2, ActivationType.Tanh)
             .WithMaxInDegree(8) // Allow higher for fully connected
+            .InitializeDense(random, density: 1.0f) // Create all edges
             .Build();
 
         var sparse = CreateSparseNetwork(4, new[] { 6 }, 2, 2, random);

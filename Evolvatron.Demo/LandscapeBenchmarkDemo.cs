@@ -38,7 +38,6 @@ public static class LandscapeBenchmarkDemo
             IndividualsPerSpecies = 100,
             Elites = 4,
             TournamentSize = 4,
-            SeedsPerIndividual = 5
         };
 
         var result = RunEvolution(task, config, maxGenerations: 1000, successThreshold: 50.0f);
@@ -64,7 +63,6 @@ public static class LandscapeBenchmarkDemo
             IndividualsPerSpecies = 100,
             Elites = 4,
             TournamentSize = 4,
-            SeedsPerIndividual = 5
         };
 
         var result = RunEvolution(task, config, maxGenerations: 1000, successThreshold: 1000.0f);
@@ -90,7 +88,6 @@ public static class LandscapeBenchmarkDemo
             IndividualsPerSpecies = 100,
             Elites = 4,
             TournamentSize = 4,
-            SeedsPerIndividual = 5
         };
 
         var result = RunEvolution(task, config, maxGenerations: 1000, successThreshold: 100.0f);

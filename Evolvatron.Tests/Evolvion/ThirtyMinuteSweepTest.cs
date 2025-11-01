@@ -290,7 +290,6 @@ public class ThirtyMinuteSweepTest
                 EdgeAdd = 0.05f,
                 EdgeDeleteRandom = 0.02f
             },
-            WeightInitialization = "GlorotUniform"
         };
     }
 

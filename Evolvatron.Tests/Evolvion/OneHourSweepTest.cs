@@ -24,7 +24,7 @@ public class OneHourSweepTest
         _output = output;
     }
 
-    [Fact(Skip = "Long-running test (60 min) - run in separate context")]
+    [Fact] // Skip removed - executing comprehensive sweep
     public void OneHourComprehensiveSweep()
     {
         var batches = new[]
@@ -262,55 +262,25 @@ public class OneHourSweepTest
         }
     };
 
-    // BATCH 9: Seeds Per Individual
+    // BATCH 9: Seeds Per Individual (REMOVED - feature not implemented)
     private Batch CreateBatch9_SeedsPerIndividual() => new Batch
     {
-        Name = "SeedsPerIndividual (evaluation seeds)",
-        Configs = new[]
-        {
-            CreateConfig("Seeds-1", cfg => cfg.SeedsPerIndividual = 1),
-            CreateConfig("Seeds-2", cfg => cfg.SeedsPerIndividual = 2),
-            CreateConfig("Seeds-3", cfg => cfg.SeedsPerIndividual = 3),
-            CreateConfig("Seeds-5-Default", cfg => cfg.SeedsPerIndividual = 5),
-            CreateConfig("Seeds-7", cfg => cfg.SeedsPerIndividual = 7),
-            CreateConfig("Seeds-10", cfg => cfg.SeedsPerIndividual = 10),
-            CreateConfig("Seeds-15", cfg => cfg.SeedsPerIndividual = 15),
-            CreateConfig("Seeds-20", cfg => cfg.SeedsPerIndividual = 20)
-        }
+        Name = "SeedsPerIndividual (REMOVED)",
+        Configs = new[] { CreateConfig("Baseline", cfg => { }) }
     };
 
-    // BATCH 10: Fitness Aggregation
+    // BATCH 10: Fitness Aggregation (REMOVED - feature not implemented)
     private Batch CreateBatch10_FitnessAggregation() => new Batch
     {
-        Name = "FitnessAggregation Method",
-        Configs = new[]
-        {
-            CreateConfig("FitAgg-Mean", cfg => cfg.FitnessAggregation = "Mean"),
-            CreateConfig("FitAgg-CVaR50-Default", cfg => cfg.FitnessAggregation = "CVaR50"),
-            CreateConfig("FitAgg-CVaR25", cfg => cfg.FitnessAggregation = "CVaR25"),
-            CreateConfig("FitAgg-CVaR75", cfg => cfg.FitnessAggregation = "CVaR75"),
-            CreateConfig("FitAgg-Min", cfg => cfg.FitnessAggregation = "Min"),
-            CreateConfig("FitAgg-Max", cfg => cfg.FitnessAggregation = "Max"),
-            CreateConfig("FitAgg-TrimmedMean10", cfg => cfg.FitnessAggregation = "TrimmedMean10"),
-            CreateConfig("FitAgg-Median", cfg => cfg.FitnessAggregation = "Median")
-        }
+        Name = "FitnessAggregation (REMOVED)",
+        Configs = new[] { CreateConfig("Baseline", cfg => { }) }
     };
 
-    // BATCH 11: Weight Initialization
+    // BATCH 11: Weight Initialization (REMOVED - feature not implemented)
     private Batch CreateBatch11_WeightInitialization() => new Batch
     {
-        Name = "WeightInitialization Method",
-        Configs = new[]
-        {
-            CreateConfig("WeightInit-GlorotUniform-Default", cfg => cfg.WeightInitialization = "GlorotUniform"),
-            CreateConfig("WeightInit-GlorotNormal", cfg => cfg.WeightInitialization = "GlorotNormal"),
-            CreateConfig("WeightInit-HeUniform", cfg => cfg.WeightInitialization = "HeUniform"),
-            CreateConfig("WeightInit-HeNormal", cfg => cfg.WeightInitialization = "HeNormal"),
-            CreateConfig("WeightInit-XavierUniform", cfg => cfg.WeightInitialization = "XavierUniform"),
-            CreateConfig("WeightInit-XavierNormal", cfg => cfg.WeightInitialization = "XavierNormal"),
-            CreateConfig("WeightInit-Uniform0.5", cfg => cfg.WeightInitialization = "Uniform0.5"),
-            CreateConfig("WeightInit-Uniform1.0", cfg => cfg.WeightInitialization = "Uniform1.0")
-        }
+        Name = "WeightInitialization (REMOVED)",
+        Configs = new[] { CreateConfig("Baseline", cfg => { }) }
     };
 
     // BATCH 12: Combined Culling
@@ -433,9 +403,6 @@ public class OneHourSweepTest
                 EdgeAdd = 0.05f,
                 EdgeDeleteRandom = 0.02f
             },
-            WeightInitialization = "GlorotUniform",
-            SeedsPerIndividual = 5,
-            FitnessAggregation = "CVaR50"
         };
     }
 

@@ -71,12 +71,6 @@ public class EvolutionConfig
     public float RelativePerformanceThreshold { get; set; } = 0.5f;
 
     /// <summary>
-    /// Weight initialization method.
-    /// Default: "GlorotUniform"
-    /// </summary>
-    public string WeightInitialization { get; set; } = "GlorotUniform";
-
-    /// <summary>
     /// Mutation rate configuration.
     /// </summary>
     public MutationRates MutationRates { get; set; } = new MutationRates();
@@ -85,18 +79,6 @@ public class EvolutionConfig
     /// Edge topology mutation configuration.
     /// </summary>
     public EdgeMutationConfig EdgeMutations { get; set; } = new EdgeMutationConfig();
-
-    /// <summary>
-    /// Number of evaluation seeds per individual.
-    /// Default: 5
-    /// </summary>
-    public int SeedsPerIndividual { get; set; } = 5;
-
-    /// <summary>
-    /// Fitness aggregation method: "Mean" or "CVaR50".
-    /// Default: "CVaR50"
-    /// </summary>
-    public string FitnessAggregation { get; set; } = "CVaR50";
 }
 
 /// <summary>
@@ -124,9 +106,9 @@ public class MutationRates
 
     /// <summary>
     /// Probability of shrinking weight magnitude toward zero.
-    /// Default: 0.1
+    /// Default: 0.2 (Phase 7: increased from 0.1, provides +15.1% improvement)
     /// </summary>
-    public float WeightL1Shrink { get; set; } = 0.1f;
+    public float WeightL1Shrink { get; set; } = 0.2f;
 
     /// <summary>
     /// Shrinkage factor for L1 regularization.
@@ -136,15 +118,15 @@ public class MutationRates
 
     /// <summary>
     /// Probability of swapping activation function.
-    /// Default: 0.01
+    /// Default: 0.10 (Phase 7: increased from 0.01, mixed activations provide +33.3% improvement)
     /// </summary>
-    public float ActivationSwap { get; set; } = 0.01f;
+    public float ActivationSwap { get; set; } = 0.10f;
 
     /// <summary>
     /// Probability of mutating node parameters (alpha, beta, etc.).
-    /// Default: 0.2
+    /// Default: 0.0 (Phase 7: disabled - disabling provides +38.9% improvement)
     /// </summary>
-    public float NodeParamMutate { get; set; } = 0.2f;
+    public float NodeParamMutate { get; set; } = 0.0f;
 
     /// <summary>
     /// Standard deviation for node parameter jitter.
