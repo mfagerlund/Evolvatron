@@ -484,10 +484,36 @@ RECOMMENDED CONFIGURATION CHANGES:
 
 ---
 
-## File to Create
+## How to Run
 
+### File Created:
 `Evolvatron.Tests/Evolvion/OneHourSweepTest.cs`
+
+### Command to Execute:
+```bash
+cd /c/Dev/Evolvatron
+dotnet test --filter "FullyQualifiedName~OneHourComprehensiveSweep" --logger "console;verbosity=detailed"
+```
+
+**IMPORTANT**: The test is marked with `[Skip]` attribute. You must either:
+1. Remove the `Skip` attribute from line 26 in `OneHourSweepTest.cs`, OR
+2. Comment out the `Skip = "..."` parameter
+
+### Expected Runtime:
+- **Duration**: ~60 minutes
+- **Parallelism**: 8 threads
+- **Total configs**: 120 (15 batches × 8 configs)
+- **Generations per config**: 150
+- **Total evaluations**: ~14.4 million
+
+### Output Files:
+Results will be printed to console. Recommended to capture to file:
+```bash
+dotnet test --filter "FullyQualifiedName~OneHourComprehensiveSweep" --logger "console;verbosity=detailed" 2>&1 | tee one-hour-sweep-results.log
+```
+
+### Test Structure:
 - 15 batch methods
 - 120 total configs
 - 8-thread parallelism
-- Comprehensive reporting
+- Comprehensive reporting (top 20 improvements, recommended changes)
