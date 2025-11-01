@@ -8,34 +8,35 @@ public class EvolutionConfig
 {
     /// <summary>
     /// Number of species in the population.
-    /// Default: 8
+    /// Default: 4 (Phase 6: 4 species × 200 individuals beats 8 × 100 by +3.3%)
     /// </summary>
-    public int SpeciesCount { get; set; } = 8;
+    public int SpeciesCount { get; set; } = 4;
 
     /// <summary>
     /// Minimum number of species to maintain (prevents complete collapse).
-    /// Default: 4
+    /// Default: 2
     /// </summary>
-    public int MinSpeciesCount { get; set; } = 4;
+    public int MinSpeciesCount { get; set; } = 2;
 
     /// <summary>
     /// Number of individuals per species.
-    /// Default: 100 (based on XOR hyperparameter sweep: 400 total pop = 4 species × 100)
+    /// Default: 200 (Phase 6: larger populations per species = more robust evolution)
+    /// Total population: SpeciesCount × IndividualsPerSpecies = 800
     /// </summary>
-    public int IndividualsPerSpecies { get; set; } = 100;
+    public int IndividualsPerSpecies { get; set; } = 200;
 
     /// <summary>
     /// Number of elite individuals preserved unchanged each generation.
-    /// Default: 4
+    /// Default: 2 (Phase 2: low elitism = better exploration. More elites hurt performance -0.264 correlation)
     /// </summary>
-    public int Elites { get; set; } = 4;
+    public int Elites { get; set; } = 2;
 
     /// <summary>
     /// Tournament size for selection pressure.
     /// Higher values = stronger selection.
-    /// Default: 4
+    /// Default: 16 (Phase 2: CRITICAL parameter, +0.743 correlation with improvement)
     /// </summary>
-    public int TournamentSize { get; set; } = 4;
+    public int TournamentSize { get; set; } = 16;
 
     /// <summary>
     /// Percentage of top individuals eligible as parents (0.0 to 1.0).
