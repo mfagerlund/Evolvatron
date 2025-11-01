@@ -187,7 +187,8 @@ public static class SpeciesDiversification
             }
             else
             {
-                child.Biases[i] = 0f;
+                // Initialize with small random bias
+                child.Biases[i] = (random.NextSingle() * 2f - 1f) * 0.1f;
             }
         }
 
@@ -202,8 +203,8 @@ public static class SpeciesDiversification
             child.NodeParams[i * 4 + 0] = 0.01f; // alpha
             child.NodeParams[i * 4 + 1] = 1.0f;  // beta
 
-            // Initialize bias for new node
-            child.Biases[i] = 0f;
+            // Initialize bias with small random value
+            child.Biases[i] = (random.NextSingle() * 2f - 1f) * 0.1f;
         }
 
         return child;
@@ -397,6 +398,12 @@ public static class SpeciesDiversification
             individual.NodeParams[i * 4 + 1] = 1.0f;  // beta
             individual.NodeParams[i * 4 + 2] = 0f;
             individual.NodeParams[i * 4 + 3] = 0f;
+        }
+
+        // Initialize biases with small random values
+        for (int i = 0; i < totalNodes; i++)
+        {
+            individual.Biases[i] = (random.NextSingle() * 2f - 1f) * 0.1f;
         }
 
         return individual;

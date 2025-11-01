@@ -197,20 +197,18 @@ public class Evolver
             // Clone topology for each species
             var topology = SpeciesDiversification.CloneTopology(defaultTopology);
 
-            // Apply some initial diversification
-            if (i > 0) // Keep first species as baseline
-            {
-                SpeciesDiversification.CloneTopology(topology);
-            }
-
             // Create species
             var species = new Species(topology);
 
-            // Initialize individuals
+            // Create a new Random instance for this species to increase diversity
+            // Seed it from the main random to maintain reproducibility
+            var speciesRandom = new Random(_random.Next());
+
+            // Initialize individuals with species-specific random
             species.Individuals = SpeciesDiversification.InitializePopulation(
                 topology,
                 config.IndividualsPerSpecies,
-                _random);
+                speciesRandom);
 
             population.AllSpecies.Add(species);
         }

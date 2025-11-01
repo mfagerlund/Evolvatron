@@ -227,30 +227,19 @@ public class SpeciesBuilder
                     candidateSources.Add(srcRowStart + srcLocalIdx);
                 }
 
-                // Shuffle candidates for random selection
+                // Shuffle candidates for random selection (Fisher-Yates)
                 for (int i = candidateSources.Count - 1; i > 0; i--)
                 {
                     int j = random.Next(i + 1);
                     (candidateSources[i], candidateSources[j]) = (candidateSources[j], candidateSources[i]);
                 }
 
-                // Sample edges with per-edge probability (FIXED: was rounding which caused identical results)
-                var selectedSources = new List<int>();
-                foreach (var src in candidateSources)
-                {
-                    if (random.NextSingle() < density)
-                    {
-                        selectedSources.Add(src);
-                        if (selectedSources.Count >= _maxInDegree)
-                            break; // Respect max in-degree
-                    }
-                }
+                // Select first N candidates after shuffle (true uniform random sampling)
+                // targetCount = density * candidateCount, clamped to [1, maxInDegree]
+                int targetCount = Math.Max(1, Math.Min(_maxInDegree,
+                    (int)Math.Round(candidateSources.Count * density)));
 
-                // Guarantee at least one connection per node (minimum connectivity)
-                if (selectedSources.Count == 0 && candidateSources.Count > 0)
-                {
-                    selectedSources.Add(candidateSources[0]);
-                }
+                var selectedSources = candidateSources.Take(targetCount).ToList();
 
                 // Add edges from selected sources
                 foreach (var src in selectedSources)
