@@ -28,6 +28,34 @@ The sparse/density sweep results in this document were affected by a critical bu
 
 ---
 
+## ⚠️ ADDITIONAL CRITICAL UPDATE (2025-11-01 Post-Bias-Fix)
+
+**ALL RESULTS IN THIS DOCUMENT ARE NOW POTENTIALLY INVALIDATED!**
+
+After density bug fix, **THREE additional critical bugs** were discovered and fixed (commit 641033a):
+
+1. **Zero bias initialization** - All biases initialized to 0 (no diversity between seeds)
+2. **Order-dependent edge sampling** - InitializeDense had sequential iteration bias favoring early candidates
+3. **Shared Random instance** - All species used same Random instance (reduced diversity)
+
+**Impact on Results**:
+- The bias fix will **change ALL evolutionary dynamics**
+- Multi-seed evaluation now produces properly diverse trajectories (20x variance improvement)
+- All mutation rate findings may change with proper bias initialization
+- All architecture findings may change with corrected edge sampling
+
+**Recommendation**: **Phase 8 full sweep required** to re-validate ALL hyperparameters.
+
+**Only these findings remain valid**:
+- ✅ Architecture trends (deeper is likely still better)
+- ✅ Density bug fix (0.85 beats 1.0)
+- ⚠️ All mutation rates need re-validation
+- ⚠️ All numerical results are now suspect
+
+See `CRITICAL-BUGS-TO-FIX.md` Bug #3 for full details on multi-seed diversity fixes.
+
+---
+
 ## Executive Summary
 
 ### 🏆 TOP 3 GAME-CHANGING DISCOVERIES:

@@ -16,6 +16,24 @@ See: `CRITICAL-BUGS-TO-FIX.md` for full details.
 
 ---
 
+## ⚠️ ADDITIONAL CRITICAL UPDATE (Re-validation Required)
+
+**ALL RECOMMENDATIONS BELOW MAY NEED RE-VALIDATION!**
+
+After the density bug fix, **THREE additional critical bugs** were discovered and fixed (commit 641033a):
+
+1. **Zero bias initialization** - All biases were initialized to 0 (no diversity)
+2. **Order-dependent edge sampling** - Sequential iteration bias in InitializeDense
+3. **Shared Random instance** - All species shared same Random (reduced diversity)
+
+**Impact**: These fixes will change ALL evolutionary dynamics. The architecture and mutation rate recommendations below were derived with buggy code and may no longer be optimal.
+
+**Status**: Phase 7 defaults are **PROVISIONAL** pending Phase 8 full re-validation.
+
+See `CRITICAL-BUGS-TO-FIX.md` Bug #3 for details.
+
+---
+
 ## Recommended Default Configuration
 
 ### Architecture: Ultra-Deep Narrow (15 layers × 2 nodes)

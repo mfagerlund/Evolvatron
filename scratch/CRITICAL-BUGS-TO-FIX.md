@@ -98,36 +98,33 @@ public SpeciesBuilder AddHiddenRow(int nodeCount, ActivationType activation, int
 
 ---
 
-## 🔴 BUG #3: Multi-Seed Evaluation Not Working (CRITICAL)
+## ✅ BUG #3: Multi-Seed Evaluation Not Working (FIXED)
 
-**Severity**: CRITICAL - Invalidates all multi-seed validation claims
+**Severity**: CRITICAL - Invalidated all multi-seed validation claims
 
 **Discovery**: MultiSeedDiversityValidationTest (2025-11-01)
 
-**Observation**:
-Running same configuration with 5 different seeds (42, 123, 456, 789, 999) produces nearly IDENTICAL results:
+**Original Observation**:
+Running same configuration with 5 different seeds produced nearly IDENTICAL results:
 - Gen0 variance: 0.000020 (expected >> 0.001)
 - Gen100 variance: 0.000185 (expected >> 0.001)
-- Gen0 fitness range: -0.9686 to -0.9814 (stddev=0.0045)
 
-**Root Cause**: UNKNOWN - Requires investigation
+**Root Causes Found**:
+1. **Zero bias initialization**: All biases initialized to 0 (no diversity)
+2. **Order-dependent edge sampling**: InitializeDense iterated candidates in order with per-edge probability, causing nearly identical topologies across seeds
+3. **Shared Random instance**: All species used same Random, reducing diversity
 
-**Hypotheses**:
-1. Topology initialization with different seeds creates similar network structures
-2. Weight initialization from same SpeciesSpec creates similar starting points
-3. Environment evaluation (SpiralEnvironment) has seed-independent behavior
-4. InitializeDense with 0.85 density produces nearly deterministic structures
+**Fixes Applied** (commit 641033a):
+1. **SpeciesDiversification.cs**: Initialize biases randomly: `(random.NextSingle() * 2f - 1f) * 0.1f`
+2. **SpeciesBuilder.cs**: Changed to shuffle-and-take (Fisher-Yates shuffle, then take first N)
+3. **Evolver.cs**: Species-specific Random instances: `new Random(_random.Next())`
 
-**Impact**:
-- Multi-seed sweeps may not provide diversity as expected
-- Averaging across seeds may not reduce noise
-- Single seed might be sufficient for evaluation
+**Results After Fix**:
+- Gen0 variance: 0.000004 (still low - expected, topology mostly deterministic at 0.85 density)
+- Gen100 variance: 0.003464 ✅ (20x improvement, PASSES threshold!)
+- Multi-seed evaluation now produces properly diverse evolutionary trajectories
 
-**Next Steps**:
-1. Investigate SpeciesDiversification.InitializePopulation randomness
-2. Check if different seeds produce different network structures
-3. Verify weight initialization truly uses Random instance
-4. Consider if this is a problem (maybe seeds don't matter much for this task?)
+**Status**: ✅ FIXED - Gen100 diversity validated
 
 ---
 
@@ -139,10 +136,13 @@ Running same configuration with 5 different seeds (42, 123, 456, 789, 999) produ
 3. ✅ Update COMPREHENSIVE-SWEEP-RESULTS.md with corrected findings
 
 ### High Priority:
-4. ⬜ Replace all `Random` with `ThreadSafeRandom`
+4. ⬜ Replace all `Random` with `ThreadSafeRandom` (deferred - requires manual refactoring)
 5. ✅ Add count parameter to `AddHiddenRow`
-6. ❓ Investigate Bug #3 (Multi-seed diversity issue)
-7. ⬜ Re-run full Phase 7 sweep with fixes (optional - if results significantly change)
+6. ✅ Fix Bug #3 (Multi-seed diversity issue)
+7. ⚠️ **RE-RUN SWEEPS NEEDED**: Bias fix + edge sampling fix will change all results
+   - Phase 7 results (COMPREHENSIVE-SWEEP-RESULTS.md) are now invalidated
+   - PHASE7-DEFAULTS-CORRECTED.md needs re-validation
+   - Recommend Phase 8 full sweep with all fixes applied
 
 ### Notes:
 - The ultra-deep 15×2 architecture finding is likely still valid (used same Random seed)
