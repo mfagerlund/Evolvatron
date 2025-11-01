@@ -142,6 +142,7 @@ public static class SpeciesDiversification
             Weights = new float[newEdgeCount],
             NodeParams = new float[newNodeCount * 4],
             Activations = new ActivationType[newNodeCount],
+            Biases = new float[newNodeCount],
             Fitness = 0f,
             Age = 0
         };
@@ -169,7 +170,7 @@ public static class SpeciesDiversification
             }
         }
 
-        // Copy activations for matching nodes
+        // Copy activations and biases for matching nodes
         int minNodes = Math.Min(newNodeCount, parent.Activations.Length);
         for (int i = 0; i < minNodes; i++)
         {
@@ -177,6 +178,16 @@ public static class SpeciesDiversification
             for (int p = 0; p < 4; p++)
             {
                 child.NodeParams[i * 4 + p] = parent.NodeParams[i * 4 + p];
+            }
+
+            // Copy bias from parent if available
+            if (parent.Biases != null && i < parent.Biases.Length)
+            {
+                child.Biases[i] = parent.Biases[i];
+            }
+            else
+            {
+                child.Biases[i] = 0f;
             }
         }
 
@@ -190,6 +201,9 @@ public static class SpeciesDiversification
             // Default params
             child.NodeParams[i * 4 + 0] = 0.01f; // alpha
             child.NodeParams[i * 4 + 1] = 1.0f;  // beta
+
+            // Initialize bias for new node
+            child.Biases[i] = 0f;
         }
 
         return child;

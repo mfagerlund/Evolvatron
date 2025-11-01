@@ -183,6 +183,61 @@ public class SpeciesBuilder
         return this;
     }
 
+    public SpeciesBuilder InitializeDense(Random random, float density = 1.0f)
+    {
+        if (_rowCounts.Count < 2)
+            throw new InvalidOperationException("Cannot initialize dense topology with less than 2 rows");
+
+        if (density <= 0.0f || density > 1.0f)
+            throw new ArgumentException("Density must be in range (0.0, 1.0]", nameof(density));
+
+        _edges.Clear();
+
+        // For each layer (starting from first hidden/output layer)
+        for (int destRowIdx = 1; destRowIdx < _rowCounts.Count; destRowIdx++)
+        {
+            int destRowStart = GetRowStart(destRowIdx);
+            int destRowCount = _rowCounts[destRowIdx];
+
+            int srcRowIdx = destRowIdx - 1;
+            int srcRowStart = GetRowStart(srcRowIdx);
+            int srcRowCount = _rowCounts[srcRowIdx];
+
+            // For each node in destination layer
+            for (int destLocalIdx = 0; destLocalIdx < destRowCount; destLocalIdx++)
+            {
+                int destNode = destRowStart + destLocalIdx;
+
+                // Build list of candidate source nodes
+                var candidateSources = new List<int>();
+                for (int srcLocalIdx = 0; srcLocalIdx < srcRowCount; srcLocalIdx++)
+                {
+                    candidateSources.Add(srcRowStart + srcLocalIdx);
+                }
+
+                // Shuffle candidates for random selection
+                for (int i = candidateSources.Count - 1; i > 0; i--)
+                {
+                    int j = random.Next(i + 1);
+                    (candidateSources[i], candidateSources[j]) = (candidateSources[j], candidateSources[i]);
+                }
+
+                // Calculate number of connections for this node
+                int targetConnections = Math.Max(1, (int)Math.Round(srcRowCount * density));
+                targetConnections = Math.Min(targetConnections, _maxInDegree);
+                targetConnections = Math.Min(targetConnections, srcRowCount);
+
+                // Add edges from selected sources
+                for (int i = 0; i < targetConnections; i++)
+                {
+                    _edges.Add((candidateSources[i], destNode));
+                }
+            }
+        }
+
+        return this;
+    }
+
     public SpeciesBuilder AddEdge(int sourceNode, int destNode)
     {
         _edges.Add((sourceNode, destNode));

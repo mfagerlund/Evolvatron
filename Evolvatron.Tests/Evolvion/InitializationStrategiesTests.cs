@@ -358,6 +358,218 @@ public class InitializationStrategiesTests
 
     #endregion
 
+    #region Dense Initialization
+
+    [Fact]
+    public void InitializeDense_FullyConnected_CreatesAllPossibleEdges()
+    {
+        var random = new Random(42);
+
+        // 2 inputs -> 6 hidden -> 6 hidden -> 1 output
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(6, ActivationType.ReLU)
+            .AddHiddenRow(6, ActivationType.Tanh)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random, density: 1.0f)
+            .Build();
+
+        // Verify edge counts per layer
+        // Layer 1: 2 inputs -> 6 hidden = 2*6 = 12 edges
+        int layer1Edges = spec.Edges.Count(e => e.Source < 2 && e.Dest >= 2 && e.Dest < 8);
+        Assert.Equal(12, layer1Edges);
+
+        // Layer 2: 6 hidden -> 6 hidden = 6*6 = 36 edges
+        int layer2Edges = spec.Edges.Count(e => e.Source >= 2 && e.Source < 8 && e.Dest >= 8 && e.Dest < 14);
+        Assert.Equal(36, layer2Edges);
+
+        // Layer 3: 6 hidden -> 1 output = 6*1 = 6 edges
+        int layer3Edges = spec.Edges.Count(e => e.Source >= 8 && e.Source < 14 && e.Dest >= 14);
+        Assert.Equal(6, layer3Edges);
+
+        // Total: 12 + 36 + 6 = 54 edges
+        Assert.Equal(54, spec.Edges.Count);
+    }
+
+    [Fact]
+    public void InitializeDense_HalfDensity_CreatesApproximatelyHalfEdges()
+    {
+        var random = new Random(42);
+
+        // 2 inputs -> 6 hidden -> 6 hidden -> 1 output
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(6, ActivationType.ReLU)
+            .AddHiddenRow(6, ActivationType.Tanh)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random, density: 0.5f)
+            .Build();
+
+        // Expected edges per layer (approximately):
+        // Layer 1: 6 nodes * 50% * 2 sources = 6 edges
+        int layer1Edges = spec.Edges.Count(e => e.Source < 2 && e.Dest >= 2 && e.Dest < 8);
+        Assert.Equal(6, layer1Edges); // Each of 6 nodes gets 1 connection (50% of 2)
+
+        // Layer 2: 6 nodes * 50% * 6 sources = 18 edges
+        int layer2Edges = spec.Edges.Count(e => e.Source >= 2 && e.Source < 8 && e.Dest >= 8 && e.Dest < 14);
+        Assert.Equal(18, layer2Edges); // Each of 6 nodes gets 3 connections (50% of 6)
+
+        // Layer 3: 1 node * 50% * 6 sources = 3 edges
+        int layer3Edges = spec.Edges.Count(e => e.Source >= 8 && e.Source < 14 && e.Dest >= 14);
+        Assert.Equal(3, layer3Edges); // 1 node gets 3 connections (50% of 6)
+
+        // Total: 6 + 18 + 3 = 27 edges (exactly half of 54)
+        Assert.Equal(27, spec.Edges.Count);
+    }
+
+    [Fact]
+    public void InitializeDense_QuarterDensity_CreatesApproximatelyQuarterEdges()
+    {
+        var random = new Random(42);
+
+        // 2 inputs -> 6 hidden -> 6 hidden -> 1 output
+        var spec = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(6, ActivationType.ReLU)
+            .AddHiddenRow(6, ActivationType.Tanh)
+            .AddOutputRow(1, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random, density: 0.25f)
+            .Build();
+
+        // Each node gets at least 1 edge, then 25% of available (rounded)
+        // Layer 1: 6 nodes * max(1, round(2*0.25)) = 6 nodes * 1 = 6 edges
+        int layer1Edges = spec.Edges.Count(e => e.Source < 2 && e.Dest >= 2 && e.Dest < 8);
+        Assert.Equal(6, layer1Edges);
+
+        // Layer 2: 6 nodes * max(1, round(6*0.25)) = 6 nodes * 2 = 12 edges
+        int layer2Edges = spec.Edges.Count(e => e.Source >= 2 && e.Source < 8 && e.Dest >= 8 && e.Dest < 14);
+        Assert.Equal(12, layer2Edges); // round(6*0.25) = round(1.5) = 2
+
+        // Layer 3: 1 node * max(1, round(6*0.25)) = 1 node * 2 = 2 edges
+        int layer3Edges = spec.Edges.Count(e => e.Source >= 8 && e.Source < 14 && e.Dest >= 14);
+        Assert.Equal(2, layer3Edges);
+
+        // Total: 6 + 12 + 2 = 20 edges
+        Assert.Equal(20, spec.Edges.Count);
+    }
+
+    [Fact]
+    public void InitializeDense_RespectsMaxInDegree()
+    {
+        var random = new Random(42);
+
+        // Create network where MaxInDegree would be exceeded at full density
+        var spec = new SpeciesBuilder()
+            .AddInputRow(10)
+            .AddHiddenRow(5, ActivationType.ReLU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .WithMaxInDegree(6) // Limit to 6 incoming edges
+            .InitializeDense(random, density: 1.0f)
+            .Build();
+
+        // Verify no node exceeds MaxInDegree
+        var inDegrees = new Dictionary<int, int>();
+        foreach (var (source, dest) in spec.Edges)
+        {
+            inDegrees[dest] = inDegrees.GetValueOrDefault(dest) + 1;
+        }
+
+        foreach (var (node, inDegree) in inDegrees)
+        {
+            Assert.True(inDegree <= 6, $"Node {node} has in-degree {inDegree}, exceeds MaxInDegree=6");
+        }
+    }
+
+    [Fact]
+    public void InitializeDense_GuaranteesMinimumOneEdgePerNode()
+    {
+        var random = new Random(42);
+
+        // Very low density should still give at least 1 edge per node
+        var spec = new SpeciesBuilder()
+            .AddInputRow(10)
+            .AddHiddenRow(8, ActivationType.ReLU)
+            .AddOutputRow(3, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random, density: 0.1f) // 10% density
+            .Build();
+
+        // Count in-degrees
+        var inDegrees = new Dictionary<int, int>();
+        foreach (var (source, dest) in spec.Edges)
+        {
+            inDegrees[dest] = inDegrees.GetValueOrDefault(dest) + 1;
+        }
+
+        // Every hidden and output node should have at least 1 incoming edge
+        for (int nodeIdx = 10; nodeIdx < spec.TotalNodes; nodeIdx++) // Skip inputs (0-9)
+        {
+            Assert.True(inDegrees.ContainsKey(nodeIdx) && inDegrees[nodeIdx] >= 1,
+                $"Node {nodeIdx} should have at least 1 incoming edge even at low density");
+        }
+    }
+
+    [Fact]
+    public void InitializeDense_ThrowsOnInvalidDensity()
+    {
+        var random = new Random(42);
+        var builder = new SpeciesBuilder()
+            .AddInputRow(2)
+            .AddHiddenRow(4, ActivationType.ReLU)
+            .AddOutputRow(1, ActivationType.Tanh);
+
+        // Test zero density
+        Assert.Throws<ArgumentException>(() =>
+            builder.InitializeDense(random, density: 0.0f));
+
+        // Test negative density
+        Assert.Throws<ArgumentException>(() =>
+            builder.InitializeDense(random, density: -0.5f));
+
+        // Test density > 1.0
+        Assert.Throws<ArgumentException>(() =>
+            builder.InitializeDense(random, density: 1.5f));
+    }
+
+    [Fact]
+    public void InitializeDense_RandomSelectionDiffers()
+    {
+        var random1 = new Random(42);
+        var random2 = new Random(99);
+
+        var spec1 = new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddHiddenRow(6, ActivationType.ReLU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random1, density: 0.5f)
+            .Build();
+
+        var spec2 = new SpeciesBuilder()
+            .AddInputRow(4)
+            .AddHiddenRow(6, ActivationType.ReLU)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .WithMaxInDegree(12)
+            .InitializeDense(random2, density: 0.5f)
+            .Build();
+
+        // Same number of edges but different connections due to random selection
+        Assert.Equal(spec1.Edges.Count, spec2.Edges.Count);
+
+        // At least some edges should be different
+        var edgeSet1 = spec1.Edges.ToHashSet();
+        var edgeSet2 = spec2.Edges.ToHashSet();
+        int commonEdges = edgeSet1.Intersect(edgeSet2).Count();
+
+        Assert.True(commonEdges < spec1.Edges.Count,
+            "Different random seeds should produce different edge selections");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     /// <summary>

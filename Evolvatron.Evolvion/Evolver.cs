@@ -109,10 +109,14 @@ public class Evolver
         SpeciesSpec topology,
         EvolutionConfig config)
     {
-        // Weight-level mutations
+        // Weight-level mutations (apply to both weights and biases)
         if (_random.NextSingle() < config.MutationRates.WeightJitter)
         {
             MutationOperators.ApplyWeightJitter(
+                individual,
+                config.MutationRates.WeightJitterStdDev,
+                _random);
+            MutationOperators.ApplyBiasJitter(
                 individual,
                 config.MutationRates.WeightJitterStdDev,
                 _random);
@@ -121,11 +125,15 @@ public class Evolver
         if (_random.NextSingle() < config.MutationRates.WeightReset)
         {
             MutationOperators.ApplyWeightReset(individual, _random);
+            MutationOperators.ApplyBiasReset(individual, _random);
         }
 
         if (_random.NextSingle() < config.MutationRates.WeightL1Shrink)
         {
             MutationOperators.ApplyWeightL1Shrink(
+                individual,
+                config.MutationRates.L1ShrinkFactor);
+            MutationOperators.ApplyBiasL1Shrink(
                 individual,
                 config.MutationRates.L1ShrinkFactor);
         }

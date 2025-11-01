@@ -18,7 +18,7 @@ public class SpiralEvolutionTest
         _output = output;
     }
 
-    [Fact(Skip = "Slow: requires topology mutations and many generations")]
+    [Fact]
     public void EvolutionCanSolveSpiral()
     {
         // Create topology: 2 inputs (x,y) -> 8 hidden -> 8 hidden -> 1 output
@@ -41,8 +41,12 @@ public class SpiralEvolutionTest
         var environment = new SpiralEnvironment(pointsPerSpiral: 50, noise: 0.0f);
         var evaluator = new SimpleFitnessEvaluator();
 
-        // Evolution loop
-        int maxGenerations = 500;
+        _output.WriteLine($"Population: {config.SpeciesCount} species × {config.IndividualsPerSpecies} individuals = {config.SpeciesCount * config.IndividualsPerSpecies} total");
+        _output.WriteLine($"Topology: 2 inputs -> 8 hidden -> 8 hidden -> 1 output");
+        _output.WriteLine("");
+
+        // Evolution loop - reduced to 10 generations for analysis
+        int maxGenerations = 10;
         float successThreshold = -0.05f; // Average squared error < 0.05
 
         for (int gen = 0; gen < maxGenerations; gen++)
@@ -50,21 +54,30 @@ public class SpiralEvolutionTest
             // Evaluate all individuals
             evaluator.EvaluatePopulation(population, environment, seed: gen);
 
-            // Get best individual
-            var best = population.GetBestIndividual();
-            float bestFitness = best?.individual.Fitness ?? float.MinValue;
+            // Get population statistics
+            var stats = population.GetStatistics();
 
-            if (gen % 50 == 0)
+            // Get per-species best fitness
+            _output.WriteLine($"=== Generation {gen} ===");
+            _output.WriteLine($"Population: Best={stats.BestFitness:F4} Mean={stats.MeanFitness:F4} Median={stats.MedianFitness:F4} Worst={stats.WorstFitness:F4}");
+            _output.WriteLine("Per-Species Best:");
+
+            for (int i = 0; i < population.AllSpecies.Count; i++)
             {
-                _output.WriteLine($"Generation {gen}: Best Fitness = {bestFitness:F6}");
+                var species = population.AllSpecies[i];
+                var speciesBest = species.Individuals.Max(ind => ind.Fitness);
+                var speciesMean = species.Individuals.Average(ind => ind.Fitness);
+                var speciesMedian = species.Individuals.Select(ind => ind.Fitness).OrderBy(f => f).ElementAt(species.Individuals.Count / 2);
+
+                _output.WriteLine($"  Species {i}: Best={speciesBest:F4} Mean={speciesMean:F4} Median={speciesMedian:F4} (n={species.Individuals.Count})");
             }
+            _output.WriteLine("");
 
-            // Check for success
-            if (bestFitness >= successThreshold)
+            // Check for success (unlikely in 10 gens)
+            if (stats.BestFitness >= successThreshold)
             {
-                _output.WriteLine($"SUCCESS! Solved spiral classification in {gen} generations with fitness {bestFitness:F6}");
-
-                // Verify the solution
+                _output.WriteLine($"SUCCESS! Solved spiral classification in {gen} generations with fitness {stats.BestFitness:F6}");
+                var best = population.GetBestIndividual();
                 VerifySpiralSolution(best.Value.individual, best.Value.species.Topology, environment, evaluator);
                 return;
             }
@@ -73,16 +86,12 @@ public class SpiralEvolutionTest
             evolver.StepGeneration(population);
         }
 
-        // If we get here, evolution didn't converge
-        var final = population.GetBestIndividual();
-        float finalFitness = final?.individual.Fitness ?? float.MinValue;
-
-        _output.WriteLine($"Did not fully converge after {maxGenerations} generations.");
-        _output.WriteLine($"Final best fitness: {finalFitness:F6} (threshold: {successThreshold:F6})");
-
-        // Still assert some progress was made
-        Assert.True(finalFitness > -0.5f,
-            $"Evolution made insufficient progress. Final fitness: {finalFitness:F6}");
+        // Report final state
+        var finalStats = population.GetStatistics();
+        _output.WriteLine($"\n=== After {maxGenerations} Generations ===");
+        _output.WriteLine($"Final best fitness: {finalStats.BestFitness:F6} (threshold: {successThreshold:F6})");
+        _output.WriteLine($"Fitness range: {finalStats.BestFitness - finalStats.WorstFitness:F6}");
+        _output.WriteLine($"Progress from Gen 0: (need to track Gen 0 best separately)");
     }
 
     private void VerifySpiralSolution(

@@ -85,6 +85,40 @@ public static class MutationOperators
     }
 
     /// <summary>
+    /// Bias Jitter: Add Gaussian noise to biases (σ = sigma * |bias|)
+    /// </summary>
+    public static void ApplyBiasJitter(Individual individual, float sigma, Random random)
+    {
+        for (int i = 0; i < individual.Biases.Length; i++)
+        {
+            float noise = SampleGaussian(random) * sigma * MathF.Abs(individual.Biases[i]);
+            individual.Biases[i] += noise;
+        }
+    }
+
+    /// <summary>
+    /// Bias Reset: Replace random bias with value from U(-1, 1)
+    /// </summary>
+    public static void ApplyBiasReset(Individual individual, Random random)
+    {
+        if (individual.Biases.Length == 0) return;
+
+        int index = random.Next(individual.Biases.Length);
+        individual.Biases[index] = random.NextSingle() * 2.0f - 1.0f;
+    }
+
+    /// <summary>
+    /// Bias L1 Shrink: Reduce |b| by shrinkage factor
+    /// </summary>
+    public static void ApplyBiasL1Shrink(Individual individual, float shrinkFactor)
+    {
+        for (int i = 0; i < individual.Biases.Length; i++)
+        {
+            individual.Biases[i] *= (1.0f - shrinkFactor);
+        }
+    }
+
+    /// <summary>
     /// Activation Swap: Replace a node's activation with a random allowed activation
     /// </summary>
     public static void ApplyActivationSwap(Individual individual, SpeciesSpec spec, Random random)
