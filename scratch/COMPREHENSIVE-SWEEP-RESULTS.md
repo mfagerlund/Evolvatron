@@ -3,7 +3,28 @@
 **Date**: 2025-11-01
 **Total Runtime**: 16.1 minutes (15 min main sweep + 1.1 min sparse/density)
 **Configurations Tested**: 128 (120 main + 8 sparse/density)
-**Status**: ✅ COMPLETED
+**Status**: ⚠️ **PARTIALLY INVALIDATED** - See Critical Update below
+
+---
+
+## ⚠️ CRITICAL UPDATE (2025-11-01 Post-Validation)
+
+**DISCOVERY #3 (Sparse Initialization) WAS WRONG DUE TO BUG!**
+
+The sparse/density sweep results in this document were affected by a critical bug in `InitializeDense()`:
+- **Bug**: `Math.Round(srcRowCount * density)` caused densities 0.85, 0.95, and 1.0 to produce IDENTICAL networks
+- **Fix**: Replaced with per-edge probability sampling in commit 4bced87
+- **Re-validation**: Commit 25a767c
+
+**CORRECTED FINDINGS** (see `CRITICAL-BUGS-TO-FIX.md`):
+- **Moderately sparse (0.85) BEATS fully dense (1.0) by 37%!**
+- Sweet spot: 0.5-0.85 density (all outperform fully dense)
+- Original claim "sparse fails 100x worse" was FALSE
+
+**VALID FINDINGS** (unaffected by bug):
+- ✅ Discovery #1: Ultra-deep networks (15×2) win by +63.4%
+- ✅ Discovery #2: Wider mid-depth networks (5×6) win by +46.6%
+- ✅ All mutation rate and bias findings remain valid
 
 ---
 
@@ -20,10 +41,9 @@
    - **Runner-up**: 5 layers × 6 nodes
    - Wider than current 6×3 architecture
 
-3. **SPARSE INITIALIZATION FAILS: Dense still wins**
-   - **Confirmed**: Fully dense (1.0) beats sparse initialization
-   - NEAT-style sparse-to-dense does NOT work even post-bias-fix
-   - Density <0.5 barely learns at all (100x worse!)
+3. ~~**SPARSE INITIALIZATION FAILS: Dense still wins**~~ **[INVALIDATED - SEE ABOVE]**
+   - ~~Confirmed: Fully dense (1.0) beats sparse initialization~~
+   - **CORRECTION**: Moderately sparse (0.7-0.85) actually WINS by 25-37%!
 
 ---
 

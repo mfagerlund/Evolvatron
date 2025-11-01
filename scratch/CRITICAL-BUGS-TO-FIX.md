@@ -96,6 +96,41 @@ public SpeciesBuilder AddHiddenRow(int nodeCount, ActivationType activation, int
 
 ---
 
+---
+
+## 🔴 BUG #3: Multi-Seed Evaluation Not Working (CRITICAL)
+
+**Severity**: CRITICAL - Invalidates all multi-seed validation claims
+
+**Discovery**: MultiSeedDiversityValidationTest (2025-11-01)
+
+**Observation**:
+Running same configuration with 5 different seeds (42, 123, 456, 789, 999) produces nearly IDENTICAL results:
+- Gen0 variance: 0.000020 (expected >> 0.001)
+- Gen100 variance: 0.000185 (expected >> 0.001)
+- Gen0 fitness range: -0.9686 to -0.9814 (stddev=0.0045)
+
+**Root Cause**: UNKNOWN - Requires investigation
+
+**Hypotheses**:
+1. Topology initialization with different seeds creates similar network structures
+2. Weight initialization from same SpeciesSpec creates similar starting points
+3. Environment evaluation (SpiralEnvironment) has seed-independent behavior
+4. InitializeDense with 0.85 density produces nearly deterministic structures
+
+**Impact**:
+- Multi-seed sweeps may not provide diversity as expected
+- Averaging across seeds may not reduce noise
+- Single seed might be sufficient for evaluation
+
+**Next Steps**:
+1. Investigate SpeciesDiversification.InitializePopulation randomness
+2. Check if different seeds produce different network structures
+3. Verify weight initialization truly uses Random instance
+4. Consider if this is a problem (maybe seeds don't matter much for this task?)
+
+---
+
 ## Action Plan
 
 ### Immediate (Must Fix):
@@ -105,8 +140,9 @@ public SpeciesBuilder AddHiddenRow(int nodeCount, ActivationType activation, int
 
 ### High Priority:
 4. ⬜ Replace all `Random` with `ThreadSafeRandom`
-5. ⬜ Add count parameter to `AddHiddenRow`
-6. ⬜ Re-run full Phase 7 sweep with fixes (optional - if results significantly change)
+5. ✅ Add count parameter to `AddHiddenRow`
+6. ❓ Investigate Bug #3 (Multi-seed diversity issue)
+7. ⬜ Re-run full Phase 7 sweep with fixes (optional - if results significantly change)
 
 ### Notes:
 - The ultra-deep 15×2 architecture finding is likely still valid (used same Random seed)
