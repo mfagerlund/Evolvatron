@@ -54,6 +54,13 @@ public class LongRunConvergenceTest
                 .InitializeDense(random, density: 0.3f)
                 .Build();
 
+            // Compute topology hash and statistics
+            int topologyHash = ComputeTopologyHash(topology);
+            float density = topology.TotalEdges / (float)(topology.TotalNodes * topology.TotalNodes);
+
+            _output.WriteLine($"Topology: Nodes={topology.TotalNodes}, Edges={topology.TotalEdges}, " +
+                $"Density={density:F3}, Hash={topologyHash:X8}");
+
             var population = evolver.InitializePopulation(config, topology);
             var environment = new SpiralEnvironment(pointsPerSpiral: 50, noise: 0.0f);
             var evaluator = new SimpleFitnessEvaluator();
@@ -65,36 +72,45 @@ public class LongRunConvergenceTest
             var gen0Stats = population.GetStatistics();
             history.Checkpoints.Add((0, gen0Stats.BestFitness, gen0Stats.MeanFitness));
 
-            _output.WriteLine($"Gen 0: Best={gen0Stats.BestFitness:F6}, Mean={gen0Stats.MeanFitness:F6}");
+            // Compute initial population diversity
+            var firstSpecies = population.AllSpecies.First();
+            float weightVariance = ComputeWeightVariance(firstSpecies);
 
-            // Evolution loop with periodic reporting
+            _output.WriteLine($"Gen 0: Best={gen0Stats.BestFitness:F6}, Mean={gen0Stats.MeanFitness:F6}, " +
+                $"PopSize={config.SpeciesCount * config.IndividualsPerSpecies}, WeightVar={weightVariance:F4}");
+
+            // Evolution loop - check for solve EVERY generation, report periodically
             for (int gen = 1; gen <= generations; gen++)
             {
-                evaluator.EvaluatePopulation(population, environment, seed: gen);
+                evaluator.EvaluatePopulation(population, environment, seed: 0);
                 evolver.StepGeneration(population);
 
-                if (gen % reportEvery == 0)
-                {
-                    var stats = population.GetStatistics();
-                    history.Checkpoints.Add((gen, stats.BestFitness, stats.MeanFitness));
+                var stats = population.GetStatistics();
 
+                // CHECK FOR SOLVE EVERY GENERATION
+                if (stats.BestFitness > -0.01f) // MSE < 0.01
+                {
+                    history.Checkpoints.Add((gen, stats.BestFitness, stats.MeanFitness));
                     _output.WriteLine($"Gen {gen,4}: Best={stats.BestFitness:F6}, Mean={stats.MeanFitness:F6}, " +
                         $"Species={population.AllSpecies.Count}, TotalCreated={population.TotalSpeciesCreated}");
+                    _output.WriteLine($"*** SOLVED at generation {gen}! MSE < 0.01 ***");
+                    history.SolvedAtGeneration = gen;
+                    break;
+                }
 
-                    // Early stopping if solved
-                    if (stats.BestFitness > -0.01f) // MSE < 0.01
-                    {
-                        _output.WriteLine($"*** SOLVED at generation {gen}! MSE < 0.01 ***");
-                        history.SolvedAtGeneration = gen;
-                        break;
-                    }
+                // Periodic reporting
+                if (gen % reportEvery == 0)
+                {
+                    history.Checkpoints.Add((gen, stats.BestFitness, stats.MeanFitness));
+                    _output.WriteLine($"Gen {gen,4}: Best={stats.BestFitness:F6}, Mean={stats.MeanFitness:F6}, " +
+                        $"Species={population.AllSpecies.Count}, TotalCreated={population.TotalSpeciesCreated}");
                 }
             }
 
             // Final evaluation
             if (!history.SolvedAtGeneration.HasValue)
             {
-                evaluator.EvaluatePopulation(population, environment, seed: generations);
+                evaluator.EvaluatePopulation(population, environment, seed: 0);
                 var finalStats = population.GetStatistics();
                 if (!history.Checkpoints.Any(c => c.Gen == generations))
                 {
@@ -152,6 +168,53 @@ public class LongRunConvergenceTest
 
         // We don't fail the test - this is exploratory
         _output.WriteLine("\n✓ Long-run convergence test complete!");
+    }
+
+    private static int ComputeTopologyHash(SpeciesSpec topology)
+    {
+        unchecked
+        {
+            int hash = 17;
+            hash = hash * 31 + topology.TotalNodes;
+            hash = hash * 31 + topology.TotalEdges;
+
+            // Hash edge structure (source -> dest pairs)
+            foreach (var edge in topology.Edges.OrderBy(e => e.Source).ThenBy(e => e.Dest))
+            {
+                hash = hash * 31 + edge.Source;
+                hash = hash * 31 + edge.Dest;
+            }
+
+            return hash;
+        }
+    }
+
+    private static float ComputeWeightVariance(Species species)
+    {
+        if (species.Individuals.Count == 0)
+            return 0f;
+
+        // Sample weights from first individual in species
+        var firstIndividual = species.Individuals[0];
+        if (firstIndividual.Weights.Length == 0)
+            return 0f;
+
+        // Compute variance across all individuals for first few weights (sample)
+        int sampleSize = Math.Min(10, firstIndividual.Weights.Length);
+        float totalVariance = 0f;
+
+        for (int w = 0; w < sampleSize; w++)
+        {
+            float mean = species.Individuals.Average(ind => ind.Weights[w]);
+            float variance = species.Individuals.Average(ind =>
+            {
+                float diff = ind.Weights[w] - mean;
+                return diff * diff;
+            });
+            totalVariance += variance;
+        }
+
+        return totalVariance / sampleSize;
     }
 
     private class RunHistory

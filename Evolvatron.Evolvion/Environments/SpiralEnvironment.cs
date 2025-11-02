@@ -73,7 +73,7 @@ public class SpiralEnvironment : IEnvironment
     private static List<(float x, float y, float label)> GenerateSpiralPoints(int pointsPerSpiral, float noise)
     {
         var points = new List<(float x, float y, float label)>();
-        var random = new Random(42); // Fixed seed for reproducibility
+        var random = new Random(42); // Fixed seed for reproducibility - all networks evaluated on same problem
 
         for (int i = 0; i < pointsPerSpiral; i++)
         {

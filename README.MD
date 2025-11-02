@@ -1,27 +1,95 @@
-﻿# Evolvatron
+# Evolvatron
 
-Evolvatron is a game where the player performs rocket systems design and reward engineering.
-Think moon lander in continous space where the rocket starts further away with some obstacles in 
-the way. It's the players job to set up a reward landscape to coax the rocket to arrive at the 
-correct location at the correct speed to perform a good landing. 
+Physics-based simulation engine with evolutionary neural network training.
 
-The player designs the reward landscape "live" where the playback history mostly remains
-valid during edits. If the agent is externally modified (new effectors, new sensors) the replay 
-buffer will need to be cleared and the agent started from scratch. So I expect the user will work
-on a rocket design and then on the rewards.
+## Components
 
-The rocket design will be a 2d editor where rocket components are pieced together, you 
-might have a sensor mounted on a gimbal and two motors separated for differential 
-steering. Or two motors mounted on gimbals. The sky is the limit.
+### Evolvatron.Core - XPBD Physics Engine
+2D physics simulation with particle-based and rigid body dynamics.
+- **CPUStepper**: Pure C# reference implementation
+- **GPUStepper**: ILGPU-accelerated for batch simulations (use only with real GPUs)
+- XPBD constraints: rods, angles, motors
+- Rigid bodies with revolute joints
+- Static colliders: circles, capsules, OBBs
 
-Note that the agents will NOT be trained on pixels, they will be given clear signals
-from the envionment, 2-15 signals and 2-25 outputs.
+See `CLAUDE.md` for detailed architecture documentation.
 
-## GPU vs CPU Performance
+### Evolvatron.Evolvion - Evolutionary Neural Networks
+NEAT-style evolutionary algorithm with species-based topology exploration.
 
-**CPUStepper**: Pure C# reference implementation. Use for gameplay and weak GPUs.
+**Status**: ✅ Hyperparameter optimization complete
 
-**GPUStepper**: ILGPU-accelerated for batch simulations (thousands of parallel agents).
-Only use with actual CUDA/OpenCL GPUs. CPU fallback mode has overhead from memory
-transfers and missing features (velocity stabilization, friction, damping).
-Not recommended for gameplay.
+Optuna-optimized configuration solves spiral classification in **3 generations** with 100% success rate:
+- 27 species × 88 individuals = 2,376 population
+- Aggressive selection + high mutation rates
+- Adaptive species culling
+- Weak edge pruning
+
+See `OPTUNA_RESULTS.md` for full results.
+
+**Key Features:**
+- Fixed-topology species with weight evolution
+- Edge mutations: add, delete, split, redirect, swap
+- Weak edge pruning for simplification
+- Deterministic evolution with seed control
+- Multi-seed validation framework
+
+**Benchmark Tasks:**
+- ✅ **Spiral Classification** (solved)
+- 🔄 **Landscape Navigation** (Sphere, Rosenbrock, Rastrigin, Ackley, Schwefel)
+- 🔄 **Cart Pole**
+- 🔄 **Follow The Corridor**
+
+See `Evolvatron.Evolvion.Benchmarks/` for optimization landscape tasks.
+
+### Evolvatron.Rigidon (Deprecated)
+Original rigid body implementation. Superseded by Evolvatron.Core.
+
+## Quick Start
+
+### Run Physics Demo
+```bash
+dotnet run --project Evolvatron.Demo
+```
+
+### Run Evolution Tests
+```bash
+dotnet test Evolvatron.Tests/Evolvatron.Tests.csproj --filter "FullyQualifiedName~Evolvion"
+```
+
+### Run Hyperparameter Optimization
+```bash
+pip install optuna
+python optuna_sweep.py --n-trials 10
+```
+
+## Project Structure
+
+```
+Evolvatron.Core/           # XPBD physics engine
+Evolvatron.Evolvion/       # Evolutionary neural networks
+Evolvatron.Demo/           # Visualization demos (Raylib)
+Evolvatron.Tests/          # Unit and integration tests
+Evolvatron.OptunaEval/     # Hyperparameter optimization CLI
+optuna_sweep.py            # Bayesian optimization orchestrator
+```
+
+## Configuration
+
+Default evolution config in `Evolvatron.Evolvion/EvolutionConfig.cs` contains Optuna-optimized hyperparameters.
+
+For physics config see `Evolvatron.Core/SimulationConfig.cs`.
+
+## Documentation
+
+- **CLAUDE.md** - Architecture and development guide
+- **OPTUNA_RESULTS.md** - Hyperparameter optimization results
+- **LANDSCAPE_BENCHMARK_RESULTS.md** - Benchmark task performance
+- **Evolvatron.Evolvion/README.md** - Evolvion module details
+
+## Next Steps
+
+- [ ] Test on landscape navigation benchmarks
+- [ ] Scale to higher-dimensional problems (10D+)
+- [ ] Integrate GPU-accelerated physics for RL training
+- [ ] Multi-objective optimization (fitness vs complexity)
