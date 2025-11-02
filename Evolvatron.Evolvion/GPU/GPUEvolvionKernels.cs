@@ -23,7 +23,8 @@ public static class GPUEvolvionKernels
         ArrayView<float> biases,
         ArrayView<byte> activations,
         ArrayView<float> nodeParams,
-        GPURowPlan rowPlan,
+        ArrayView<GPURowPlan> allRowPlans,
+        int rowIdx,
         int individualCount,
         int nodesPerIndividual,
         int weightsPerIndividual)
@@ -31,6 +32,7 @@ public static class GPUEvolvionKernels
         int individualIdx = index;
         if (individualIdx >= individualCount) return;
 
+        var rowPlan = allRowPlans[rowIdx];
         int nodeOffset = individualIdx * nodesPerIndividual;
         int weightOffset = individualIdx * weightsPerIndividual;
 
@@ -84,7 +86,8 @@ public static class GPUEvolvionKernels
         ArrayView<float> biases,
         ArrayView<byte> activations,
         ArrayView<float> nodeParams,
-        GPURowPlan rowPlan,
+        ArrayView<GPURowPlan> allRowPlans,
+        int rowIdx,
         int totalEpisodes,
         int episodesPerIndividual,
         int nodesPerIndividual,
@@ -93,6 +96,7 @@ public static class GPUEvolvionKernels
         int episodeIdx = index;
         if (episodeIdx >= totalEpisodes) return;
 
+        var rowPlan = allRowPlans[rowIdx];
         int individualIdx = episodeIdx / episodesPerIndividual;
 
         int nodeOffset = episodeIdx * nodesPerIndividual;
@@ -252,7 +256,8 @@ public static class GPUEvolvionKernels
         Index1D index,
         ArrayView<float> nodeValues,
         ArrayView<float> outputs,
-        GPURowPlan outputRowPlan,
+        ArrayView<GPURowPlan> allRowPlans,
+        int outputRowIdx,
         int individualCount,
         int nodesPerIndividual,
         int outputSize)
@@ -260,6 +265,7 @@ public static class GPUEvolvionKernels
         int individualIdx = index;
         if (individualIdx >= individualCount) return;
 
+        var outputRowPlan = allRowPlans[outputRowIdx];
         int nodeOffset = individualIdx * nodesPerIndividual;
         int outputOffset = individualIdx * outputSize;
 
@@ -277,7 +283,8 @@ public static class GPUEvolvionKernels
         Index1D index,
         ArrayView<float> nodeValues,
         ArrayView<float> outputs,
-        GPURowPlan outputRowPlan,
+        ArrayView<GPURowPlan> allRowPlans,
+        int outputRowIdx,
         int totalEpisodes,
         int nodesPerIndividual,
         int outputSize)
@@ -285,6 +292,7 @@ public static class GPUEvolvionKernels
         int episodeIdx = index;
         if (episodeIdx >= totalEpisodes) return;
 
+        var outputRowPlan = allRowPlans[outputRowIdx];
         int nodeOffset = episodeIdx * nodesPerIndividual;
         int outputOffset = episodeIdx * outputSize;
 

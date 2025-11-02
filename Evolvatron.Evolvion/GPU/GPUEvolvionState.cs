@@ -9,6 +9,9 @@ namespace Evolvatron.Evolvion.GPU;
 /// </summary>
 public class GPUEvolvionState : IDisposable
 {
+    public const int MAX_EPISODES_PER_INDIVIDUAL = 10;
+    public const int MAX_ROW_PLANS = 100;
+
     private readonly Accelerator _accelerator;
 
     public MemoryBuffer1D<GPUEdge, Stride1D.Dense> Edges { get; private set; }
@@ -38,7 +41,7 @@ public class GPUEvolvionState : IDisposable
         MaxEdges = maxEdges;
 
         Edges = accelerator.Allocate1D<GPUEdge>(maxEdges);
-        RowPlans = accelerator.Allocate1D<GPURowPlan>(100);
+        RowPlans = accelerator.Allocate1D<GPURowPlan>(MAX_ROW_PLANS);
 
         Individuals = new GPUIndividualBatch(
             accelerator,
@@ -46,7 +49,7 @@ public class GPUEvolvionState : IDisposable
             maxEdges,
             maxNodes);
 
-        NodeValues = accelerator.Allocate1D<float>(maxIndividuals * maxNodes * 10);
+        NodeValues = accelerator.Allocate1D<float>(maxIndividuals * maxNodes * MAX_EPISODES_PER_INDIVIDUAL);
 
         FitnessValues = accelerator.Allocate1D<float>(maxIndividuals);
     }

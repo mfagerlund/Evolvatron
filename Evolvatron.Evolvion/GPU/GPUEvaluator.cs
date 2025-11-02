@@ -13,12 +13,12 @@ public class GPUEvaluator : IDisposable
     private readonly Accelerator _accelerator;
     private GPUEvolvionState? _gpuState;
 
-    private readonly Action<Index1D, ArrayView<float>, ArrayView<GPUEdge>, ArrayView<float>, ArrayView<float>, ArrayView<byte>, ArrayView<float>, GPURowPlan, int, int, int> _evaluateRowKernel;
-    private readonly Action<Index1D, ArrayView<float>, ArrayView<GPUEdge>, ArrayView<float>, ArrayView<float>, ArrayView<byte>, ArrayView<float>, GPURowPlan, int, int, int, int> _evaluateRowForEpisodesKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<GPUEdge>, ArrayView<float>, ArrayView<float>, ArrayView<byte>, ArrayView<float>, ArrayView<GPURowPlan>, int, int, int, int> _evaluateRowKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<GPUEdge>, ArrayView<float>, ArrayView<float>, ArrayView<byte>, ArrayView<float>, ArrayView<GPURowPlan>, int, int, int, int, int> _evaluateRowForEpisodesKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, int, int, int> _setInputsKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, int, int, int, int> _setInputsForEpisodesKernel;
-    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, GPURowPlan, int, int, int> _getOutputsKernel;
-    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, GPURowPlan, int, int, int> _getOutputsForEpisodesKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<GPURowPlan>, int, int, int, int> _getOutputsKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<GPURowPlan>, int, int, int, int> _getOutputsForEpisodesKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<int>, ArrayView<byte>, GPULandscapeConfig, int, int> _initializeEpisodesKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, GPULandscapeConfig, int> _computeObservationsKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<int>, ArrayView<byte>, GPULandscapeConfig, int> _stepEnvironmentKernel;
@@ -42,10 +42,27 @@ public class GPUEvaluator : IDisposable
     {
         _context = Context.Create(builder => builder.Math(MathMode.Fast32BitOnly));
 
-        _accelerator = _context.GetPreferredDevice(preferCPU: false)
-            .CreateAccelerator(_context);
+        Console.WriteLine($"Available devices ({_context.Devices.Length}):");
+        foreach (var device in _context.Devices)
+        {
+            Console.WriteLine($"  - {device.Name} (Type: {device.AcceleratorType}, Memory: {device.MemorySize / (1024 * 1024)} MB)");
+        }
 
-        Console.WriteLine($"GPU Evaluator initialized on: {_accelerator.Name}");
+        var cudaDevice = _context.Devices
+            .FirstOrDefault(d => d.AcceleratorType == AcceleratorType.Cuda);
+
+        if (cudaDevice != null)
+        {
+            _accelerator = cudaDevice.CreateAccelerator(_context);
+        }
+        else
+        {
+            Console.WriteLine("WARNING: No CUDA device found, falling back to preferred device");
+            _accelerator = _context.GetPreferredDevice(preferCPU: false)
+                .CreateAccelerator(_context);
+        }
+
+        Console.WriteLine($"\nGPU Evaluator initialized on: {_accelerator.Name}");
         Console.WriteLine($"  Device type: {_accelerator.AcceleratorType}");
         Console.WriteLine($"  Memory: {_accelerator.MemorySize / (1024 * 1024)} MB");
 
@@ -57,7 +74,8 @@ public class GPUEvaluator : IDisposable
             ArrayView<float>,
             ArrayView<byte>,
             ArrayView<float>,
-            GPURowPlan,
+            ArrayView<GPURowPlan>,
+            int,
             int,
             int,
             int>(GPUEvolvionKernels.EvaluateRowKernel);
@@ -70,7 +88,8 @@ public class GPUEvaluator : IDisposable
             ArrayView<float>,
             ArrayView<byte>,
             ArrayView<float>,
-            GPURowPlan,
+            ArrayView<GPURowPlan>,
+            int,
             int,
             int,
             int,
@@ -97,7 +116,8 @@ public class GPUEvaluator : IDisposable
             Index1D,
             ArrayView<float>,
             ArrayView<float>,
-            GPURowPlan,
+            ArrayView<GPURowPlan>,
+            int,
             int,
             int,
             int>(GPUEvolvionKernels.GetOutputsKernel);
@@ -106,7 +126,8 @@ public class GPUEvaluator : IDisposable
             Index1D,
             ArrayView<float>,
             ArrayView<float>,
-            GPURowPlan,
+            ArrayView<GPURowPlan>,
+            int,
             int,
             int,
             int>(GPUEvolvionKernels.GetOutputsForEpisodesKernel);
@@ -271,10 +292,6 @@ public class GPUEvaluator : IDisposable
 
         for (int rowIdx = 1; rowIdx < _currentSpec.RowPlans.Length; rowIdx++)
         {
-            var rowPlanArray = new GPURowPlan[1];
-            _gpuState.RowPlans.View.SubView(rowIdx, 1).CopyToCPU(rowPlanArray);
-            var rowPlan = rowPlanArray[0];
-
             _evaluateRowKernel(
                 individualCount,
                 _gpuState.NodeValues.View,
@@ -283,23 +300,21 @@ public class GPUEvaluator : IDisposable
                 _gpuState.Individuals.Biases.View,
                 _gpuState.Individuals.Activations.View,
                 _gpuState.Individuals.NodeParams.View,
-                rowPlan,
+                _gpuState.RowPlans.View,
+                rowIdx,
                 individualCount,
                 _currentSpec.TotalNodes,
                 _currentSpec.TotalEdges);
             _accelerator.Synchronize();
         }
 
-        var outputRowPlanArray = new GPURowPlan[1];
-        _gpuState.RowPlans.View.SubView(_currentSpec.RowPlans.Length - 1, 1).CopyToCPU(outputRowPlanArray);
-        var outputRowPlan = outputRowPlanArray[0];
-
         using var outputBuffer = _accelerator.Allocate1D<float>(individualCount * outputSize);
         _getOutputsKernel(
             individualCount,
             _gpuState.NodeValues.View,
             outputBuffer.View,
-            outputRowPlan,
+            _gpuState.RowPlans.View,
+            _currentSpec.RowPlans.Length - 1,
             individualCount,
             _currentSpec.TotalNodes,
             outputSize);
@@ -357,6 +372,10 @@ public class GPUEvaluator : IDisposable
         if (_gpuState == null)
             throw new InvalidOperationException("Must call Initialize() before EvaluateWithEnvironment()");
 
+        if (episodesPerIndividual > GPUEvolvionState.MAX_EPISODES_PER_INDIVIDUAL)
+            throw new ArgumentException(
+                $"episodesPerIndividual ({episodesPerIndividual}) exceeds maximum ({GPUEvolvionState.MAX_EPISODES_PER_INDIVIDUAL})");
+
         int individualCount = individuals.Count;
         int totalEpisodes = individualCount * episodesPerIndividual;
         int observationSize = landscapeConfig.Dimensions;
@@ -374,9 +393,7 @@ public class GPUEvaluator : IDisposable
             seed);
         _accelerator.Synchronize();
 
-        var outputRowPlanArray = new GPURowPlan[1];
-        _gpuState.RowPlans.View.SubView(spec.RowPlans.Length - 1, 1).CopyToCPU(outputRowPlanArray);
-        var outputRowPlan = outputRowPlanArray[0];
+        int outputRowIdx = spec.RowPlans.Length - 1;
 
         for (int step = 0; step < landscapeConfig.MaxSteps; step++)
         {
@@ -400,10 +417,6 @@ public class GPUEvaluator : IDisposable
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
-                var rowPlanArray = new GPURowPlan[1];
-                _gpuState.RowPlans.View.SubView(rowIdx, 1).CopyToCPU(rowPlanArray);
-                var rowPlan = rowPlanArray[0];
-
                 _evaluateRowForEpisodesKernel(
                     totalEpisodes,
                     _gpuState.NodeValues.View,
@@ -412,7 +425,8 @@ public class GPUEvaluator : IDisposable
                     _gpuState.Individuals.Biases.View,
                     _gpuState.Individuals.Activations.View,
                     _gpuState.Individuals.NodeParams.View,
-                    rowPlan,
+                    _gpuState.RowPlans.View,
+                    rowIdx,
                     totalEpisodes,
                     episodesPerIndividual,
                     spec.TotalNodes,
@@ -424,7 +438,8 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 _gpuState.NodeValues.View,
                 _gpuState.Environments.Actions.View,
-                outputRowPlan,
+                _gpuState.RowPlans.View,
+                outputRowIdx,
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
@@ -478,9 +493,7 @@ public class GPUEvaluator : IDisposable
             totalEpisodes);
         _accelerator.Synchronize();
 
-        var outputRowPlanArray = new GPURowPlan[1];
-        _gpuState.RowPlans.View.SubView(spec.RowPlans.Length - 1, 1).CopyToCPU(outputRowPlanArray);
-        var outputRowPlan = outputRowPlanArray[0];
+        int outputRowIdx = spec.RowPlans.Length - 1;
 
         for (int testCase = 0; testCase < 4; testCase++)
         {
@@ -503,10 +516,6 @@ public class GPUEvaluator : IDisposable
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
-                var rowPlanArray = new GPURowPlan[1];
-                _gpuState.RowPlans.View.SubView(rowIdx, 1).CopyToCPU(rowPlanArray);
-                var rowPlan = rowPlanArray[0];
-
                 _evaluateRowForEpisodesKernel(
                     totalEpisodes,
                     _gpuState.NodeValues.View,
@@ -515,7 +524,8 @@ public class GPUEvaluator : IDisposable
                     _gpuState.Individuals.Biases.View,
                     _gpuState.Individuals.Activations.View,
                     _gpuState.Individuals.NodeParams.View,
-                    rowPlan,
+                    _gpuState.RowPlans.View,
+                    rowIdx,
                     totalEpisodes,
                     episodesPerIndividual,
                     spec.TotalNodes,
@@ -527,7 +537,8 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 _gpuState.NodeValues.View,
                 xorEnv.Actions.View,
-                outputRowPlan,
+                _gpuState.RowPlans.View,
+                outputRowIdx,
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
@@ -588,9 +599,7 @@ public class GPUEvaluator : IDisposable
             totalEpisodes);
         _accelerator.Synchronize();
 
-        var outputRowPlanArray = new GPURowPlan[1];
-        _gpuState.RowPlans.View.SubView(spec.RowPlans.Length - 1, 1).CopyToCPU(outputRowPlanArray);
-        var outputRowPlan = outputRowPlanArray[0];
+        int outputRowIdx = spec.RowPlans.Length - 1;
 
         for (int pointIdx = 0; pointIdx < totalPoints; pointIdx++)
         {
@@ -615,10 +624,6 @@ public class GPUEvaluator : IDisposable
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
-                var rowPlanArray = new GPURowPlan[1];
-                _gpuState.RowPlans.View.SubView(rowIdx, 1).CopyToCPU(rowPlanArray);
-                var rowPlan = rowPlanArray[0];
-
                 _evaluateRowForEpisodesKernel(
                     totalEpisodes,
                     _gpuState.NodeValues.View,
@@ -627,7 +632,8 @@ public class GPUEvaluator : IDisposable
                     _gpuState.Individuals.Biases.View,
                     _gpuState.Individuals.Activations.View,
                     _gpuState.Individuals.NodeParams.View,
-                    rowPlan,
+                    _gpuState.RowPlans.View,
+                    rowIdx,
                     totalEpisodes,
                     episodesPerIndividual,
                     spec.TotalNodes,
@@ -639,7 +645,8 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 _gpuState.NodeValues.View,
                 spiralEnv.Actions.View,
-                outputRowPlan,
+                _gpuState.RowPlans.View,
+                outputRowIdx,
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
