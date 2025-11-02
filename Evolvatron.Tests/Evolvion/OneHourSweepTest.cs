@@ -10,10 +10,12 @@ using Xunit.Abstractions;
 namespace Evolvatron.Tests.Evolvion;
 
 /// <summary>
-/// One-hour comprehensive sweep testing ALL untested/minimally-tested parameters.
+/// PHASE 8: Full comprehensive sweep with multi-seed evaluation (post-bias-fix).
 /// 15 batches × 8 configs = 120 total configurations
-/// 8-thread parallelism, 150 generations per config
-/// Post-bias-fix validation
+/// 5 seeds per config (42, 123, 456, 789, 999) - results averaged
+/// 8-thread parallelism, 150 generations per run
+/// Total runs: 120 configs × 5 seeds = 600 evolution runs
+/// Expected runtime: ~80-100 minutes (5x longer than Phase 7)
 /// </summary>
 public class OneHourSweepTest
 {
@@ -448,32 +450,50 @@ public class OneHourSweepTest
 
     private SweepResult RunSingleConfig(Config config)
     {
-        var evolver = new Evolver(seed: 42);
-        var population = evolver.InitializePopulation(config.EvolutionConfig, config.Topology);
-        var environment = new SpiralEnvironment(pointsPerSpiral: 50, noise: 0.0f);
-        var evaluator = new SimpleFitnessEvaluator();
+        // Multi-seed evaluation: Run 5 different seeds and average results
+        int[] seeds = { 42, 123, 456, 789, 999 };
+        var seedResults = new List<(float Gen0Best, float Gen0Mean, float Gen150Best, float Gen150Mean)>();
 
-        evaluator.EvaluatePopulation(population, environment, seed: 0);
-        var gen0Stats = population.GetStatistics();
-
-        for (int gen = 1; gen <= 150; gen++)
+        foreach (var seed in seeds)
         {
-            evolver.StepGeneration(population);
-            evaluator.EvaluatePopulation(population, environment, seed: gen);
+            var evolver = new Evolver(seed: seed);
+            var population = evolver.InitializePopulation(config.EvolutionConfig, config.Topology);
+            var environment = new SpiralEnvironment(pointsPerSpiral: 50, noise: 0.0f);
+            var evaluator = new SimpleFitnessEvaluator();
+
+            evaluator.EvaluatePopulation(population, environment, seed: 0);
+            var gen0Stats = population.GetStatistics();
+
+            for (int gen = 1; gen <= 150; gen++)
+            {
+                evolver.StepGeneration(population);
+                evaluator.EvaluatePopulation(population, environment, seed: gen);
+            }
+
+            var gen150Stats = population.GetStatistics();
+            seedResults.Add((gen0Stats.BestFitness, gen0Stats.MeanFitness,
+                           gen150Stats.BestFitness, gen150Stats.MeanFitness));
         }
 
-        var gen150Stats = population.GetStatistics();
+        // Compute averages across seeds
+        float avgGen0Best = seedResults.Average(r => r.Gen0Best);
+        float avgGen0Mean = seedResults.Average(r => r.Gen0Mean);
+        float avgGen150Best = seedResults.Average(r => r.Gen150Best);
+        float avgGen150Mean = seedResults.Average(r => r.Gen150Mean);
+
+        // Compute range (max - min) across seeds for Gen150Best
+        float gen150BestRange = seedResults.Max(r => r.Gen150Best) - seedResults.Min(r => r.Gen150Best);
 
         return new SweepResult
         {
             ConfigName = config.Name,
-            Gen0Best = gen0Stats.BestFitness,
-            Gen0Mean = gen0Stats.MeanFitness,
-            Gen150Best = gen150Stats.BestFitness,
-            Gen150Mean = gen150Stats.MeanFitness,
-            Gen150Range = gen150Stats.BestFitness - gen150Stats.WorstFitness,
-            Improvement = gen150Stats.BestFitness - gen0Stats.BestFitness,
-            MeanImprovement = gen150Stats.MeanFitness - gen0Stats.MeanFitness
+            Gen0Best = avgGen0Best,
+            Gen0Mean = avgGen0Mean,
+            Gen150Best = avgGen150Best,
+            Gen150Mean = avgGen150Mean,
+            Gen150Range = gen150BestRange,  // Now represents variance across seeds
+            Improvement = avgGen150Best - avgGen0Best,
+            MeanImprovement = avgGen150Mean - avgGen0Mean
         };
     }
 
