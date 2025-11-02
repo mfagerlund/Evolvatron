@@ -1,0 +1,32 @@
+Best trial: 23
+Best fitness: -0.801489
+
+Best hyperparameters:
+species_count=27
+individuals_per_species=88
+min_species_count=8
+elites=4
+tournament_size=22
+parent_pool_percentage=0.7482262936245054
+grace_generations=1
+stagnation_threshold=6
+species_diversity_threshold=0.06571420551354576
+relative_performance_threshold=0.8846200385345369
+weight_jitter=0.9717463356676683
+weight_jitter_stddev=0.4016740927969451
+weight_reset=0.13731470261396672
+weight_l1_shrink=0.08979455483420191
+l1_shrink_factor=0.9493842785049709
+activation_swap=0.18592084661987585
+node_param_mutate=0.021514590717266517
+node_param_stddev=0.05288388480147532
+edge_add=0.015576354401544971
+edge_delete_random=0.0037000771320932335
+edge_split=0.04253085663206511
+edge_redirect=0.0933497242399027
+edge_swap=0.029082111544679684
+weak_edge_pruning_enabled=True
+weak_edge_pruning_threshold=0.01574978074694665
+weak_edge_pruning_base_rate=0.7990662684194108
+weak_edge_pruning_on_birth=False
+weak_edge_pruning_during_evolution=True
