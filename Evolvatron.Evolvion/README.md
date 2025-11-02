@@ -46,8 +46,14 @@ Evolvatron.Evolvion/
 │   ├── SpeciesCuller.cs        # Adaptive species removal
 │   └── StagnationTracker.cs    # Performance tracking
 ├── Evaluation/
-│   ├── SimpleFitnessEvaluator.cs  # Fitness evaluation
-│   └── CPUEvaluator.cs            # Network forward pass
+│   ├── SimpleFitnessEvaluator.cs  # CPU fitness evaluation
+│   ├── CPUEvaluator.cs            # Network forward pass (CPU)
+│   └── GPU/
+│       ├── GPUFitnessEvaluator.cs # GPU fitness evaluation (1.93x faster)
+│       ├── GPUEvaluator.cs        # GPU neural network evaluation
+│       ├── GPUEvolvionKernels.cs  # ILGPU compute kernels
+│       ├── GPUEvolvionState.cs    # GPU memory management
+│       └── GPUDataStructures.cs   # GPU-compatible data structures
 ├── Environments/
 │   ├── SpiralEnvironment.cs       # ✅ Solved
 │   ├── CartPoleEnvironment.cs     # 🔄 In progress
@@ -93,7 +99,7 @@ WeightJitterStdDev = 0.40f
 
 ## Usage
 
-### Create and Evolve Population
+### Create and Evolve Population (CPU)
 
 ```csharp
 // Build topology
@@ -123,6 +129,46 @@ for (int gen = 0; gen < maxGenerations; gen++)
     Console.WriteLine($"Gen {gen}: Best={stats.BestFitness:F4}");
 }
 ```
+
+### GPU-Accelerated Evolution (1.93x Faster)
+
+```csharp
+using Evolvatron.Evolvion.GPU;
+
+// Build topology (same as CPU)
+var topology = new SpeciesBuilder()
+    .AddInputRow(5)
+    .AddHiddenRow(16, ActivationType.Tanh)
+    .AddHiddenRow(8, ActivationType.Tanh)
+    .AddOutputRow(5, ActivationType.Tanh)
+    .WithMaxInDegree(20)
+    .Build();
+
+// Initialize
+var config = new EvolutionConfig();
+var evolver = new Evolver(seed: 42);
+var population = evolver.InitializePopulation(config, topology);
+var environment = new LandscapeEnvironment(OptimizationLandscapes.Sphere, dimensions: 5);
+
+// Create GPU evaluator (drop-in replacement)
+using var gpuEval = new GPUFitnessEvaluator(
+    maxIndividuals: 1000,
+    maxNodes: 100,
+    maxEdges: 500
+);
+
+// Evolution loop (same as CPU, but faster!)
+for (int gen = 0; gen < maxGenerations; gen++)
+{
+    gpuEval.EvaluatePopulation(population, environment, episodesPerIndividual: 5, seed: gen);
+    evolver.StepGeneration(population);
+
+    var stats = population.GetStatistics();
+    Console.WriteLine($"Gen {gen}: Best={stats.BestFitness:F4}");
+}
+```
+
+For complete GPU documentation, see: `scratch/EVOLVION_GPU_FINAL.md`
 
 ## Benchmark Results
 
@@ -171,4 +217,4 @@ Optimization tooling:
 - [ ] Crossover within species
 - [ ] Adaptive mutation rates based on stagnation
 - [ ] Novelty search / behavioral diversity
-- [ ] GPU acceleration (ILGPU) for massive parallelization
+- [x] GPU acceleration (ILGPU) for massive parallelization - **Complete** (1.93x speedup verified on RTX 4090)

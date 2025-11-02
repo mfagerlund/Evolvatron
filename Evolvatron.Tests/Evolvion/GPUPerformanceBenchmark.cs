@@ -13,7 +13,7 @@ public class GPUPerformanceBenchmark : IDisposable
     public GPUPerformanceBenchmark(ITestOutputHelper output)
     {
         _output = output;
-        _gpuEvaluator = new GPUEvaluator();
+        _gpuEvaluator = new GPUEvaluator(maxIndividuals: 3000);
     }
 
     public void Dispose()
@@ -21,11 +21,11 @@ public class GPUPerformanceBenchmark : IDisposable
         _gpuEvaluator?.Dispose();
     }
 
-    [Fact(Skip = "Benchmark - run explicitly")]
+    [Fact]
     public void BenchmarkCPU_vs_GPU_NeuralEvaluation()
     {
-        int individualCount = 250;
-        int batchSize = 100;
+        int individualCount = 2500;
+        int batchSize = 1000;
         int iterations = 1000;
 
         var builder = new SpeciesBuilder()

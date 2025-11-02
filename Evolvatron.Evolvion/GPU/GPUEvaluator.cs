@@ -37,9 +37,15 @@ public class GPUEvaluator : IDisposable
 
     private SpeciesSpec? _currentSpec;
     private bool _initialized = false;
+    private readonly int _maxIndividuals;
 
-    public GPUEvaluator()
+    public GPUEvaluator() : this(maxIndividuals: 1000)
     {
+    }
+
+    public GPUEvaluator(int maxIndividuals)
+    {
+        _maxIndividuals = maxIndividuals;
         _context = Context.Create(builder => builder.Default().EnableAlgorithms().Math(MathMode.Fast32BitOnly));
 
         Console.WriteLine($"Available devices ({_context.Devices.Length}):");
@@ -246,7 +252,7 @@ public class GPUEvaluator : IDisposable
         {
             _gpuState = new GPUEvolvionState(
                 _accelerator,
-                maxIndividuals: 1000,
+                maxIndividuals: _maxIndividuals,
                 maxNodes: spec.TotalNodes,
                 maxEdges: spec.TotalEdges);
             _initialized = true;
