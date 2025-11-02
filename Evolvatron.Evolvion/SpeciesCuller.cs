@@ -69,6 +69,7 @@ public static class SpeciesCuller
             random);
 
         population.AllSpecies.Add(newSpecies);
+        population.TotalSpeciesCreated++;
     }
 
     /// <summary>

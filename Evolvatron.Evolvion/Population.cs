@@ -17,6 +17,12 @@ public class Population
     public int Generation { get; set; }
 
     /// <summary>
+    /// Total number of species created throughout evolution (including extinct species).
+    /// Incremented each time a new species is born via SpeciesDiversification.
+    /// </summary>
+    public int TotalSpeciesCreated { get; set; }
+
+    /// <summary>
     /// Configuration parameters for evolution.
     /// </summary>
     public EvolutionConfig Config { get; set; }

@@ -213,6 +213,9 @@ public class Evolver
             population.AllSpecies.Add(species);
         }
 
+        // Initialize species counter with initial species count
+        population.TotalSpeciesCreated = config.SpeciesCount;
+
         return population;
     }
 
