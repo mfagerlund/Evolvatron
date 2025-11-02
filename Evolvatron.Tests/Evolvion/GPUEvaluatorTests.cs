@@ -60,7 +60,7 @@ public class GPUEvaluatorTests : IDisposable
         Assert.Equal(cpuOutput.Length, gpuOutput.Length);
         for (int i = 0; i < cpuOutput.Length; i++)
         {
-            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 6);
+            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 5);
         }
     }
 
@@ -218,7 +218,7 @@ public class GPUEvaluatorTests : IDisposable
         Assert.Equal(cpuOutput.Length, gpuOutput.Length);
         for (int i = 0; i < cpuOutput.Length; i++)
         {
-            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 6);
+            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 5);
         }
     }
 
@@ -278,7 +278,7 @@ public class GPUEvaluatorTests : IDisposable
         Assert.Equal(cpuOutput.Length, gpuOutput.Length);
         for (int i = 0; i < cpuOutput.Length; i++)
         {
-            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 6);
+            Assert.Equal(cpuOutput[i], gpuOutput[i], precision: 5);
         }
     }
 }

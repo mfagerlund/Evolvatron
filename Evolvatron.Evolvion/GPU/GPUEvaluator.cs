@@ -40,7 +40,7 @@ public class GPUEvaluator : IDisposable
 
     public GPUEvaluator()
     {
-        _context = Context.Create(builder => builder.Math(MathMode.Fast32BitOnly));
+        _context = Context.Create(builder => builder.Default().EnableAlgorithms().Math(MathMode.Fast32BitOnly));
 
         Console.WriteLine($"Available devices ({_context.Devices.Length}):");
         foreach (var device in _context.Devices)

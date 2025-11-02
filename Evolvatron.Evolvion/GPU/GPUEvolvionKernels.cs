@@ -10,6 +10,7 @@ namespace Evolvatron.Evolvion.GPU;
 public static class GPUEvolvionKernels
 {
     private const float Epsilon = 1e-9f;
+    private const float PI = 3.14159265f;
 
     /// <summary>
     /// Evaluates a single row for all individuals in parallel.
@@ -143,7 +144,8 @@ public static class GPUEvolvionKernels
 
     /// <summary>
     /// Evaluates activation function on GPU.
-    /// Handles all 11 activation types using ILGPU.XMath for GPU compatibility.
+    /// Working around RTX 4090 PTX compiler issue.
+    /// XMath.Tanh causes PTX JIT failure - using approximation instead.
     /// </summary>
     private static float EvaluateActivation(
         byte activationType,
@@ -153,49 +155,50 @@ public static class GPUEvolvionKernels
         float param2,
         float param3)
     {
-        switch (activationType)
+        if (activationType == 0) return x;
+
+        if (activationType == 1)
         {
-            case 0:
-                return x;
-
-            case 1:
-                return XMath.Tanh(x);
-
-            case 2:
-                return 1.0f / (1.0f + XMath.Exp(-x));
-
-            case 3:
-                return XMath.Max(0.0f, x);
-
-            case 4:
-                return x > 0 ? x : param0 * x;
-
-            case 5:
-                return x > 0 ? x : param0 * (XMath.Exp(x) - 1.0f);
-
-            case 6:
-                return x / (1.0f + XMath.Abs(x));
-
-            case 7:
-                return XMath.Log(1.0f + XMath.Exp(x));
-
-            case 8:
-                return XMath.Sin(x);
-
-            case 9:
-                return XMath.Exp(-x * x);
-
-            case 10:
-            {
-                float sqrtTerm = XMath.Sqrt(2.0f / XMath.PI);
-                float cubicTerm = x + 0.044715f * x * x * x;
-                float tanhTerm = XMath.Tanh(sqrtTerm * cubicTerm);
-                return x * 0.5f * (1.0f + tanhTerm);
-            }
-
-            default:
-                return x;
+            float exp2x = XMath.Exp(2.0f * x);
+            return (exp2x - 1.0f) / (exp2x + 1.0f);
         }
+
+        if (activationType == 2)
+        {
+            return 1.0f / (1.0f + XMath.Exp(-x));
+        }
+
+        if (activationType == 3) return x > 0.0f ? x : 0.0f;
+        if (activationType == 4) return x > 0.0f ? x : param0 * x;
+
+        if (activationType == 5)
+        {
+            return x > 0.0f ? x : param0 * (XMath.Exp(x) - 1.0f);
+        }
+
+        if (activationType == 6)
+        {
+            return x / (1.0f + XMath.Abs(x));
+        }
+
+        if (activationType == 7)
+        {
+            float clampX = x > 20.0f ? 20.0f : (x < -20.0f ? -20.0f : x);
+            return x > 20.0f ? x : XMath.Log(1.0f + XMath.Exp(clampX));
+        }
+
+        if (activationType == 8) return XMath.Sin(x);
+        if (activationType == 9) return XMath.Exp(-x * x);
+
+        if (activationType == 10)
+        {
+            float arg = 0.7978845608f * (x + 0.044715f * x * x * x);
+            float exp2arg = XMath.Exp(2.0f * arg);
+            float tanhArg = (exp2arg - 1.0f) / (exp2arg + 1.0f);
+            return 0.5f * x * (1.0f + tanhArg);
+        }
+
+        return x;
     }
 
     /// <summary>
@@ -612,8 +615,8 @@ public static class GPUEvolvionKernels
         int spiralIdx = pointIdx / pointsPerSpiral;
         int i = pointIdx % pointsPerSpiral;
 
-        float t = i * 4.0f * XMath.PI / pointsPerSpiral;
-        float r = t / (4.0f * XMath.PI);
+        float t = i * 4.0f * PI / pointsPerSpiral;
+        float r = t / (4.0f * PI);
 
         int seed = 42 + pointIdx;
         seed = LCGNext(seed);
@@ -621,7 +624,7 @@ public static class GPUEvolvionKernels
         seed = LCGNext(seed);
         float randY = noise > 0 ? ((float)(seed & 0x7FFFFFFF) / (float)0x7FFFFFFF - 0.5f) * noise : 0.0f;
 
-        float angle = spiralIdx == 0 ? t : t + XMath.PI;
+        float angle = spiralIdx == 0 ? t : t + PI;
         float x = r * XMath.Cos(angle) + randX;
         float y = r * XMath.Sin(angle) + randY;
         float label = spiralIdx == 0 ? -1.0f : 1.0f;
