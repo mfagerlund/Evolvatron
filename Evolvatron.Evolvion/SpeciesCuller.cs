@@ -8,11 +8,11 @@ public static class SpeciesCuller
 {
     /// <summary>
     /// Cull stagnant species from the population and replace with diversified offspring.
-    /// Species are culled only if ALL criteria are met:
-    /// 1. Age > grace period
-    /// 2. No improvement for stagnation threshold generations
-    /// 3. Best individual fitness < relativePerformanceThreshold * overall best fitness
-    /// 4. Fitness variance < diversity threshold
+    /// Species are culled if grace period has passed AND ANY other criterion is met (NEAT-style OR logic):
+    /// 1. Age > grace period (REQUIRED)
+    /// 2. No improvement for stagnation threshold generations (OR)
+    /// 3. Best individual fitness < relativePerformanceThreshold * overall best fitness (OR)
+    /// 4. Fitness variance < diversity threshold (OR)
     /// NEVER culls the species containing the best individual.
     /// </summary>
     /// <param name="population">Population to cull from.</param>
@@ -73,7 +73,8 @@ public static class SpeciesCuller
     }
 
     /// <summary>
-    /// Find all species eligible for culling based on 4 criteria.
+    /// Find all species eligible for culling based on NEAT-style OR logic.
+    /// Grace period is required, but then ANY other condition triggers culling.
     /// </summary>
     /// <param name="population">Population to evaluate.</param>
     /// <param name="config">Evolution configuration.</param>
@@ -93,33 +94,46 @@ public static class SpeciesCuller
 
         foreach (var species in population.AllSpecies)
         {
-            // Criterion 1: Past grace period
+            // Grace period is REQUIRED (must be past it)
             if (!StagnationTracker.IsPastGracePeriod(species, config.GraceGenerations))
                 continue;
 
-            // Criterion 2: Stagnant (no improvement for threshold generations)
-            if (!StagnationTracker.IsStagnant(species, config.StagnationThreshold))
-                continue;
+            // NEAT-style OR logic: ANY of these conditions triggers culling
+            bool isStagnant = StagnationTracker.IsStagnant(species, config.StagnationThreshold);
 
-            // Criterion 3: Relative performance below threshold (using best individual)
-            float relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+            // Calculate relative performance (works for both positive and negative fitness)
+            // For negative fitness (e.g., MSE loss), normalize the gap between species and best
+            float relativePerf;
+            if (bestFitnessEver >= 0)
+            {
+                // Positive fitness: standard ratio
+                relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+            }
+            else
+            {
+                // Negative fitness: normalize gap (species is worse if more negative)
+                // relativePerf = 1.0 means equal, < 1.0 means worse
+                float gap = Math.Abs(bestFitnessEver - species.Stats.BestFitnessEver);
+                relativePerf = 1.0f - gap / (Math.Abs(bestFitnessEver) + 1e-9f);
+            }
+            bool belowPerformanceThreshold = relativePerf < config.RelativePerformanceThreshold;
 
-            if (relativePerf >= config.RelativePerformanceThreshold)
-                continue;
+            bool hasLowDiversity = StagnationTracker.HasLowDiversity(species, config.SpeciesDiversityThreshold);
 
-            // Criterion 4: Low diversity
-            if (!StagnationTracker.HasLowDiversity(species, config.SpeciesDiversityThreshold))
-                continue;
+            // If ANY condition is true, species is eligible for culling
+            bool shouldCull = isStagnant || belowPerformanceThreshold || hasLowDiversity;
 
-            // All criteria met - eligible for culling
-            eligible.Add(species);
+            if (shouldCull)
+            {
+                eligible.Add(species);
+            }
         }
 
         return eligible;
     }
 
     /// <summary>
-    /// Check if a specific species is eligible for culling.
+    /// Check if a specific species is eligible for culling (NEAT-style OR logic).
     /// </summary>
     /// <param name="species">Species to check.</param>
     /// <param name="population">Population context (for relative performance).</param>
@@ -130,28 +144,33 @@ public static class SpeciesCuller
         Population population,
         EvolutionConfig config)
     {
-        // Grace period check
+        // Grace period check (REQUIRED)
         if (!StagnationTracker.IsPastGracePeriod(species, config.GraceGenerations))
             return false;
 
-        // Stagnation check
-        if (!StagnationTracker.IsStagnant(species, config.StagnationThreshold))
-            return false;
+        // NEAT-style OR logic: ANY of these conditions triggers culling
+        bool isStagnant = StagnationTracker.IsStagnant(species, config.StagnationThreshold);
 
-        // Relative performance check (using best individual fitness)
         float bestFitnessEver = population.AllSpecies
             .Max(s => s.Stats.BestFitnessEver);
 
-        float relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+        // Calculate relative performance (works for both positive and negative fitness)
+        float relativePerf;
+        if (bestFitnessEver >= 0)
+        {
+            relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+        }
+        else
+        {
+            float gap = Math.Abs(bestFitnessEver - species.Stats.BestFitnessEver);
+            relativePerf = 1.0f - gap / (Math.Abs(bestFitnessEver) + 1e-9f);
+        }
+        bool belowPerformanceThreshold = relativePerf < config.RelativePerformanceThreshold;
 
-        if (relativePerf >= config.RelativePerformanceThreshold)
-            return false;
+        bool hasLowDiversity = StagnationTracker.HasLowDiversity(species, config.SpeciesDiversityThreshold);
 
-        // Diversity check
-        if (!StagnationTracker.HasLowDiversity(species, config.SpeciesDiversityThreshold))
-            return false;
-
-        return true;
+        // If ANY condition is true, species is eligible for culling
+        return isStagnant || belowPerformanceThreshold || hasLowDiversity;
     }
 
     /// <summary>
@@ -170,7 +189,19 @@ public static class SpeciesCuller
 
         foreach (var species in population.AllSpecies)
         {
-            float relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+            // Calculate relative performance (works for both positive and negative fitness)
+            float relativePerf;
+            if (bestFitnessEver >= 0)
+            {
+                // Positive fitness: standard ratio
+                relativePerf = species.Stats.BestFitnessEver / (bestFitnessEver + 1e-9f);
+            }
+            else
+            {
+                // Negative fitness: normalize gap (species is worse if more negative)
+                float gap = Math.Abs(bestFitnessEver - species.Stats.BestFitnessEver);
+                relativePerf = 1.0f - gap / (Math.Abs(bestFitnessEver) + 1e-9f);
+            }
 
             var status = new CullingStatus
             {
@@ -193,11 +224,10 @@ public static class SpeciesCuller
                 FitnessVariance = species.Stats.FitnessVariance
             };
 
+            // NEAT-style OR logic: grace period required, then ANY other condition
             status.IsEligible =
                 status.PastGracePeriod &&
-                status.IsStagnant &&
-                status.BelowPerformanceThreshold &&
-                status.HasLowDiversity;
+                (status.IsStagnant || status.BelowPerformanceThreshold || status.HasLowDiversity);
 
             report[species] = status;
         }

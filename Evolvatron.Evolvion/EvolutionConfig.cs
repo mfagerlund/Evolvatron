@@ -8,22 +8,25 @@ public class EvolutionConfig
 {
     /// <summary>
     /// Number of species in the population.
-    /// Default: 4 (Phase 6: 4 species × 200 individuals beats 8 × 100 by +3.3%)
+    /// Default: 20 (NEAT-style: more species enables topology diversity)
+    /// Previous: 4 (Phase 6: 4 species × 200 individuals beats 8 × 100 by +3.3%)
     /// </summary>
-    public int SpeciesCount { get; set; } = 4;
+    public int SpeciesCount { get; set; } = 20;
 
     /// <summary>
     /// Minimum number of species to maintain (prevents complete collapse).
-    /// Default: 2
+    /// Default: 8 (NEAT-style: ensures floor of diversity)
+    /// Previous: 2
     /// </summary>
-    public int MinSpeciesCount { get; set; } = 2;
+    public int MinSpeciesCount { get; set; } = 8;
 
     /// <summary>
     /// Number of individuals per species.
-    /// Default: 200 (Phase 6: larger populations per species = more robust evolution)
-    /// Total population: SpeciesCount × IndividualsPerSpecies = 800
+    /// Default: 40 (NEAT-style: smaller niches force competition)
+    /// Previous: 200 (Phase 6: larger populations per species = more robust evolution)
+    /// Total population: SpeciesCount × IndividualsPerSpecies = 800 (unchanged)
     /// </summary>
-    public int IndividualsPerSpecies { get; set; } = 200;
+    public int IndividualsPerSpecies { get; set; } = 40;
 
     /// <summary>
     /// Number of elite individuals preserved unchanged each generation.
@@ -47,28 +50,32 @@ public class EvolutionConfig
 
     /// <summary>
     /// Number of generations a new species is protected from culling.
-    /// Default: 3
+    /// Default: 1 (allows culling to start at generation 2+)
+    /// Previous: 3
     /// </summary>
-    public int GraceGenerations { get; set; } = 3;
+    public int GraceGenerations { get; set; } = 1;
 
     /// <summary>
     /// Number of generations without improvement before species eligible for culling.
-    /// Default: 15
+    /// Default: 6 (NEAT-style: aggressive turnover enables topology exploration)
+    /// Previous: 15
     /// </summary>
-    public int StagnationThreshold { get; set; } = 15;
+    public int StagnationThreshold { get; set; } = 6;
 
     /// <summary>
     /// Minimum fitness variance required to avoid low-diversity culling.
-    /// Default: 0.15
+    /// Default: 0.08 (NEAT-style: catches convergence earlier)
+    /// Previous: 0.15
     /// </summary>
-    public float SpeciesDiversityThreshold { get; set; } = 0.15f;
+    public float SpeciesDiversityThreshold { get; set; } = 0.08f;
 
     /// <summary>
     /// Relative performance threshold for culling eligibility.
     /// Species with median fitness below this fraction of the best species are eligible.
-    /// Default: 0.5 (50%)
+    /// Default: 0.7 (NEAT-style: more aggressive than previous 0.5)
+    /// Previous: 0.5 (50%)
     /// </summary>
-    public float RelativePerformanceThreshold { get; set; } = 0.5f;
+    public float RelativePerformanceThreshold { get; set; } = 0.7f;
 
     /// <summary>
     /// Mutation rate configuration.

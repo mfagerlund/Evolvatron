@@ -1,0 +1,311 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Evolvatron.Rigidon -> C:\Dev\Evolvatron\Evolvatron.Rigidon\bin\Debug\net8.0\Evolvatron.Rigidon.dll
+  Colonel.Framework -> C:\Dev\Colonel\Colonel.Framework\bin\net8.0\Colonel.Framework.dll
+  Colonel.Autodiff -> C:\Dev\Colonel\Colonel.Autodiff\bin\Debug\net8.0\Colonel.Autodiff.dll
+  Colonel.Hagrid -> C:\Dev\Colonel\Colonel.Hagrid\bin\Debug\net8.0\Colonel.Hagrid.dll
+  Colonel.Core -> C:\Dev\Colonel\Colonel.Core\bin\net8.0\Colonel.Core.dll
+  Colonel.Hagrid.Misc -> C:\Dev\Colonel\Colonel.Hagrid.Misc\bin\Debug\net8.0\Colonel.Hagrid.Misc.dll
+  Colonel.Tests -> C:\Dev\Colonel\Colonel.Tests\bin\Debug\net8.0\Colonel.Tests.dll
+  Evolvatron.Evolvion -> C:\Dev\Evolvatron\Evolvatron.Evolvion\bin\Debug\net8.0\Evolvatron.Evolvion.dll
+  Evolvatron.Demo -> C:\Dev\Evolvatron\Evolvatron.Demo\bin\Debug\net8.0\Evolvatron.Demo.dll
+C:\Dev\Evolvatron\Evolvatron.Tests\Evolvion\QuickValidationSweep.cs(71,14): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [C:\Dev\Evolvatron\Evolvatron.Tests\Evolvatron.Tests.csproj]
+C:\Dev\Evolvatron\Evolvatron.Tests\Evolvion\QuickValidationSweep.cs(75,66): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [C:\Dev\Evolvatron\Evolvatron.Tests\Evolvatron.Tests.csproj]
+  Evolvatron.Tests -> C:\Dev\Evolvatron\Evolvatron.Tests\bin\Debug\net8.0\Evolvatron.Tests.dll
+Test run for C:\Dev\Evolvatron\Evolvatron.Tests\bin\Debug\net8.0\Evolvatron.Tests.dll (.NETCoreApp,Version=v8.0)
+Microsoft (R) Test Execution Command Line Tool Version 17.10.0 (x64)
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+C:\Dev\Evolvatron\Evolvatron.Tests\bin\Debug\net8.0\Evolvatron.Tests.dll
+NUnit Adapter 3.17.0.0: Test execution started
+Running all tests in C:\Dev\Evolvatron\Evolvatron.Tests\bin\Debug\net8.0\Evolvatron.Tests.dll
+   NUnit3TestExecutor discovered 0 of 0 NUnit test cases
+   Skipping assembly - no matching test cases found
+NUnit Adapter 3.17.0.0: Test execution complete
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.21)
+[xUnit.net 00:00:00.32]   Discovering: Evolvatron.Tests
+[xUnit.net 00:00:00.64]   Discovered:  Evolvatron.Tests
+[xUnit.net 00:00:00.65]   Starting:    Evolvatron.Tests
+[xUnit.net 00:03:23.83]     Evolvatron.Tests.Evolvion.NEATStylePopulationTest.NEATStyle_EnablesTopologyExploration [FAIL]
+[xUnit.net 00:03:23.83]       NEAT-style should have culling events, but had 0,0
+[xUnit.net 00:03:23.83]       Stack Trace:
+[xUnit.net 00:03:23.83]         C:\Dev\Evolvatron\Evolvatron.Tests\Evolvion\NEATStylePopulationTest.cs(108,0): at Evolvatron.Tests.Evolvion.NEATStylePopulationTest.NEATStyle_EnablesTopologyExploration()
+[xUnit.net 00:03:23.84]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:03:23.84]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:03:23.84]       Output:
+[xUnit.net 00:03:23.84]         === NEAT-STYLE POPULATION VALIDATION ===
+[xUnit.net 00:03:23.84]         Configuration: 20 species × 40 individuals = 800 total
+[xUnit.net 00:03:23.84]         Culling: OR-based (grace=3, stagnation=6, diversity=0.08, performance=0.7)
+[xUnit.net 00:03:23.84]         MinSpeciesCount: 8 (allows culling)
+[xUnit.net 00:03:23.84]         Benchmark: Spiral classification (2 inputs → 8 hidden → 8 hidden → 1 output)
+[xUnit.net 00:03:23.84]         Seeds: 3, Generations: 150
+[xUnit.net 00:03:23.84]         
+[xUnit.net 00:03:23.84]         
+=== NEAT-STYLE RUN (Seed 0) ===
+[xUnit.net 00:03:23.84]           Gen   0: Species=20 TotalCreated=20 Best=-0,9965 Mean=-1,0527
+[xUnit.net 00:03:23.84]           Gen  25: Species=20 TotalCreated=42 Best=-0,9371 Mean=-1,0145
+[xUnit.net 00:03:23.84]           Gen  50: Species=20 TotalCreated=67 Best=-0,9037 Mean=-1,0129
+[xUnit.net 00:03:23.84]           Gen  75: Species=20 TotalCreated=92 Best=-0,8833 Mean=-1,0098
+[xUnit.net 00:03:23.84]           Gen 100: Species=20 TotalCreated=117 Best=-0,8641 Mean=-0,9932
+[xUnit.net 00:03:23.84]           Gen 125: Species=20 TotalCreated=142 Best=-0,8596 Mean=-0,9982
+[xUnit.net 00:03:23.84]           Gen 149: Species=20 TotalCreated=166 Best=-0,8482 Mean=-1,0585
+[xUnit.net 00:03:23.84]         
+Seed 0 Summary:
+[xUnit.net 00:03:23.84]           TotalSpeciesCreated: 166
+[xUnit.net 00:03:23.84]           CullingEvents: 0
+[xUnit.net 00:03:23.84]           Final Species Count: 20
+[xUnit.net 00:03:23.84]           Gen0 Best: -0,9965
+[xUnit.net 00:03:23.84]           Gen150 Best: -0,8482
+[xUnit.net 00:03:23.84]           Improvement: 0,1483
+[xUnit.net 00:03:23.84]         
+=== NEAT-STYLE RUN (Seed 1) ===
+[xUnit.net 00:03:23.84]           Gen   0: Species=20 TotalCreated=20 Best=-0,9680 Mean=-1,0488
+[xUnit.net 00:03:23.84]           Gen  25: Species=20 TotalCreated=42 Best=-0,8979 Mean=-1,0018
+[xUnit.net 00:03:23.85]           Gen  50: Species=20 TotalCreated=67 Best=-0,8832 Mean=-0,9902
+[xUnit.net 00:03:23.85]           Gen  75: Species=20 TotalCreated=92 Best=-0,8772 Mean=-0,9906
+[xUnit.net 00:03:23.85]           Gen 100: Species=20 TotalCreated=117 Best=-0,8771 Mean=-0,9858
+[xUnit.net 00:03:23.85]           Gen 125: Species=20 TotalCreated=142 Best=-0,8728 Mean=-0,9933
+[xUnit.net 00:03:23.85]           Gen 149: Species=20 TotalCreated=166 Best=-0,8728 Mean=-0,9823
+[xUnit.net 00:03:23.85]         
+Seed 1 Summary:
+[xUnit.net 00:03:23.85]           TotalSpeciesCreated: 166
+[xUnit.net 00:03:23.85]           CullingEvents: 0
+[xUnit.net 00:03:23.85]           Final Species Count: 20
+[xUnit.net 00:03:23.85]           Gen0 Best: -0,9680
+[xUnit.net 00:03:23.85]           Gen150 Best: -0,8728
+[xUnit.net 00:03:23.85]           Improvement: 0,0952
+[xUnit.net 00:03:23.85]         
+=== NEAT-STYLE RUN (Seed 2) ===
+[xUnit.net 00:03:23.85]           Gen   0: Species=20 TotalCreated=20 Best=-0,9671 Mean=-1,0588
+[xUnit.net 00:03:23.85]           Gen  25: Species=20 TotalCreated=42 Best=-0,9241 Mean=-0,9983
+[xUnit.net 00:03:23.85]           Gen  50: Species=20 TotalCreated=67 Best=-0,9216 Mean=-0,9940
+[xUnit.net 00:03:23.85]           Gen  75: Species=20 TotalCreated=92 Best=-0,9216 Mean=-0,9940
+[xUnit.net 00:03:23.85]           Gen 100: Species=20 TotalCreated=117 Best=-0,9216 Mean=-1,0204
+[xUnit.net 00:03:23.85]           Gen 125: Species=20 TotalCreated=142 Best=-0,9216 Mean=-1,0205
+[xUnit.net 00:03:23.85]           Gen 149: Species=20 TotalCreated=166 Best=-0,9208 Mean=-1,0061
+[xUnit.net 00:03:23.85]         
+Seed 2 Summary:
+[xUnit.net 00:03:23.85]           TotalSpeciesCreated: 166
+[xUnit.net 00:03:23.85]           CullingEvents: 0
+[xUnit.net 00:03:23.85]           Final Species Count: 20
+[xUnit.net 00:03:23.85]           Gen0 Best: -0,9671
+[xUnit.net 00:03:23.85]           Gen150 Best: -0,9200
+[xUnit.net 00:03:23.85]           Improvement: 0,0471
+[xUnit.net 00:03:23.85]         
+
+=== NEAT-STYLE AGGREGATE RESULTS ===
+[xUnit.net 00:03:23.85]         Average TotalSpeciesCreated: 166,0 (expect >= 30)
+[xUnit.net 00:03:23.85]         Average CullingEvents: 0,0
+[xUnit.net 00:03:23.85]         Average Gen150 Best Fitness: -0,8803
+[xUnit.net 00:03:23.85]         
+
+=== BASELINE COMPARISON (4×200, Culling Disabled) ===
+[xUnit.net 00:03:23.85]         
+=== BASELINE RUN (Seed 0) ===
+[xUnit.net 00:03:23.85]           Gen   0: Best=-0,9980 Mean=-1,0567
+[xUnit.net 00:03:23.85]           Gen  25: Best=-0,9399 Mean=-1,0067
+[xUnit.net 00:03:23.85]           Gen  50: Best=-0,9303 Mean=-1,0131
+[xUnit.net 00:03:23.85]           Gen  75: Best=-0,9286 Mean=-1,0363
+[xUnit.net 00:03:23.85]           Gen 100: Best=-0,9175 Mean=-1,0388
+[xUnit.net 00:03:23.85]           Gen 125: Best=-0,9175 Mean=-1,0366
+[xUnit.net 00:03:23.85]           Gen 149: Best=-0,9173 Mean=-1,0296
+[xUnit.net 00:03:23.85]         
+Seed 0 Summary:
+[xUnit.net 00:03:23.85]           TotalSpeciesCreated: 4
+[xUnit.net 00:03:23.85]           CullingEvents: 0
+[xUnit.net 00:03:23.85]           Final Species Count: 4
+[xUnit.net 00:03:23.85]           Gen0 Best: -0,9980
+[xUnit.net 00:03:23.85]           Gen150 Best: -0,9173
+[xUnit.net 00:03:23.85]           Improvement: 0,0807
+[xUnit.net 00:03:23.85]         
+=== BASELINE RUN (Seed 1) ===
+[xUnit.net 00:03:23.85]           Gen   0: Best=-0,9660 Mean=-1,0486
+[xUnit.net 00:03:23.85]           Gen  25: Best=-0,9325 Mean=-0,9923
+[xUnit.net 00:03:23.85]           Gen  50: Best=-0,9076 Mean=-0,9942
+[xUnit.net 00:03:23.85]           Gen  75: Best=-0,8677 Mean=-1,0226
+[xUnit.net 00:03:23.85]           Gen 100: Best=-0,8512 Mean=-1,0089
+[xUnit.net 00:03:23.85]           Gen 125: Best=-0,8336 Mean=-1,0065
+[xUnit.net 00:03:23.85]           Gen 149: Best=-0,8281 Mean=-1,0046
+[xUnit.net 00:03:23.86]         
+Seed 1 Summary:
+[xUnit.net 00:03:23.86]           TotalSpeciesCreated: 4
+[xUnit.net 00:03:23.86]           CullingEvents: 0
+[xUnit.net 00:03:23.86]           Final Species Count: 4
+[xUnit.net 00:03:23.86]           Gen0 Best: -0,9660
+[xUnit.net 00:03:23.86]           Gen150 Best: -0,8281
+[xUnit.net 00:03:23.86]           Improvement: 0,1379
+[xUnit.net 00:03:23.86]         
+=== BASELINE RUN (Seed 2) ===
+[xUnit.net 00:03:23.86]           Gen   0: Best=-0,9671 Mean=-1,0602
+[xUnit.net 00:03:23.86]           Gen  25: Best=-0,9325 Mean=-0,9844
+[xUnit.net 00:03:23.86]           Gen  50: Best=-0,9123 Mean=-1,0012
+[xUnit.net 00:03:23.86]           Gen  75: Best=-0,9076 Mean=-1,0112
+[xUnit.net 00:03:23.86]           Gen 100: Best=-0,9006 Mean=-1,0117
+[xUnit.net 00:03:23.86]           Gen 125: Best=-0,9006 Mean=-1,0171
+[xUnit.net 00:03:23.86]           Gen 149: Best=-0,9006 Mean=-1,0229
+[xUnit.net 00:03:23.86]         
+Seed 2 Summary:
+[xUnit.net 00:03:23.86]           TotalSpeciesCreated: 4
+[xUnit.net 00:03:23.86]           CullingEvents: 0
+[xUnit.net 00:03:23.86]           Final Species Count: 4
+[xUnit.net 00:03:23.86]           Gen0 Best: -0,9671
+[xUnit.net 00:03:23.86]           Gen150 Best: -0,9006
+[xUnit.net 00:03:23.86]           Improvement: 0,0665
+[xUnit.net 00:03:23.86]         
+Average Baseline Gen150 Best Fitness: -0,8820
+[xUnit.net 00:03:23.86]         
+
+=== FINAL COMPARISON ===
+[xUnit.net 00:03:23.86]         NEAT-style Gen150 fitness: -0,8803
+[xUnit.net 00:03:23.86]         Baseline Gen150 fitness:   -0,8820
+[xUnit.net 00:03:23.86]         Difference: 0,0017 (-0,2%)
+[xUnit.net 00:03:23.86]         
+=== VALIDATION ===
+[xUnit.net 00:03:23.86]         ✓ Topology exploration working: 166,0 species created
+[xUnit.net 00:03:23.87]   Finished:    Evolvatron.Tests
+  Failed Evolvatron.Tests.Evolvion.NEATStylePopulationTest.NEATStyle_EnablesTopologyExploration [3 m 23 s]
+  Error Message:
+   NEAT-style should have culling events, but had 0,0
+  Stack Trace:
+     at Evolvatron.Tests.Evolvion.NEATStylePopulationTest.NEATStyle_EnablesTopologyExploration() in C:\Dev\Evolvatron\Evolvatron.Tests\Evolvion\NEATStylePopulationTest.cs:line 108
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Standard Output Messages:
+ === NEAT-STYLE POPULATION VALIDATION ===
+ Configuration: 20 species × 40 individuals = 800 total
+ Culling: OR-based (grace=3, stagnation=6, diversity=0.08, performance=0.7)
+ MinSpeciesCount: 8 (allows culling)
+ Benchmark: Spiral classification (2 inputs → 8 hidden → 8 hidden → 1 output)
+ Seeds: 3, Generations: 150
+ 
+ 
+=== NEAT-STYLE RUN (Seed 0) ===
+   Gen   0: Species=20 TotalCreated=20 Best=-0,9965 Mean=-1,0527
+   Gen  25: Species=20 TotalCreated=42 Best=-0,9371 Mean=-1,0145
+   Gen  50: Species=20 TotalCreated=67 Best=-0,9037 Mean=-1,0129
+   Gen  75: Species=20 TotalCreated=92 Best=-0,8833 Mean=-1,0098
+   Gen 100: Species=20 TotalCreated=117 Best=-0,8641 Mean=-0,9932
+   Gen 125: Species=20 TotalCreated=142 Best=-0,8596 Mean=-0,9982
+   Gen 149: Species=20 TotalCreated=166 Best=-0,8482 Mean=-1,0585
+ 
+Seed 0 Summary:
+   TotalSpeciesCreated: 166
+   CullingEvents: 0
+   Final Species Count: 20
+   Gen0 Best: -0,9965
+   Gen150 Best: -0,8482
+   Improvement: 0,1483
+ 
+=== NEAT-STYLE RUN (Seed 1) ===
+   Gen   0: Species=20 TotalCreated=20 Best=-0,9680 Mean=-1,0488
+   Gen  25: Species=20 TotalCreated=42 Best=-0,8979 Mean=-1,0018
+   Gen  50: Species=20 TotalCreated=67 Best=-0,8832 Mean=-0,9902
+   Gen  75: Species=20 TotalCreated=92 Best=-0,8772 Mean=-0,9906
+   Gen 100: Species=20 TotalCreated=117 Best=-0,8771 Mean=-0,9858
+   Gen 125: Species=20 TotalCreated=142 Best=-0,8728 Mean=-0,9933
+   Gen 149: Species=20 TotalCreated=166 Best=-0,8728 Mean=-0,9823
+ 
+Seed 1 Summary:
+   TotalSpeciesCreated: 166
+   CullingEvents: 0
+   Final Species Count: 20
+   Gen0 Best: -0,9680
+   Gen150 Best: -0,8728
+   Improvement: 0,0952
+ 
+=== NEAT-STYLE RUN (Seed 2) ===
+   Gen   0: Species=20 TotalCreated=20 Best=-0,9671 Mean=-1,0588
+   Gen  25: Species=20 TotalCreated=42 Best=-0,9241 Mean=-0,9983
+   Gen  50: Species=20 TotalCreated=67 Best=-0,9216 Mean=-0,9940
+   Gen  75: Species=20 TotalCreated=92 Best=-0,9216 Mean=-0,9940
+   Gen 100: Species=20 TotalCreated=117 Best=-0,9216 Mean=-1,0204
+   Gen 125: Species=20 TotalCreated=142 Best=-0,9216 Mean=-1,0205
+   Gen 149: Species=20 TotalCreated=166 Best=-0,9208 Mean=-1,0061
+ 
+Seed 2 Summary:
+   TotalSpeciesCreated: 166
+   CullingEvents: 0
+   Final Species Count: 20
+   Gen0 Best: -0,9671
+   Gen150 Best: -0,9200
+   Improvement: 0,0471
+ 
+
+=== NEAT-STYLE AGGREGATE RESULTS ===
+ Average TotalSpeciesCreated: 166,0 (expect >= 30)
+ Average CullingEvents: 0,0
+ Average Gen150 Best Fitness: -0,8803
+ 
+
+=== BASELINE COMPARISON (4×200, Culling Disabled) ===
+ 
+=== BASELINE RUN (Seed 0) ===
+   Gen   0: Best=-0,9980 Mean=-1,0567
+   Gen  25: Best=-0,9399 Mean=-1,0067
+   Gen  50: Best=-0,9303 Mean=-1,0131
+   Gen  75: Best=-0,9286 Mean=-1,0363
+   Gen 100: Best=-0,9175 Mean=-1,0388
+   Gen 125: Best=-0,9175 Mean=-1,0366
+   Gen 149: Best=-0,9173 Mean=-1,0296
+ 
+Seed 0 Summary:
+   TotalSpeciesCreated: 4
+   CullingEvents: 0
+   Final Species Count: 4
+   Gen0 Best: -0,9980
+   Gen150 Best: -0,9173
+   Improvement: 0,0807
+ 
+=== BASELINE RUN (Seed 1) ===
+   Gen   0: Best=-0,9660 Mean=-1,0486
+   Gen  25: Best=-0,9325 Mean=-0,9923
+   Gen  50: Best=-0,9076 Mean=-0,9942
+   Gen  75: Best=-0,8677 Mean=-1,0226
+   Gen 100: Best=-0,8512 Mean=-1,0089
+   Gen 125: Best=-0,8336 Mean=-1,0065
+   Gen 149: Best=-0,8281 Mean=-1,0046
+ 
+Seed 1 Summary:
+   TotalSpeciesCreated: 4
+   CullingEvents: 0
+   Final Species Count: 4
+   Gen0 Best: -0,9660
+   Gen150 Best: -0,8281
+   Improvement: 0,1379
+ 
+=== BASELINE RUN (Seed 2) ===
+   Gen   0: Best=-0,9671 Mean=-1,0602
+   Gen  25: Best=-0,9325 Mean=-0,9844
+   Gen  50: Best=-0,9123 Mean=-1,0012
+   Gen  75: Best=-0,9076 Mean=-1,0112
+   Gen 100: Best=-0,9006 Mean=-1,0117
+   Gen 125: Best=-0,9006 Mean=-1,0171
+   Gen 149: Best=-0,9006 Mean=-1,0229
+ 
+Seed 2 Summary:
+   TotalSpeciesCreated: 4
+   CullingEvents: 0
+   Final Species Count: 4
+   Gen0 Best: -0,9671
+   Gen150 Best: -0,9006
+   Improvement: 0,0665
+ 
+Average Baseline Gen150 Best Fitness: -0,8820
+ 
+
+=== FINAL COMPARISON ===
+ NEAT-style Gen150 fitness: -0,8803
+ Baseline Gen150 fitness:   -0,8820
+ Difference: 0,0017 (-0,2%)
+ 
+=== VALIDATION ===
+ ✓ Topology exploration working: 166,0 species created
+
+
+
+Test Run Failed.
+Total tests: 1
+     Failed: 1
+ Total time: 3,4292 Minutes
