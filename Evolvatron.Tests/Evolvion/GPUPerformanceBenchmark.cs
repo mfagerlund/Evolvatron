@@ -21,7 +21,7 @@ public class GPUPerformanceBenchmark : IDisposable
         _gpuEvaluator?.Dispose();
     }
 
-    [Fact]
+    [Fact(Skip = "Benchmark - run explicitly")]
     public void BenchmarkCPU_vs_GPU_NeuralEvaluation()
     {
         int individualCount = 2500;
