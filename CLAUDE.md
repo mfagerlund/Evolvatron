@@ -19,7 +19,7 @@ The game has two major workflows:
 - Reward shaping for RL landing tasks
 - Agents train on **2-15 input signals and 2-25 outputs** (not pixels)
 
-**Evolvion Integration** (planned): An evolutionary neural controller framework (see Evolvion.md) will eventually be integrated to evolve fixed-topology neural controllers using large-scale parallel GPU execution. Species evolve differing network topologies while individuals within species differ only by weights and node parameters.
+**Evolvion Integration** (planned): An evolutionary neural controller framework (see Evolvatron.Evolvion\README.md) will eventually be integrated to evolve fixed-topology neural controllers using large-scale parallel GPU execution. Species evolve differing network topologies while individuals within species differ only by weights and node parameters.
 
 ## Build and Test Commands
 
@@ -29,7 +29,7 @@ The game has two major workflows:
 dotnet build Evolvatron.sln
 
 # Build specific project
-dotnet build Evolvatron.Core/Evolvatron.Core.csproj
+dotnet build Evolvatron.Rigidon/Evolvatron.Rigidon.csproj
 dotnet build Evolvatron.Demo/Evolvatron.Demo.csproj
 ```
 
@@ -76,7 +76,7 @@ dotnet run --project Evolvatron.Demo/Evolvatron.Demo.csproj
 ### Project Structure
 
 ```
-Evolvatron.Core/           # Core physics engine (CPU + GPU)
+Evolvatron.Rigidon/        # Physics engine (CPU + GPU) - uses namespace Evolvatron.Core
 ├── IStepper.cs           # Stepper interface
 ├── CPUStepper.cs         # CPU reference implementation
 ├── WorldState.cs         # SoA particle arrays + constraints + colliders
@@ -112,7 +112,6 @@ Evolvatron.Demo/          # Visualization and demos
 ├── Program.cs            # Entry point
 ├── GraphicalDemo.cs      # Raylib-based interactive demo
 ├── FunnelDemo.cs         # Funnel scene demo
-├── RocketDemo.cs         # Rocket landing demo
 └── GPUBenchmark.cs       # CPU vs GPU performance comparison
 
 Evolvatron.Tests/         # Unit and integration tests
@@ -216,17 +215,31 @@ Units: **SI (meters, kilograms, seconds)** throughout.
 
 ### GPU Backend (ILGPU)
 
-The GPU backend (`GPUStepper.cs`) is a drop-in replacement for `CPUStepper`:
-- Implements `IStepper` interface identically
+The GPU backend (`GPUStepper.cs`) is a **partial** implementation of `IStepper`:
+- Implements `IStepper` interface
 - Uses ILGPU kernels in `GPU/GPUKernels.cs`
 - Memory managed by `GPUWorldState.cs`
-- **Note**: Currently incomplete — missing velocity stabilization, friction, and damping kernels on GPU path. These steps are skipped or done on CPU.
-- CPU stepper is the **reference implementation** for correctness.
 
-To use GPU:
+**⚠️ Current Limitations (Incomplete Implementation):**
+- ❌ **No rigid body physics** - Only particle physics supported
+- ❌ **No rigid body contact solver** - Missing ImpulseContactSolver
+- ❌ **No joint solver** - Missing RigidBodyJointSolver
+- ❌ **No velocity stabilization kernel**
+- ❌ **No friction kernel** - Particle friction not implemented on GPU
+- ❌ **No global damping kernel**
+
+**Use cases:**
+- ✅ Particle-based physics with XPBD constraints
+- ✅ Batch simulations for evolution/RL (particle systems only)
+- ❌ Rigid body simulations (use CPUStepper)
+- ❌ Systems requiring friction or damping (use CPUStepper)
+
+**CPU stepper is the reference implementation for correctness.**
+
+To use GPU (particles only):
 ```csharp
 var stepper = new GPUStepper();  // instead of new CPUStepper()
-stepper.Step(world, config);
+stepper.Step(world, config);  // Only particle constraints will be solved
 ```
 
 ## Templates and Factories

@@ -4,12 +4,12 @@ Physics-based simulation engine with evolutionary neural network training.
 
 ## Components
 
-### Evolvatron.Core - XPBD Physics Engine
+### Evolvatron.Rigidon - XPBD Physics Engine
 2D physics simulation with particle-based and rigid body dynamics.
-- **CPUStepper**: Pure C# reference implementation
-- **GPUStepper**: ILGPU-accelerated for batch simulations (use only with real GPUs)
+- **CPUStepper**: Pure C# reference implementation (full feature set)
+- **GPUStepper**: ⚠️ **Particle physics only** (no rigid bodies, friction, or damping on GPU)
 - XPBD constraints: rods, angles, motors
-- Rigid bodies with revolute joints
+- Rigid bodies with revolute joints (CPU only)
 - Static colliders: circles, capsules, OBBs
 
 See `CLAUDE.md` for detailed architecture documentation.
@@ -42,9 +42,6 @@ See `OPTUNA_RESULTS.md` for full results.
 
 See `Evolvatron.Evolvion.Benchmarks/` for optimization landscape tasks.
 
-### Evolvatron.Rigidon (Deprecated)
-Original rigid body implementation. Superseded by Evolvatron.Core.
-
 ## Quick Start
 
 ### Run Physics Demo
@@ -66,7 +63,7 @@ python optuna_sweep.py --n-trials 10
 ## Project Structure
 
 ```
-Evolvatron.Core/           # XPBD physics engine
+Evolvatron.Rigidon/        # XPBD physics engine (namespace: Evolvatron.Core)
 Evolvatron.Evolvion/       # Evolutionary neural networks
 Evolvatron.Demo/           # Visualization demos (Raylib)
 Evolvatron.Tests/          # Unit and integration tests
@@ -78,7 +75,7 @@ optuna_sweep.py            # Bayesian optimization orchestrator
 
 Default evolution config in `Evolvatron.Evolvion/EvolutionConfig.cs` contains Optuna-optimized hyperparameters.
 
-For physics config see `Evolvatron.Core/SimulationConfig.cs`.
+For physics config see `Evolvatron.Rigidon/SimulationConfig.cs`.
 
 ## Documentation
 
