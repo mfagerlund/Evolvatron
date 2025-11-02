@@ -8,48 +8,49 @@ public class EvolutionConfig
 {
     /// <summary>
     /// Number of species in the population.
-    /// Default: 27 (Phase 10 Optuna: optimized via Bayesian search)
-    /// Previous: 20 (NEAT-style), 4 (Phase 6)
+    /// Default: 39 (Phase 10 Rosenbrock: Trial 138 - valley navigation champion)
+    /// Previous: 27 (Phase 10 spiral), 20 (NEAT-style), 4 (Phase 6)
     /// </summary>
-    public int SpeciesCount { get; set; } = 27;
+    public int SpeciesCount { get; set; } = 39;
 
     /// <summary>
     /// Minimum number of species to maintain (prevents complete collapse).
-    /// Default: 8 (NEAT-style: ensures floor of diversity)
-    /// Previous: 2
+    /// Default: 13 (Phase 10 Rosenbrock: Trial 138 - higher diversity floor)
+    /// Previous: 8 (NEAT-style), 2
     /// </summary>
-    public int MinSpeciesCount { get; set; } = 8;
+    public int MinSpeciesCount { get; set; } = 13;
 
     /// <summary>
     /// Number of individuals per species.
-    /// Default: 88 (Phase 10 Optuna: optimized via Bayesian search)
-    /// Previous: 40 (NEAT-style), 200 (Phase 6)
-    /// Total population: SpeciesCount × IndividualsPerSpecies = 2376
+    /// Default: 132 (Phase 10 Rosenbrock: Trial 138 - larger population for valley exploration)
+    /// Previous: 88 (Phase 10 spiral), 40 (NEAT-style), 200 (Phase 6)
+    /// Total population: SpeciesCount × IndividualsPerSpecies = 5148
     /// </summary>
-    public int IndividualsPerSpecies { get; set; } = 88;
+    public int IndividualsPerSpecies { get; set; } = 132;
 
     /// <summary>
     /// Number of elite individuals preserved unchanged each generation.
-    /// Default: 4 (Phase 10 Optuna: optimized via Bayesian search)
-    /// Previous: 2 (Phase 2: low elitism preferred, but larger populations benefit from more elites)
+    /// Default: 5 (Phase 10 Rosenbrock: Trial 138 - more elites for larger population)
+    /// Previous: 4 (Phase 10 spiral), 2 (Phase 2)
     /// </summary>
-    public int Elites { get; set; } = 4;
+    public int Elites { get; set; } = 5;
 
     /// <summary>
     /// Tournament size for selection pressure.
     /// Higher values = stronger selection.
-    /// Default: 22 (Phase 10 Optuna: optimized via Bayesian search)
-    /// Previous: 16 (Phase 2: +0.743 correlation with improvement)
+    /// Default: 10 (Phase 10 Rosenbrock: Trial 138 - CRITICAL for valley navigation!)
+    /// Previous: 22 (Phase 10 spiral - too high for valleys), 16 (Phase 2)
+    /// Lower selection pressure prevents premature convergence in narrow fitness landscapes.
     /// </summary>
-    public int TournamentSize { get; set; } = 22;
+    public int TournamentSize { get; set; } = 10;
 
     /// <summary>
     /// Percentage of top individuals eligible as parents (0.0 to 1.0).
     /// Only the top X% by fitness can be selected as parents.
-    /// Default: 0.75 (Phase 10 Optuna: restricts parent pool for stronger selection pressure)
-    /// Previous: 1.0 (100% - all individuals eligible)
+    /// Default: 0.593 (Phase 10 Rosenbrock: Trial 138 - stronger parent filtering)
+    /// Previous: 0.75 (Phase 10 spiral), 1.0 (Phase 2 - all eligible)
     /// </summary>
-    public float ParentPoolPercentage { get; set; } = 0.75f;
+    public float ParentPoolPercentage { get; set; } = 0.593f;
 
     /// <summary>
     /// Number of generations a new species is protected from culling.
@@ -67,18 +68,19 @@ public class EvolutionConfig
 
     /// <summary>
     /// Minimum fitness variance required to avoid low-diversity culling.
-    /// Default: 0.066 (Phase 10 Optuna: optimized via Bayesian search)
-    /// Previous: 0.08 (NEAT-style), 0.15 (baseline)
+    /// Default: 0.113 (Phase 10 Rosenbrock: Trial 138 - CRITICAL for valley diversity!)
+    /// Previous: 0.066 (Phase 10 spiral), 0.08 (NEAT-style), 0.15 (baseline)
+    /// Higher threshold prevents species collapse in narrow fitness landscapes.
     /// </summary>
-    public float SpeciesDiversityThreshold { get; set; } = 0.066f;
+    public float SpeciesDiversityThreshold { get; set; } = 0.113f;
 
     /// <summary>
     /// Relative performance threshold for culling eligibility.
     /// Species with median fitness below this fraction of the best species are eligible.
-    /// Default: 0.885 (Phase 10 Optuna: very aggressive culling of underperformers)
-    /// Previous: 0.7 (NEAT-style), 0.5 (baseline)
+    /// Default: 0.627 (Phase 10 Rosenbrock: Trial 138 - more lenient for valley exploration)
+    /// Previous: 0.885 (Phase 10 spiral - too aggressive for valleys), 0.7 (NEAT-style), 0.5 (baseline)
     /// </summary>
-    public float RelativePerformanceThreshold { get; set; } = 0.885f;
+    public float RelativePerformanceThreshold { get; set; } = 0.627f;
 
     /// <summary>
     /// Mutation rate configuration.
@@ -98,57 +100,59 @@ public class MutationRates
 {
     /// <summary>
     /// Probability of applying Gaussian noise to each weight.
-    /// Default: 0.972 (Phase 10 Optuna: very high exploration rate)
-    /// Previous: 0.95 (XOR sweep)
+    /// Default: 0.812 (Phase 10 Rosenbrock: Trial 138 - reduced for gentler mutations)
+    /// Previous: 0.972 (Phase 10 spiral), 0.95 (XOR sweep)
     /// </summary>
-    public float WeightJitter { get; set; } = 0.972f;
+    public float WeightJitter { get; set; } = 0.812f;
 
     /// <summary>
     /// Standard deviation for weight jitter, as fraction of weight magnitude.
-    /// Default: 0.402 (Phase 10 Optuna: higher noise for stronger exploration)
-    /// Previous: 0.3 (XOR sweep)
+    /// Default: 0.058 (Phase 10 Rosenbrock: Trial 138 - CRITICAL! 86% reduction for fine-grained valley navigation)
+    /// Previous: 0.402 (Phase 10 spiral - too coarse for valleys), 0.3 (XOR sweep)
+    /// Gentle mutations enable precise navigation of narrow fitness valleys.
     /// </summary>
-    public float WeightJitterStdDev { get; set; } = 0.402f;
+    public float WeightJitterStdDev { get; set; } = 0.058f;
 
     /// <summary>
     /// Probability of resetting a weight to random value.
-    /// Default: 0.137 (Phase 10 Optuna: increased for more random exploration)
-    /// Previous: 0.1 (XOR sweep)
+    /// Default: 0.212 (Phase 10 Rosenbrock: Trial 138 - increased for escaping local optima)
+    /// Previous: 0.137 (Phase 10 spiral), 0.1 (XOR sweep)
     /// </summary>
-    public float WeightReset { get; set; } = 0.137f;
+    public float WeightReset { get; set; } = 0.212f;
 
     /// <summary>
     /// Probability of shrinking weight magnitude toward zero.
-    /// Default: 0.090 (Phase 10 Optuna: reduced regularization pressure)
-    /// Previous: 0.2 (Phase 7: +15.1% improvement)
+    /// Default: 0.288 (Phase 10 Rosenbrock: Trial 138 - much stronger network simplification)
+    /// Previous: 0.090 (Phase 10 spiral), 0.2 (Phase 7)
     /// </summary>
-    public float WeightL1Shrink { get; set; } = 0.090f;
+    public float WeightL1Shrink { get; set; } = 0.288f;
 
     /// <summary>
     /// Shrinkage factor for L1 regularization.
-    /// Default: 0.949 (Phase 10 Optuna: slightly stronger shrinkage when applied)
-    /// Previous: 0.9 (reduce magnitude by 10%)
+    /// Default: 0.857 (Phase 10 Rosenbrock: Trial 138 - more aggressive shrinkage)
+    /// Previous: 0.949 (Phase 10 spiral), 0.9 (Phase 7)
     /// </summary>
-    public float L1ShrinkFactor { get; set; } = 0.949f;
+    public float L1ShrinkFactor { get; set; } = 0.857f;
 
     /// <summary>
     /// Probability of swapping activation function.
-    /// Default: 0.186 (Phase 10 Optuna: strong activation diversity preference)
-    /// Previous: 0.10 (Phase 7: +33.3% improvement)
+    /// Default: 0.150 (Phase 10 Rosenbrock: Trial 138 - reduced activation churn)
+    /// Previous: 0.186 (Phase 10 spiral), 0.10 (Phase 7)
     /// </summary>
-    public float ActivationSwap { get; set; } = 0.186f;
+    public float ActivationSwap { get; set; } = 0.150f;
 
     /// <summary>
     /// Probability of mutating node parameters (alpha, beta, etc.).
-    /// Default: 0.022 (Phase 10 Optuna: minimal but non-zero)
-    /// Previous: 0.0 (Phase 7: disabled was best, but Optuna found slight benefit)
+    /// Default: 0.072 (Phase 10 Rosenbrock: Trial 138 - increased for node diversity)
+    /// Previous: 0.022 (Phase 10 spiral), 0.0 (Phase 7)
     /// </summary>
-    public float NodeParamMutate { get; set; } = 0.022f;
+    public float NodeParamMutate { get; set; } = 0.072f;
 
     /// <summary>
     /// Standard deviation for node parameter jitter.
-    /// Default: 0.053 (Phase 10 Optuna: small adjustments when enabled)
-    /// Previous: 0.1
+    /// Default: 0.222 (Phase 10 Rosenbrock: Trial 138 - much larger when applied)
+    /// Previous: 0.053 (Phase 10 spiral), 0.1
+    /// Creates punctuated equilibrium: rare but large node parameter changes.
     /// </summary>
-    public float NodeParamStdDev { get; set; } = 0.053f;
+    public float NodeParamStdDev { get; set; } = 0.222f;
 }
