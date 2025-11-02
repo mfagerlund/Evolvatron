@@ -56,7 +56,7 @@ public class GPUPerformanceBenchmark : IDisposable
             }
         }
 
-        var spec = builder.Build();
+        var spec = builder.WithMaxInDegree(20).Build();
 
         var individuals = new List<Individual>();
         var random = new Random(42);
