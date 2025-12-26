@@ -48,6 +48,11 @@ class Program
             // Launch landscape benchmark demo
             LandscapeBenchmarkDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "chase")
+        {
+            // Launch AI target chase demo
+            TargetChaseDemo.Run();
+        }
         else
         {
             // Launch physics demo by default
