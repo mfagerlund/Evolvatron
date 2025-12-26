@@ -7,6 +7,7 @@ namespace Evolvatron.Core.GPU;
 /// <summary>
 /// GPU-side representation of WorldState using device memory buffers.
 /// Manages host-to-device and device-to-host transfers.
+/// Supports both particle physics (XPBD) and rigid body physics (sequential impulse).
 /// </summary>
 public sealed class GPUWorldState : IDisposable
 {
@@ -34,6 +35,13 @@ public sealed class GPUWorldState : IDisposable
     public MemoryBuffer1D<GPUCapsuleCollider, Stride1D.Dense> Capsules { get; private set; }
     public MemoryBuffer1D<GPUOBBCollider, Stride1D.Dense> OBBs { get; private set; }
 
+    // Rigid body buffers
+    public MemoryBuffer1D<GPURigidBody, Stride1D.Dense> RigidBodies { get; private set; }
+    public MemoryBuffer1D<GPURigidBodyGeom, Stride1D.Dense> RigidBodyGeoms { get; private set; }
+    public MemoryBuffer1D<GPURevoluteJoint, Stride1D.Dense> RevoluteJoints { get; private set; }
+    public MemoryBuffer1D<GPUJointConstraint, Stride1D.Dense> JointConstraints { get; private set; }
+    public MemoryBuffer1D<GPUContactConstraint, Stride1D.Dense> ContactConstraints { get; private set; }
+
     public int ParticleCount { get; private set; }
     public int RodCount { get; private set; }
     public int AngleCount { get; private set; }
@@ -42,7 +50,14 @@ public sealed class GPUWorldState : IDisposable
     public int CapsuleCount { get; private set; }
     public int OBBCount { get; private set; }
 
-    public GPUWorldState(Accelerator accelerator, int particleCapacity = 512)
+    // Rigid body counts
+    public int RigidBodyCount { get; private set; }
+    public int RigidBodyGeomCount { get; private set; }
+    public int RevoluteJointCount { get; private set; }
+    public int MaxContactConstraints { get; private set; }
+    public int MaxGeomsPerBody { get; private set; }
+
+    public GPUWorldState(Accelerator accelerator, int particleCapacity = 512, int rigidBodyCapacity = 64)
     {
         _accelerator = accelerator;
 
@@ -67,6 +82,18 @@ public sealed class GPUWorldState : IDisposable
         Circles = accelerator.Allocate1D<GPUCircleCollider>(64);
         Capsules = accelerator.Allocate1D<GPUCapsuleCollider>(64);
         OBBs = accelerator.Allocate1D<GPUOBBCollider>(64);
+
+        // Allocate rigid body buffers
+        RigidBodies = accelerator.Allocate1D<GPURigidBody>(rigidBodyCapacity);
+        RigidBodyGeoms = accelerator.Allocate1D<GPURigidBodyGeom>(rigidBodyCapacity * 4); // Assume max 4 geoms per body
+        RevoluteJoints = accelerator.Allocate1D<GPURevoluteJoint>(rigidBodyCapacity);
+        JointConstraints = accelerator.Allocate1D<GPUJointConstraint>(rigidBodyCapacity);
+
+        // Contact constraints: bodies * maxGeoms * (circles + capsules + obbs)
+        // Initial allocation, will grow if needed
+        MaxGeomsPerBody = 4;
+        MaxContactConstraints = rigidBodyCapacity * MaxGeomsPerBody * 64; // Max 64 colliders
+        ContactConstraints = accelerator.Allocate1D<GPUContactConstraint>(MaxContactConstraints);
     }
 
     /// <summary>
@@ -125,6 +152,48 @@ public sealed class GPUWorldState : IDisposable
             OBBs = _accelerator.Allocate1D<GPUOBBCollider>(OBBCount * 2);
         if (OBBCount > 0)
             OBBs.View.SubView(0, OBBCount).CopyFromCPU(ConvertOBBs(world.Obbs));
+
+        // Upload rigid bodies
+        RigidBodyCount = world.RigidBodies.Count;
+        if (RigidBodyCount > RigidBodies.Length)
+            RigidBodies = _accelerator.Allocate1D<GPURigidBody>(RigidBodyCount * 2);
+        if (RigidBodyCount > 0)
+            RigidBodies.View.SubView(0, RigidBodyCount).CopyFromCPU(ConvertRigidBodies(world.RigidBodies));
+
+        // Upload rigid body geoms
+        RigidBodyGeomCount = world.RigidBodyGeoms.Count;
+        if (RigidBodyGeomCount > RigidBodyGeoms.Length)
+            RigidBodyGeoms = _accelerator.Allocate1D<GPURigidBodyGeom>(RigidBodyGeomCount * 2);
+        if (RigidBodyGeomCount > 0)
+            RigidBodyGeoms.View.SubView(0, RigidBodyGeomCount).CopyFromCPU(ConvertRigidBodyGeoms(world.RigidBodyGeoms));
+
+        // Upload revolute joints
+        RevoluteJointCount = world.RevoluteJoints.Count;
+        if (RevoluteJointCount > RevoluteJoints.Length)
+            RevoluteJoints = _accelerator.Allocate1D<GPURevoluteJoint>(RevoluteJointCount * 2);
+        if (RevoluteJointCount > 0)
+            RevoluteJoints.View.SubView(0, RevoluteJointCount).CopyFromCPU(ConvertRevoluteJoints(world.RevoluteJoints));
+
+        // Ensure joint constraints buffer is sized correctly
+        if (RevoluteJointCount > JointConstraints.Length)
+            JointConstraints = _accelerator.Allocate1D<GPUJointConstraint>(RevoluteJointCount * 2);
+
+        // Calculate max geoms per body for contact detection
+        MaxGeomsPerBody = 1;
+        foreach (var rb in world.RigidBodies)
+        {
+            if (rb.GeomCount > MaxGeomsPerBody)
+                MaxGeomsPerBody = rb.GeomCount;
+        }
+
+        // Ensure contact constraints buffer is sized correctly
+        int requiredContacts = RigidBodyCount * MaxGeomsPerBody * (CircleCount + CapsuleCount + OBBCount);
+        if (requiredContacts > ContactConstraints.Length)
+        {
+            ContactConstraints.Dispose();
+            MaxContactConstraints = requiredContacts * 2;
+            ContactConstraints = _accelerator.Allocate1D<GPUContactConstraint>(MaxContactConstraints);
+        }
     }
 
     /// <summary>
@@ -173,6 +242,16 @@ public sealed class GPUWorldState : IDisposable
             var motor = world.Motors[i];
             motor.Lambda = motors[i].Lambda;
             world.Motors[i] = motor;
+        }
+
+        // Download rigid bodies
+        if (RigidBodyCount > 0)
+        {
+            var rigidBodies = RigidBodies.GetAsArray1D();
+            for (int i = 0; i < RigidBodyCount; i++)
+            {
+                world.RigidBodies[i] = rigidBodies[i].ToCPU();
+            }
         }
     }
 
@@ -225,6 +304,30 @@ public sealed class GPUWorldState : IDisposable
         return result;
     }
 
+    private GPURigidBody[] ConvertRigidBodies(System.Collections.Generic.List<RigidBody> bodies)
+    {
+        var result = new GPURigidBody[bodies.Count];
+        for (int i = 0; i < bodies.Count; i++)
+            result[i] = new GPURigidBody(bodies[i]);
+        return result;
+    }
+
+    private GPURigidBodyGeom[] ConvertRigidBodyGeoms(System.Collections.Generic.List<RigidBodyGeom> geoms)
+    {
+        var result = new GPURigidBodyGeom[geoms.Count];
+        for (int i = 0; i < geoms.Count; i++)
+            result[i] = new GPURigidBodyGeom(geoms[i]);
+        return result;
+    }
+
+    private GPURevoluteJoint[] ConvertRevoluteJoints(System.Collections.Generic.List<RevoluteJoint> joints)
+    {
+        var result = new GPURevoluteJoint[joints.Count];
+        for (int i = 0; i < joints.Count; i++)
+            result[i] = new GPURevoluteJoint(joints[i]);
+        return result;
+    }
+
     public void Dispose()
     {
         PosX?.Dispose();
@@ -243,5 +346,10 @@ public sealed class GPUWorldState : IDisposable
         Circles?.Dispose();
         Capsules?.Dispose();
         OBBs?.Dispose();
+        RigidBodies?.Dispose();
+        RigidBodyGeoms?.Dispose();
+        RevoluteJoints?.Dispose();
+        JointConstraints?.Dispose();
+        ContactConstraints?.Dispose();
     }
 }

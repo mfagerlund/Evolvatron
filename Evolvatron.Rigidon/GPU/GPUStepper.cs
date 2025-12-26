@@ -22,6 +22,25 @@ public sealed class GPUStepper : IStepper, IDisposable
     private readonly Action<Index1D, ArrayView<GPUMotorAngle>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float> _solveMotorsKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float, float> _solveContactsKernel;
 
+    // Post-processing kernels
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float> _velocityStabilizationKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float> _frictionKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, float> _dampingKernel;
+
+    // Rigid body kernels
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, float, float> _applyRigidBodyGravityKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, float> _integrateRigidBodiesKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, float> _dampRigidBodiesKernel;
+
+    // Rigid body joint kernels
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>, ArrayView<GPUJointConstraint>, float> _initializeJointConstraintsKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>, float> _solveJointVelocitiesKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>> _solveJointPositionsKernel;
+
+    // Rigid body contact kernels
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUOBBCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float> _detectOBBContactsKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUContactConstraint>> _solveContactVelocitiesKernel;
+
     private bool _initialized = false;
 
     public GPUStepper()
@@ -56,6 +75,43 @@ public sealed class GPUStepper : IStepper, IDisposable
 
         _solveContactsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float, float>(
             GPUKernels.SolveContactsKernel);
+
+        // Load post-processing kernels
+        _velocityStabilizationKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float>(
+            GPUKernels.VelocityStabilizationKernel);
+
+        _frictionKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float>(
+            GPUKernels.FrictionKernel);
+
+        _dampingKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, float>(
+            GPUKernels.DampingKernel);
+
+        // Load rigid body kernels
+        _applyRigidBodyGravityKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float, float>(
+            GPURigidBodyContactKernels.ApplyRigidBodyGravityKernel);
+
+        _integrateRigidBodiesKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float>(
+            GPURigidBodyContactKernels.IntegrateRigidBodiesKernel);
+
+        _dampRigidBodiesKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float>(
+            GPURigidBodyContactKernels.DampRigidBodiesKernel);
+
+        // Load rigid body joint kernels
+        _initializeJointConstraintsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>, ArrayView<GPUJointConstraint>, float>(
+            GPURigidBodyJointKernels.InitializeJointConstraintsKernel);
+
+        _solveJointVelocitiesKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>, float>(
+            GPURigidBodyJointKernels.SolveJointVelocitiesKernel);
+
+        _solveJointPositionsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>>(
+            GPURigidBodyJointKernels.SolveJointPositionsKernel);
+
+        // Load rigid body contact kernels
+        _detectOBBContactsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUOBBCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float>(
+            GPURigidBodyContactKernels.DetectOBBContactsKernel);
+
+        _solveContactVelocitiesKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUContactConstraint>>(
+            GPURigidBodyContactKernels.SolveContactVelocitiesKernel);
     }
 
     public void Step(WorldState world, SimulationConfig cfg)
@@ -133,14 +189,98 @@ public sealed class GPUStepper : IStepper, IDisposable
                 dt, cfg.ContactCompliance);
         }
 
-        // 6. Velocity stabilization (skipped for GPU - requires custom kernel)
-        // TODO: Implement as GPU kernel for better performance
+        // 6. Velocity stabilization
+        if (cfg.VelocityStabilizationBeta > 0f)
+        {
+            float invDt = 1f / dt;
+            _velocityStabilizationKernel(particleCount,
+                gpu.PosX.View, gpu.PosY.View,
+                gpu.PrevPosX.View, gpu.PrevPosY.View,
+                gpu.VelX.View, gpu.VelY.View,
+                gpu.InvMass.View,
+                invDt, cfg.VelocityStabilizationBeta);
+        }
 
-        // 7. Friction (skipped for GPU - requires custom kernel)
-        // TODO: Implement as GPU kernel
+        // 7. Friction
+        if (cfg.FrictionMu > 0f)
+        {
+            _frictionKernel(particleCount,
+                gpu.PosX.View, gpu.PosY.View,
+                gpu.VelX.View, gpu.VelY.View,
+                gpu.InvMass.View, gpu.Radius.View,
+                gpu.Circles.View, gpu.Capsules.View, gpu.OBBs.View,
+                gpu.CircleCount, gpu.CapsuleCount, gpu.OBBCount,
+                cfg.FrictionMu);
+        }
 
-        // 8. Damping (skipped for GPU - requires custom kernel)
-        // TODO: Implement as GPU kernel
+        // 8. Damping
+        if (cfg.GlobalDamping > 0f)
+        {
+            float dampingFactor = MathF.Max(0f, 1f - cfg.GlobalDamping * dt);
+            _dampingKernel(particleCount,
+                gpu.VelX.View, gpu.VelY.View,
+                gpu.InvMass.View,
+                dampingFactor);
+        }
+
+        // ========== RIGID BODY PHYSICS ==========
+        int rigidBodyCount = gpu.RigidBodyCount;
+        if (rigidBodyCount > 0)
+        {
+            // 9. Apply gravity to rigid bodies
+            _applyRigidBodyGravityKernel(rigidBodyCount, gpu.RigidBodies.View, cfg.GravityX, cfg.GravityY);
+
+            // 10. Integrate rigid body velocities to positions
+            _integrateRigidBodiesKernel(rigidBodyCount, gpu.RigidBodies.View, dt);
+
+            // 11. Detect contacts (rigid body geoms vs OBB colliders)
+            int obbContactCount = rigidBodyCount * gpu.MaxGeomsPerBody * gpu.OBBCount;
+            if (obbContactCount > 0 && gpu.OBBCount > 0)
+            {
+                _detectOBBContactsKernel(obbContactCount,
+                    gpu.RigidBodies.View, gpu.RigidBodyGeoms.View, gpu.OBBs.View, gpu.ContactConstraints.View,
+                    0, // contact offset
+                    rigidBodyCount, gpu.MaxGeomsPerBody, gpu.OBBCount,
+                    cfg.FrictionMu, cfg.Restitution, dt);
+            }
+
+            // 12. Initialize joint constraints
+            if (gpu.RevoluteJointCount > 0)
+            {
+                _initializeJointConstraintsKernel(gpu.RevoluteJointCount,
+                    gpu.RigidBodies.View, gpu.RevoluteJoints.View, gpu.JointConstraints.View, dt);
+            }
+
+            // 13. Sequential impulse iterations
+            int totalContacts = obbContactCount;
+            for (int iter = 0; iter < cfg.XpbdIterations; iter++)
+            {
+                // Solve contact velocities
+                if (totalContacts > 0)
+                {
+                    _solveContactVelocitiesKernel(totalContacts, gpu.RigidBodies.View, gpu.ContactConstraints.View);
+                }
+
+                // Solve joint velocities
+                if (gpu.RevoluteJointCount > 0)
+                {
+                    _solveJointVelocitiesKernel(gpu.RevoluteJointCount, gpu.RigidBodies.View, gpu.JointConstraints.View, dt);
+                }
+            }
+
+            // 14. Solve joint position constraints (for stability)
+            if (gpu.RevoluteJointCount > 0)
+            {
+                _solveJointPositionsKernel(gpu.RevoluteJointCount, gpu.RigidBodies.View, gpu.JointConstraints.View);
+            }
+
+            // 15. Damping for rigid bodies
+            if (cfg.GlobalDamping > 0f)
+            {
+                float dampingFactor = MathF.Max(0f, 1f - cfg.GlobalDamping * dt);
+                _dampRigidBodiesKernel(rigidBodyCount, gpu.RigidBodies.View, dampingFactor);
+            }
+        }
     }
 
     private void StabilizeVelocities(GPUWorldState gpu, float dt, float beta)

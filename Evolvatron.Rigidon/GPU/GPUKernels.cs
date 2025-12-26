@@ -363,6 +363,172 @@ public static class GPUKernels
 
     #endregion
 
+    #region Post-Processing Kernels
+
+    /// <summary>
+    /// Stabilizes velocities from position changes during XPBD solving.
+    /// v = beta * (pos - prevPos) * invDt + (1 - beta) * vel
+    /// </summary>
+    public static void VelocityStabilizationKernel(
+        Index1D index,
+        ArrayView<float> posX, ArrayView<float> posY,
+        ArrayView<float> prevPosX, ArrayView<float> prevPosY,
+        ArrayView<float> velX, ArrayView<float> velY,
+        ArrayView<float> invMass,
+        float invDt, float beta)
+    {
+        // Only process dynamic particles
+        if (invMass[index] == 0f)
+            return;
+
+        float correctedVx = (posX[index] - prevPosX[index]) * invDt;
+        float correctedVy = (posY[index] - prevPosY[index]) * invDt;
+
+        float oneMinusBeta = 1f - beta;
+        velX[index] = correctedVx * beta + velX[index] * oneMinusBeta;
+        velY[index] = correctedVy * beta + velY[index] * oneMinusBeta;
+    }
+
+    private const float FrictionPenetrationTolerance = 0.01f; // Consider in contact if within 1cm
+
+    /// <summary>
+    /// Applies velocity-level Coulomb friction to particles in contact with colliders.
+    /// </summary>
+    public static void FrictionKernel(
+        Index1D index,
+        ArrayView<float> posX, ArrayView<float> posY,
+        ArrayView<float> velX, ArrayView<float> velY,
+        ArrayView<float> invMass, ArrayView<float> radius,
+        ArrayView<GPUCircleCollider> circles,
+        ArrayView<GPUCapsuleCollider> capsules,
+        ArrayView<GPUOBBCollider> obbs,
+        int circleCount, int capsuleCount, int obbCount,
+        float mu)
+    {
+        // Skip pinned particles
+        if (invMass[index] == 0f)
+            return;
+
+        if (mu <= 0f)
+            return;
+
+        float px = posX[index];
+        float py = posY[index];
+        float r = radius[index];
+
+        // Find the most penetrating collider (or closest if near contact)
+        float minPhi = float.MaxValue;
+        float contactNx = 0f;
+        float contactNy = 0f;
+
+        // Check circles
+        for (int c = 0; c < circleCount; c++)
+        {
+            var circle = circles[c];
+            float phi, nx, ny;
+            CircleSDF(px, py, circle, out phi, out nx, out ny);
+            phi -= r;
+
+            if (phi < minPhi)
+            {
+                minPhi = phi;
+                contactNx = nx;
+                contactNy = ny;
+            }
+        }
+
+        // Check capsules
+        for (int c = 0; c < capsuleCount; c++)
+        {
+            var capsule = capsules[c];
+            float phi, nx, ny;
+            CapsuleSDF(px, py, capsule, out phi, out nx, out ny);
+            phi -= r;
+
+            if (phi < minPhi)
+            {
+                minPhi = phi;
+                contactNx = nx;
+                contactNy = ny;
+            }
+        }
+
+        // Check OBBs
+        for (int c = 0; c < obbCount; c++)
+        {
+            var obb = obbs[c];
+            float phi, nx, ny;
+            OBBSDF(px, py, obb, out phi, out nx, out ny);
+            phi -= r;
+
+            if (phi < minPhi)
+            {
+                minPhi = phi;
+                contactNx = nx;
+                contactNy = ny;
+            }
+        }
+
+        // Only apply friction if in contact (penetrating or very close)
+        if (minPhi >= FrictionPenetrationTolerance)
+            return;
+
+        // Current velocity
+        float vx = velX[index];
+        float vy = velY[index];
+
+        // Decompose velocity into normal and tangent components
+        float vn = vx * contactNx + vy * contactNy; // Normal component (scalar)
+        float vtx = vx - vn * contactNx; // Tangent component (vector)
+        float vty = vy - vn * contactNy;
+
+        float vtMag = XMath.Sqrt(vtx * vtx + vty * vty);
+
+        if (vtMag < Epsilon)
+            return; // No tangential motion
+
+        // Coulomb friction: max tangential impulse is mu * |normal impulse|
+        // For velocity-level: reduce tangential velocity by at most mu * |vn|
+        float maxTangentialReduction = mu * XMath.Abs(vn);
+
+        if (maxTangentialReduction >= vtMag)
+        {
+            // Full friction: stop tangential motion
+            velX[index] = vn * contactNx;
+            velY[index] = vn * contactNy;
+        }
+        else
+        {
+            // Partial friction: reduce tangential velocity
+            float reductionFactor = (vtMag - maxTangentialReduction) / vtMag;
+            vtx *= reductionFactor;
+            vty *= reductionFactor;
+
+            velX[index] = vn * contactNx + vtx;
+            velY[index] = vn * contactNy + vty;
+        }
+    }
+
+    /// <summary>
+    /// Applies global velocity damping to all dynamic particles.
+    /// vel *= dampingFactor where dampingFactor = max(0, 1 - damping * dt)
+    /// </summary>
+    public static void DampingKernel(
+        Index1D index,
+        ArrayView<float> velX, ArrayView<float> velY,
+        ArrayView<float> invMass,
+        float dampingFactor)
+    {
+        // Only apply to dynamic particles (invMass > 0)
+        if (invMass[index] == 0f)
+            return;
+
+        velX[index] *= dampingFactor;
+        velY[index] *= dampingFactor;
+    }
+
+    #endregion
+
     #region SDF Functions (GPU versions)
 
     private static void CircleSDF(
