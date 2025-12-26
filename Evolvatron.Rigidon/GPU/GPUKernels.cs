@@ -368,6 +368,7 @@ public static class GPUKernels
     /// <summary>
     /// Stabilizes velocities from position changes during XPBD solving.
     /// v = beta * (pos - prevPos) * invDt + (1 - beta) * vel
+    /// Optionally clamps velocity magnitude to prevent energy injection.
     /// </summary>
     public static void VelocityStabilizationKernel(
         Index1D index,
@@ -375,7 +376,7 @@ public static class GPUKernels
         ArrayView<float> prevPosX, ArrayView<float> prevPosY,
         ArrayView<float> velX, ArrayView<float> velY,
         ArrayView<float> invMass,
-        float invDt, float beta)
+        float invDt, float beta, float maxVelocity)
     {
         // Only process dynamic particles
         if (invMass[index] == 0f)
@@ -385,8 +386,25 @@ public static class GPUKernels
         float correctedVy = (posY[index] - prevPosY[index]) * invDt;
 
         float oneMinusBeta = 1f - beta;
-        velX[index] = correctedVx * beta + velX[index] * oneMinusBeta;
-        velY[index] = correctedVy * beta + velY[index] * oneMinusBeta;
+        float vx = correctedVx * beta + velX[index] * oneMinusBeta;
+        float vy = correctedVy * beta + velY[index] * oneMinusBeta;
+
+        // Clamp velocity magnitude if maxVelocity > 0, with energy dissipation
+        if (maxVelocity > 0f)
+        {
+            float velSq = vx * vx + vy * vy;
+            float maxVelSq = maxVelocity * maxVelocity;
+            if (velSq > maxVelSq)
+            {
+                // Dissipate energy: scale down to 50% of max velocity
+                float scale = (maxVelocity * 0.5f) / XMath.Sqrt(velSq);
+                vx *= scale;
+                vy *= scale;
+            }
+        }
+
+        velX[index] = vx;
+        velY[index] = vy;
     }
 
     private const float FrictionPenetrationTolerance = 0.01f; // Consider in contact if within 1cm

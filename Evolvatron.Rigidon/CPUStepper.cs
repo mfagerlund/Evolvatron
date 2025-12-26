@@ -1,4 +1,5 @@
 using Evolvatron.Core.Physics;
+using System.Collections.Generic;
 
 namespace Evolvatron.Core;
 
@@ -8,6 +9,11 @@ namespace Evolvatron.Core;
 /// </summary>
 public sealed class CPUStepper : IStepper
 {
+    /// <summary>
+    /// Cache for warm-starting rigid body contacts between frames.
+    /// </summary>
+    private readonly Dictionary<ContactId, CachedContactImpulse> _contactCache = new();
+
     /// <summary>
     /// Advances the simulation by one step.
     /// Each step may contain multiple substeps for stability.
@@ -69,6 +75,9 @@ public sealed class CPUStepper : IStepper
         // Initialize contact constraints and compute effective masses
         var rigidBodyContacts = ImpulseContactSolver.InitializeConstraints(world, dt, cfg.FrictionMu, cfg.Restitution);
 
+        // Apply cached impulses from previous frame to initialize solver state
+        ImpulseContactSolver.ApplyWarmStarting(rigidBodyContacts, _contactCache);
+
         // Warm-start with cached impulses (improves convergence)
         ImpulseContactSolver.WarmStart(world, rigidBodyContacts);
 
@@ -86,12 +95,13 @@ public sealed class CPUStepper : IStepper
         RigidBodyJointSolver.SolvePositionConstraints(world, jointConstraints);
 
         // Store impulses for next frame's warm-start
-        ImpulseContactSolver.StoreImpulses(rigidBodyContacts);
+        ImpulseContactSolver.StoreImpulses(rigidBodyContacts, _contactCache);
 
         // === POST-PROCESSING ===
 
         // 5. Velocity stabilization (correct velocities from position changes in particle solver)
-        world.StabilizeVelocities(dt, cfg.VelocityStabilizationBeta);
+        // MaxVelocity clamping prevents energy injection from large XPBD corrections
+        world.StabilizeVelocities(dt, cfg.VelocityStabilizationBeta, cfg.MaxVelocity);
         // Note: Rigid body velocity stabilization not needed with impulse solver
 
         // 6. Friction pass for particles (velocity-level)

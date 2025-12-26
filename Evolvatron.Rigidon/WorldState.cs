@@ -153,31 +153,71 @@ public sealed class WorldState
 
     /// <summary>
     /// Applies velocity stabilization: v = (p_new - p_prev)/dt * beta + v * (1-beta)
+    /// Optionally clamps velocity magnitude to prevent energy injection from large corrections.
     /// </summary>
-    public void StabilizeVelocities(float dt, float beta)
+    /// <param name="dt">Timestep</param>
+    /// <param name="beta">Blending factor (0=keep old velocity, 1=full correction)</param>
+    /// <param name="maxVelocity">Maximum velocity magnitude. Set to 0 or negative to disable clamping.</param>
+    public void StabilizeVelocities(float dt, float beta, float maxVelocity = 0f)
     {
         if (beta <= 0f) return;
+
+        float invDt = 1f / dt;
+        float maxVelSq = maxVelocity > 0f ? maxVelocity * maxVelocity : 0f;
+        bool clampEnabled = maxVelocity > 0f;
+
         if (beta >= 1f)
         {
             // Full correction
-            float invDt = 1f / dt;
             for (int i = 0; i < _particleCount; i++)
             {
-                _velX[i] = (_posX[i] - _prevPosX[i]) * invDt;
-                _velY[i] = (_posY[i] - _prevPosY[i]) * invDt;
+                float vx = (_posX[i] - _prevPosX[i]) * invDt;
+                float vy = (_posY[i] - _prevPosY[i]) * invDt;
+
+                // Clamp velocity magnitude if enabled, with energy dissipation
+                if (clampEnabled)
+                {
+                    float velSq = vx * vx + vy * vy;
+                    if (velSq > maxVelSq)
+                    {
+                        // Dissipate energy: scale down to 50% of max velocity
+                        // This removes kinetic energy instead of just clamping
+                        float scale = (maxVelocity * 0.5f) / MathF.Sqrt(velSq);
+                        vx *= scale;
+                        vy *= scale;
+                    }
+                }
+
+                _velX[i] = vx;
+                _velY[i] = vy;
             }
         }
         else
         {
             // Blended correction
-            float invDt = 1f / dt;
             float oneMinusBeta = 1f - beta;
             for (int i = 0; i < _particleCount; i++)
             {
                 float correctedVx = (_posX[i] - _prevPosX[i]) * invDt;
                 float correctedVy = (_posY[i] - _prevPosY[i]) * invDt;
-                _velX[i] = correctedVx * beta + _velX[i] * oneMinusBeta;
-                _velY[i] = correctedVy * beta + _velY[i] * oneMinusBeta;
+                float vx = correctedVx * beta + _velX[i] * oneMinusBeta;
+                float vy = correctedVy * beta + _velY[i] * oneMinusBeta;
+
+                // Clamp velocity magnitude if enabled, with energy dissipation
+                if (clampEnabled)
+                {
+                    float velSq = vx * vx + vy * vy;
+                    if (velSq > maxVelSq)
+                    {
+                        // Dissipate energy: scale down to 50% of max velocity
+                        float scale = (maxVelocity * 0.5f) / MathF.Sqrt(velSq);
+                        vx *= scale;
+                        vy *= scale;
+                    }
+                }
+
+                _velX[i] = vx;
+                _velY[i] = vy;
             }
         }
     }

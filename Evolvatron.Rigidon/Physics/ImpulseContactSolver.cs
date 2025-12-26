@@ -47,7 +47,7 @@ public static class ImpulseContactSolver
                 {
                     if (CircleCollision.CircleVsStaticCircle(geomWorldX, geomWorldY, geom.Radius, world.Circles[j], out var contactInfo))
                     {
-                        var constraint = CreateConstraint(i, StaticColliderType.Circle, j, contactInfo, rb, friction, restitution, dt);
+                        var constraint = CreateConstraint(i, g, StaticColliderType.Circle, j, contactInfo, rb, friction, restitution, dt);
                         constraints.Add(constraint);
                     }
                 }
@@ -57,7 +57,7 @@ public static class ImpulseContactSolver
                 {
                     if (CircleCollision.CircleVsStaticCapsule(geomWorldX, geomWorldY, geom.Radius, world.Capsules[j], out var contactInfo))
                     {
-                        var constraint = CreateConstraint(i, StaticColliderType.Capsule, j, contactInfo, rb, friction, restitution, dt);
+                        var constraint = CreateConstraint(i, g, StaticColliderType.Capsule, j, contactInfo, rb, friction, restitution, dt);
                         constraints.Add(constraint);
                     }
                 }
@@ -67,7 +67,7 @@ public static class ImpulseContactSolver
                 {
                     if (CircleCollision.CircleVsStaticOBB(geomWorldX, geomWorldY, geom.Radius, world.Obbs[j], out var contactInfo))
                     {
-                        var constraint = CreateConstraint(i, StaticColliderType.OBB, j, contactInfo, rb, friction, restitution, dt);
+                        var constraint = CreateConstraint(i, g, StaticColliderType.OBB, j, contactInfo, rb, friction, restitution, dt);
                         constraints.Add(constraint);
                     }
                 }
@@ -83,6 +83,7 @@ public static class ImpulseContactSolver
     /// </summary>
     private static ContactConstraint CreateConstraint(
         int rbIndex,
+        int geomIndex,
         StaticColliderType colliderType,
         int colliderIndex,
         ContactInfo contact,
@@ -94,6 +95,7 @@ public static class ImpulseContactSolver
         var constraint = new ContactConstraint
         {
             RigidBodyIndex = rbIndex,
+            GeomIndex = geomIndex,
             ColliderType = colliderType,
             ColliderIndex = colliderIndex,
             NormalX = contact.NormalX,
@@ -262,5 +264,49 @@ public static class ImpulseContactSolver
     {
         // TODO: Implement impulse caching for persistent contacts
         // For now, we rebuild constraints from scratch each frame
+    }
+
+    /// <summary>
+    /// Apply cached impulses from previous frame to initialize solver state.
+    /// This matches contacts by their unique ID and transfers impulses.
+    /// </summary>
+    public static void ApplyWarmStarting(
+        List<ContactConstraint> constraints,
+        Dictionary<ContactId, CachedContactImpulse> cache)
+    {
+        for (int i = 0; i < constraints.Count; i++)
+        {
+            var constraint = constraints[i];
+            var id = new ContactId(constraint);
+
+            if (cache.TryGetValue(id, out var cached))
+            {
+                var point = constraint.Point1;
+                point.NormalImpulse = cached.NormalImpulse;
+                point.TangentImpulse = cached.TangentImpulse;
+                constraint.Point1 = point;
+                constraints[i] = constraint;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Store final impulses into the cache for warm-starting next frame.
+    /// </summary>
+    public static void StoreImpulses(
+        List<ContactConstraint> constraints,
+        Dictionary<ContactId, CachedContactImpulse> cache)
+    {
+        cache.Clear();
+        for (int i = 0; i < constraints.Count; i++)
+        {
+            var constraint = constraints[i];
+            var id = new ContactId(constraint);
+            cache[id] = new CachedContactImpulse
+            {
+                NormalImpulse = constraint.Point1.NormalImpulse,
+                TangentImpulse = constraint.Point1.TangentImpulse
+            };
+        }
     }
 }

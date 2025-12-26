@@ -194,6 +194,9 @@ public static class GPURigidBodyContactKernels
         contact.TangentImpulse = 0f;
         contact.Friction = friction;
         contact.Restitution = restitution;
+        contact.GeomIndex = geomLocalIdx;
+        contact.ColliderType = 0; // Circle
+        contact.ColliderIndex = circleIdx;
         contact.IsValid = 1;
 
         contacts[contactIdx] = contact;
@@ -297,6 +300,9 @@ public static class GPURigidBodyContactKernels
         contact.TangentImpulse = 0f;
         contact.Friction = friction;
         contact.Restitution = restitution;
+        contact.GeomIndex = geomLocalIdx;
+        contact.ColliderType = 2; // OBB
+        contact.ColliderIndex = obbIdx;
         contact.IsValid = 1;
 
         contacts[contactIdx] = contact;
@@ -484,6 +490,9 @@ public static class GPURigidBodyContactKernels
         contact.TangentImpulse = 0f;
         contact.Friction = friction;
         contact.Restitution = restitution;
+        contact.GeomIndex = geomLocalIdx;
+        contact.ColliderType = 1; // Capsule
+        contact.ColliderIndex = capsuleIdx;
         contact.IsValid = 1;
 
         contacts[contactIdx] = contact;
@@ -612,6 +621,85 @@ public static class GPURigidBodyContactKernels
             nx = localNx * obb.UX - localNy * obb.UY;
             ny = localNx * obb.UY + localNy * obb.UX;
         }
+    }
+
+    #endregion
+
+    #region Warm-Starting Kernels
+
+    /// <summary>
+    /// Applies cached impulses from previous frame to new contacts.
+    /// Matches contacts by (RigidBodyIndex, GeomIndex, ColliderType, ColliderIndex).
+    /// One thread per contact.
+    /// </summary>
+    public static void ApplyWarmStartKernel(
+        Index1D index,
+        ArrayView<GPURigidBody> bodies,
+        ArrayView<GPUContactConstraint> contacts,
+        ArrayView<GPUCachedContactImpulse> cache,
+        int cacheSize)
+    {
+        var contact = contacts[index];
+        if (contact.IsValid == 0)
+            return;
+
+        // Linear search through cache for matching contact
+        // TODO: Use hash table for O(1) lookup in production
+        for (int i = 0; i < cacheSize; i++)
+        {
+            var cached = cache[i];
+            if (cached.IsValid != 0 &&
+                cached.RigidBodyIndex == contact.RigidBodyIndex &&
+                cached.GeomIndex == contact.GeomIndex &&
+                cached.ColliderType == contact.ColliderType &&
+                cached.ColliderIndex == contact.ColliderIndex)
+            {
+                // Found matching contact, apply cached impulses
+                contact.NormalImpulse = cached.NormalImpulse;
+                contact.TangentImpulse = cached.TangentImpulse;
+
+                // Apply impulse to body
+                var body = bodies[contact.RigidBodyIndex];
+                float px = contact.NormalX * contact.NormalImpulse + contact.TangentX * contact.TangentImpulse;
+                float py = contact.NormalY * contact.NormalImpulse + contact.TangentY * contact.TangentImpulse;
+
+                Atomic.Add(ref bodies[contact.RigidBodyIndex].VelX, body.InvMass * px);
+                Atomic.Add(ref bodies[contact.RigidBodyIndex].VelY, body.InvMass * py);
+                Atomic.Add(ref bodies[contact.RigidBodyIndex].AngularVel, 
+                    body.InvInertia * (contact.RA_X * py - contact.RA_Y * px));
+
+                contacts[index] = contact;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stores current contact impulses to cache for next frame warm-starting.
+    /// One thread per contact.
+    /// </summary>
+    public static void StoreToCacheKernel(
+        Index1D index,
+        ArrayView<GPUContactConstraint> contacts,
+        ArrayView<GPUCachedContactImpulse> cache)
+    {
+        var contact = contacts[index];
+        if (contact.IsValid == 0)
+        {
+            cache[index] = new GPUCachedContactImpulse { IsValid = 0 };
+            return;
+        }
+
+        cache[index] = new GPUCachedContactImpulse
+        {
+            RigidBodyIndex = contact.RigidBodyIndex,
+            ColliderType = contact.ColliderType,
+            ColliderIndex = contact.ColliderIndex,
+            GeomIndex = contact.GeomIndex,
+            NormalImpulse = contact.NormalImpulse,
+            TangentImpulse = contact.TangentImpulse,
+            IsValid = 1
+        };
     }
 
     #endregion

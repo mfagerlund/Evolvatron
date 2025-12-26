@@ -264,6 +264,15 @@ public struct GPUContactConstraint
 
     /// <summary>Valid contact flag (1 = valid, 0 = invalid).</summary>
     public byte IsValid;
+ 
+    /// <summary>Index of the geom within the rigid body that created this contact.</summary>
+    public int GeomIndex;
+
+    /// <summary>Type of static collider (0=Circle, 1=Capsule, 2=OBB).</summary>
+    public int ColliderType;
+
+    /// <summary>Index of the static collider.</summary>
+    public int ColliderIndex;
 
     /// <summary>
     /// Creates a GPU-compatible contact constraint from a CPU ContactConstraint.
@@ -432,4 +441,33 @@ public struct GPUJointConstraint
             EnableMotor = EnableMotor != 0
         };
     }
+}
+
+/// <summary>
+/// GPU-compatible cached contact impulse for warm-starting.
+/// Stores the accumulated impulses from a contact for use in the next frame.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct GPUCachedContactImpulse
+{
+    /// <summary>Index of the rigid body.</summary>
+    public int RigidBodyIndex;
+
+    /// <summary>Type of static collider (0=Circle, 1=Capsule, 2=OBB).</summary>
+    public int ColliderType;
+
+    /// <summary>Index of the static collider.</summary>
+    public int ColliderIndex;
+
+    /// <summary>Index of the geom within the rigid body.</summary>
+    public int GeomIndex;
+
+    /// <summary>Cached normal impulse from previous frame.</summary>
+    public float NormalImpulse;
+
+    /// <summary>Cached tangent impulse from previous frame.</summary>
+    public float TangentImpulse;
+
+    /// <summary>Valid flag (1 = valid entry, 0 = empty slot).</summary>
+    public byte IsValid;
 }

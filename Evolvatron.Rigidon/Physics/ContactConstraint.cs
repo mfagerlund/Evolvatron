@@ -14,7 +14,7 @@ public struct ContactConstraintPoint
 
     /// <summary>
     /// Vector from rigid body center of mass to contact point (in world space).
-    /// Used for torque calculations: torque = r × impulse
+    /// Used for torque calculations: torque = r x impulse
     /// </summary>
     public float RA_X;
     public float RA_Y;
@@ -26,14 +26,14 @@ public struct ContactConstraintPoint
 
     /// <summary>
     /// Inverse effective mass for normal direction.
-    /// normalMass = 1 / (invMass + invInertia * (r × n)²)
+    /// normalMass = 1 / (invMass + invInertia * (r x n)^2)
     /// Pre-computed for efficiency.
     /// </summary>
     public float NormalMass;
 
     /// <summary>
     /// Inverse effective mass for tangent direction.
-    /// tangentMass = 1 / (invMass + invInertia * (r × t)²)
+    /// tangentMass = 1 / (invMass + invInertia * (r x t)^2)
     /// Pre-computed for efficiency.
     /// </summary>
     public float TangentMass;
@@ -80,6 +80,12 @@ public struct ContactConstraint
     /// Index of the static collider in the appropriate world collection.
     /// </summary>
     public int ColliderIndex;
+
+    /// <summary>
+    /// Index of the geom within the rigid body that created this contact.
+    /// Used for warm-starting cache key (body + collider type + collider index + geom index).
+    /// </summary>
+    public int GeomIndex;
 
     /// <summary>
     /// Contact normal pointing FROM static collider TO rigid body.
@@ -129,4 +135,51 @@ public enum StaticColliderType
     Circle = 0,
     Capsule = 1,
     OBB = 2
+}
+
+/// <summary>
+/// Unique identifier for a contact, used for warm-starting cache lookup.
+/// Combines rigid body index, collider type, collider index, and geom index.
+/// </summary>
+public readonly struct ContactId : IEquatable<ContactId>
+{
+    public readonly int RigidBodyIndex;
+    public readonly StaticColliderType ColliderType;
+    public readonly int ColliderIndex;
+    public readonly int GeomIndex;
+
+    public ContactId(int rigidBodyIndex, StaticColliderType colliderType, int colliderIndex, int geomIndex)
+    {
+        RigidBodyIndex = rigidBodyIndex;
+        ColliderType = colliderType;
+        ColliderIndex = colliderIndex;
+        GeomIndex = geomIndex;
+    }
+
+    public ContactId(ContactConstraint constraint)
+    {
+        RigidBodyIndex = constraint.RigidBodyIndex;
+        ColliderType = constraint.ColliderType;
+        ColliderIndex = constraint.ColliderIndex;
+        GeomIndex = constraint.GeomIndex;
+    }
+
+    public bool Equals(ContactId other) =>
+        RigidBodyIndex == other.RigidBodyIndex &&
+        ColliderType == other.ColliderType &&
+        ColliderIndex == other.ColliderIndex &&
+        GeomIndex == other.GeomIndex;
+
+    public override bool Equals(object? obj) => obj is ContactId other && Equals(other);
+
+    public override int GetHashCode() => HashCode.Combine(RigidBodyIndex, (int)ColliderType, ColliderIndex, GeomIndex);
+}
+
+/// <summary>
+/// Cached impulse data for warm-starting contacts across frames.
+/// </summary>
+public struct CachedContactImpulse
+{
+    public float NormalImpulse;
+    public float TangentImpulse;
 }

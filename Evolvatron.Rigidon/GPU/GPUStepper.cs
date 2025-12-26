@@ -23,7 +23,7 @@ public sealed class GPUStepper : IStepper, IDisposable
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float, float> _solveContactsKernel;
 
     // Post-processing kernels
-    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float> _velocityStabilizationKernel;
+    private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float, float> _velocityStabilizationKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float> _frictionKernel;
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, float> _dampingKernel;
 
@@ -79,7 +79,7 @@ public sealed class GPUStepper : IStepper, IDisposable
             GPUKernels.SolveContactsKernel);
 
         // Load post-processing kernels
-        _velocityStabilizationKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float>(
+        _velocityStabilizationKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, float, float, float>(
             GPUKernels.VelocityStabilizationKernel);
 
         _frictionKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<GPUCircleCollider>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUOBBCollider>, int, int, int, float>(
@@ -197,7 +197,7 @@ public sealed class GPUStepper : IStepper, IDisposable
                 dt, cfg.ContactCompliance);
         }
 
-        // 6. Velocity stabilization
+        // 6. Velocity stabilization (with velocity clamping to prevent energy injection)
         if (cfg.VelocityStabilizationBeta > 0f)
         {
             float invDt = 1f / dt;
@@ -206,7 +206,7 @@ public sealed class GPUStepper : IStepper, IDisposable
                 gpu.PrevPosX.View, gpu.PrevPosY.View,
                 gpu.VelX.View, gpu.VelY.View,
                 gpu.InvMass.View,
-                invDt, cfg.VelocityStabilizationBeta);
+                invDt, cfg.VelocityStabilizationBeta, cfg.MaxVelocity);
         }
 
         // 7. Friction

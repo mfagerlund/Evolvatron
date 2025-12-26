@@ -95,6 +95,14 @@ public sealed class SimulationConfig
     public float AngularDamping { get; set; } = 0.1f;
 
     /// <summary>
+    /// Maximum velocity magnitude for particles (m/s, default: 10).
+    /// Velocity stabilization clamps corrected velocities to this limit.
+    /// Prevents energy injection from large XPBD position corrections.
+    /// Set to 0 or negative to disable clamping.
+    /// </summary>
+    public float MaxVelocity { get; set; } = 10f;
+
+    /// <summary>
     /// Creates a deep copy of this configuration.
     /// </summary>
     public SimulationConfig Clone()
@@ -114,7 +122,8 @@ public sealed class SimulationConfig
             Restitution = Restitution,
             VelocityStabilizationBeta = VelocityStabilizationBeta,
             GlobalDamping = GlobalDamping,
-            AngularDamping = AngularDamping
+            AngularDamping = AngularDamping,
+            MaxVelocity = MaxVelocity
         };
     }
 }
