@@ -157,24 +157,27 @@ public static class RigidBodyRocketTemplate
 
     /// <summary>
     /// Applies thrust force to the rocket body in the upward direction (relative to body orientation).
+    /// The rocket body capsule is oriented vertically (angle=PI/2), so thrust is along local +X axis.
     /// </summary>
     public static void ApplyThrust(
         WorldState world,
         int[] rocketIndices,
         float throttle,
-        float maxThrust = 100f)
+        float maxThrust = 100f,
+        float dt = 1f / 240f)
     {
         int bodyIndex = rocketIndices[0];
         var body = world.RigidBodies[bodyIndex];
 
-        // Thrust direction is along body's Y axis (upward in local space)
-        float thrustDirX = -MathF.Sin(body.Angle);
-        float thrustDirY = MathF.Cos(body.Angle);
+        // Thrust direction is along body's local X axis (the capsule's length direction)
+        // For a vertical rocket (angle=PI/2): thrustDir = (cos(PI/2), sin(PI/2)) = (0, 1) = UP
+        float thrustDirX = MathF.Cos(body.Angle);
+        float thrustDirY = MathF.Sin(body.Angle);
 
         // Apply force at center of mass (no torque from thrust)
         float thrust = throttle * maxThrust;
-        body.VelX += thrustDirX * thrust * body.InvMass * (1f / 240f); // Assuming dt = 1/240
-        body.VelY += thrustDirY * thrust * body.InvMass * (1f / 240f);
+        body.VelX += thrustDirX * thrust * body.InvMass * dt;
+        body.VelY += thrustDirY * thrust * body.InvMass * dt;
 
         world.RigidBodies[bodyIndex] = body;
     }
@@ -185,13 +188,14 @@ public static class RigidBodyRocketTemplate
     public static void ApplyGimbal(
         WorldState world,
         int[] rocketIndices,
-        float gimbalTorque)
+        float gimbalTorque,
+        float dt = 1f / 240f)
     {
         int bodyIndex = rocketIndices[0];
         var body = world.RigidBodies[bodyIndex];
 
         // Apply torque directly to body
-        body.AngularVel += gimbalTorque * body.InvInertia * (1f / 240f);
+        body.AngularVel += gimbalTorque * body.InvInertia * dt;
 
         world.RigidBodies[bodyIndex] = body;
     }
@@ -254,6 +258,8 @@ public static class RigidBodyRocketTemplate
 
     /// <summary>
     /// Gets the rocket body's upright vector (normalized orientation).
+    /// Returns the direction the rocket is pointing (local +X axis, the capsule's length direction).
+    /// For an upright rocket (angle=PI/2), returns (0, 1) = pointing up.
     /// </summary>
     public static void GetUpVector(
         WorldState world,
@@ -263,8 +269,9 @@ public static class RigidBodyRocketTemplate
         int bodyIndex = rocketIndices[0];
         var body = world.RigidBodies[bodyIndex];
 
-        // Body's local +Y axis in world space
-        ux = -MathF.Sin(body.Angle);
-        uy = MathF.Cos(body.Angle);
+        // Body's local +X axis in world space (direction the capsule points)
+        // For a vertical rocket (angle=PI/2): (cos(PI/2), sin(PI/2)) = (0, 1) = UP
+        ux = MathF.Cos(body.Angle);
+        uy = MathF.Sin(body.Angle);
     }
 }
