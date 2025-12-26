@@ -96,10 +96,13 @@ Evolvatron.Rigidon/        # Physics engine (CPU + GPU) - uses namespace Evolvat
 │   ├── RigidBodyJointSolver.cs  # Joint constraint solver (rigid bodies)
 │   └── CircleCollision.cs    # Circle-circle collision detection
 ├── GPU/
-│   ├── GPUStepper.cs         # ILGPU drop-in replacement
-│   ├── GPUKernels.cs         # ILGPU kernel implementations
-│   ├── GPUWorldState.cs      # Device memory management
-│   └── GPUDataStructures.cs  # GPU-compatible structs
+│   ├── GPUStepper.cs              # ILGPU drop-in replacement
+│   ├── GPUKernels.cs              # ILGPU particle kernel implementations
+│   ├── GPUWorldState.cs           # Device memory management
+│   ├── GPUDataStructures.cs       # GPU-compatible structs (particles, constraints)
+│   ├── GPURigidBodyStructs.cs     # GPU structs for rigid bodies, joints, contacts
+│   ├── GPURigidBodyContactKernels.cs  # Rigid body contact detection & solving
+│   └── GPURigidBodyJointKernels.cs    # Revolute joint solver kernels
 ├── Templates/
 │   ├── RocketTemplate.cs     # 5-particle rocket factory (XPBD particles)
 │   ├── RigidBodyRocketTemplate.cs  # Rigid body rocket factory
@@ -215,31 +218,37 @@ Units: **SI (meters, kilograms, seconds)** throughout.
 
 ### GPU Backend (ILGPU)
 
-The GPU backend (`GPUStepper.cs`) is a **partial** implementation of `IStepper`:
-- Implements `IStepper` interface
-- Uses ILGPU kernels in `GPU/GPUKernels.cs`
+The GPU backend (`GPUStepper.cs`) is a **complete** implementation of `IStepper`:
+- Implements `IStepper` interface (drop-in replacement for CPUStepper)
+- Uses ILGPU kernels in `GPU/GPUKernels.cs` and `GPU/GPURigidBody*.cs`
 - Memory managed by `GPUWorldState.cs`
 
-**⚠️ Current Limitations (Incomplete Implementation):**
-- ❌ **No rigid body physics** - Only particle physics supported
-- ❌ **No rigid body contact solver** - Missing ImpulseContactSolver
-- ❌ **No joint solver** - Missing RigidBodyJointSolver
-- ❌ **No velocity stabilization kernel**
-- ❌ **No friction kernel** - Particle friction not implemented on GPU
-- ❌ **No global damping kernel**
+**Implemented Features:**
+- ✅ **Particle XPBD physics** - Rods, angles, motors, contacts
+- ✅ **Velocity stabilization kernel** - Corrects XPBD velocity drift
+- ✅ **Friction kernel** - Coulomb friction for particles
+- ✅ **Global damping kernel** - Velocity decay for both systems
+- ✅ **Rigid body physics** - Gravity, integration, damping
+- ✅ **Rigid body contact solver** - Circle, capsule, OBB static colliders
+- ✅ **Revolute joint solver** - Position/velocity constraints, motors, limits
+
+**Known Limitations:**
+- ⚠️ **No warm-starting** - Contact impulses reset each frame (less stable than CPU)
+- ⚠️ **No rigid body vs rigid body** - Only rigid body vs static colliders
+- ⚠️ **Determinism** - GPU may have minor floating-point differences from CPU
 
 **Use cases:**
 - ✅ Particle-based physics with XPBD constraints
-- ✅ Batch simulations for evolution/RL (particle systems only)
-- ❌ Rigid body simulations (use CPUStepper)
-- ❌ Systems requiring friction or damping (use CPUStepper)
+- ✅ Rigid body simulations with joints
+- ✅ Batch simulations for evolution/RL
+- ✅ Systems requiring friction and damping
 
-**CPU stepper is the reference implementation for correctness.**
+**CPU stepper remains the reference implementation for correctness validation.**
 
-To use GPU (particles only):
+To use GPU:
 ```csharp
-var stepper = new GPUStepper();  // instead of new CPUStepper()
-stepper.Step(world, config);  // Only particle constraints will be solved
+var stepper = new GPUStepper();  // Drop-in replacement for CPUStepper
+stepper.Step(world, config);     // Full particle + rigid body physics
 ```
 
 ## Templates and Factories
@@ -330,7 +339,7 @@ RigidBodyRocketTemplate.ApplyThrust(world, rbRocket, throttle: 0.7f, maxThrust: 
 6. **SoA Layout**: Particles use Structure-of-Arrays for cache efficiency; avoid per-particle structs in hot paths
 7. **No Particle-Particle Collisions**: Only particle-vs-static and rigid-body-vs-static supported
 8. **Rigid Body Limitations**: Rigid bodies don't collide with particles or each other (only with static colliders)
-9. **GPU Incompleteness**: GPU path skips some post-processing steps; use CPU for correctness validation
+9. **GPU vs CPU**: GPU stepper is feature-complete but lacks warm-starting for contacts; use CPU for correctness validation
 
 ## Development History
 

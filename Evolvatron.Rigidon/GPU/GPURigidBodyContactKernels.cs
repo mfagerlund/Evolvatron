@@ -26,14 +26,13 @@ public static class GPURigidBodyContactKernels
     public static void ApplyRigidBodyGravityKernel(
         Index1D index,
         ArrayView<GPURigidBody> bodies,
-        float gravityX, float gravityY)
+        float gravityX, float gravityY, float dt)
     {
         var body = bodies[index];
         if (body.InvMass > 0f)
         {
-            float mass = 1f / body.InvMass;
-            body.VelX += gravityX * (1f / 240f); // Assuming fixed dt
-            body.VelY += gravityY * (1f / 240f);
+            body.VelX += gravityX * dt;
+            body.VelY += gravityY * dt;
             bodies[index] = body;
         }
     }
@@ -90,6 +89,7 @@ public static class GPURigidBodyContactKernels
         ArrayView<GPURigidBodyGeom> geoms,
         ArrayView<GPUCircleCollider> circles,
         ArrayView<GPUContactConstraint> contacts,
+        int contactOffset,
         int bodyCount, int maxGeomsPerBody, int circleCount,
         float friction, float restitution, float dt)
     {
@@ -100,19 +100,19 @@ public static class GPURigidBodyContactKernels
         int geomLocalIdx = remainder / circleCount;
         int circleIdx = remainder % circleCount;
 
-        // Initialize as invalid
+        int contactIdx = contactOffset + index;
         var contact = new GPUContactConstraint { IsValid = 0 };
 
         if (bodyIdx >= bodyCount || circleIdx >= circleCount)
         {
-            contacts[index] = contact;
+            contacts[contactIdx] = contact;
             return;
         }
 
         var body = bodies[bodyIdx];
         if (body.InvMass == 0f || geomLocalIdx >= body.GeomCount)
         {
-            contacts[index] = contact;
+            contacts[contactIdx] = contact;
             return;
         }
 
@@ -133,7 +133,7 @@ public static class GPURigidBodyContactKernels
 
         if (dist >= combinedRadius)
         {
-            contacts[index] = contact;
+            contacts[contactIdx] = contact;
             return;
         }
 
@@ -196,7 +196,7 @@ public static class GPURigidBodyContactKernels
         contact.Restitution = restitution;
         contact.IsValid = 1;
 
-        contacts[index] = contact;
+        contacts[contactIdx] = contact;
     }
 
     /// <summary>
@@ -386,9 +386,156 @@ public static class GPURigidBodyContactKernels
         contacts[index] = contact;
     }
 
+    /// <summary>
+    /// Detects contacts between rigid body geoms and static capsule colliders.
+    /// One thread per (body, geom, capsule) combination.
+    /// </summary>
+    public static void DetectCapsuleContactsKernel(
+        Index1D index,
+        ArrayView<GPURigidBody> bodies,
+        ArrayView<GPURigidBodyGeom> geoms,
+        ArrayView<GPUCapsuleCollider> capsules,
+        ArrayView<GPUContactConstraint> contacts,
+        int contactOffset,
+        int bodyCount, int maxGeomsPerBody, int capsuleCount,
+        float friction, float restitution, float dt)
+    {
+        // Decode indices
+        int totalPerBody = maxGeomsPerBody * capsuleCount;
+        int bodyIdx = index / totalPerBody;
+        int remainder = index % totalPerBody;
+        int geomLocalIdx = remainder / capsuleCount;
+        int capsuleIdx = remainder % capsuleCount;
+
+        int contactIdx = contactOffset + index;
+        var contact = new GPUContactConstraint { IsValid = 0 };
+
+        if (bodyIdx >= bodyCount || capsuleIdx >= capsuleCount)
+        {
+            contacts[contactIdx] = contact;
+            return;
+        }
+
+        var body = bodies[bodyIdx];
+        if (body.InvMass == 0f || geomLocalIdx >= body.GeomCount)
+        {
+            contacts[contactIdx] = contact;
+            return;
+        }
+
+        var geom = geoms[body.GeomStartIndex + geomLocalIdx];
+        var capsule = capsules[capsuleIdx];
+
+        // Transform geom to world space
+        float cosA = XMath.Cos(body.Angle);
+        float sinA = XMath.Sin(body.Angle);
+        float geomWorldX = body.X + geom.LocalX * cosA - geom.LocalY * sinA;
+        float geomWorldY = body.Y + geom.LocalX * sinA + geom.LocalY * cosA;
+
+        // Circle vs Capsule SDF
+        float phi, nx, ny;
+        CircleVsCapsuleSDF(geomWorldX, geomWorldY, geom.Radius, capsule, out phi, out nx, out ny);
+
+        if (phi >= 0f)
+        {
+            contacts[contactIdx] = contact;
+            return;
+        }
+
+        // Contact point
+        float contactX = geomWorldX - nx * geom.Radius;
+        float contactY = geomWorldY - ny * geom.Radius;
+
+        // Vector from body center to contact point
+        float rx = contactX - body.X;
+        float ry = contactY - body.Y;
+
+        // Compute effective masses
+        float rnCross = rx * ny - ry * nx;
+        float normalMass = body.InvMass + body.InvInertia * rnCross * rnCross;
+        normalMass = normalMass > Epsilon ? 1f / normalMass : 0f;
+
+        float tx = -ny;
+        float ty = nx;
+        float rtCross = rx * ty - ry * tx;
+        float tangentMass = body.InvMass + body.InvInertia * rtCross * rtCross;
+        tangentMass = tangentMass > Epsilon ? 1f / tangentMass : 0f;
+
+        float velocityBias = 0f;
+        if (phi < -LinearSlop)
+        {
+            velocityBias = (Baumgarte / dt) * (-phi - LinearSlop);
+        }
+
+        contact.RigidBodyIndex = bodyIdx;
+        contact.NormalX = nx;
+        contact.NormalY = ny;
+        contact.TangentX = tx;
+        contact.TangentY = ty;
+        contact.ContactX = contactX;
+        contact.ContactY = contactY;
+        contact.RA_X = rx;
+        contact.RA_Y = ry;
+        contact.Separation = phi;
+        contact.NormalMass = normalMass;
+        contact.TangentMass = tangentMass;
+        contact.VelocityBias = velocityBias;
+        contact.NormalImpulse = 0f;
+        contact.TangentImpulse = 0f;
+        contact.Friction = friction;
+        contact.Restitution = restitution;
+        contact.IsValid = 1;
+
+        contacts[contactIdx] = contact;
+    }
+
     #endregion
 
     #region SDF Helpers
+
+    private static void CircleVsCapsuleSDF(
+        float px, float py, float radius,
+        GPUCapsuleCollider capsule,
+        out float phi, out float nx, out float ny)
+    {
+        // Capsule endpoints
+        float ax = capsule.CX - capsule.UX * capsule.HalfLength;
+        float ay = capsule.CY - capsule.UY * capsule.HalfLength;
+        float bx = capsule.CX + capsule.UX * capsule.HalfLength;
+        float by = capsule.CY + capsule.UY * capsule.HalfLength;
+
+        // Project point onto capsule axis
+        float abx = bx - ax;
+        float aby = by - ay;
+        float apx = px - ax;
+        float apy = py - ay;
+
+        float t = (apx * abx + apy * aby) / (abx * abx + aby * aby + Epsilon);
+        t = XMath.Clamp(t, 0f, 1f);
+
+        // Closest point on capsule axis
+        float qx = ax + t * abx;
+        float qy = ay + t * aby;
+
+        // Distance from circle center to closest point
+        float dx = px - qx;
+        float dy = py - qy;
+        float dist = XMath.Sqrt(dx * dx + dy * dy);
+
+        if (dist < Epsilon)
+        {
+            // Circle center is on capsule axis, use perpendicular normal
+            phi = -capsule.Radius - radius;
+            nx = -capsule.UY;
+            ny = capsule.UX;
+        }
+        else
+        {
+            phi = dist - capsule.Radius - radius;
+            nx = dx / dist;
+            ny = dy / dist;
+        }
+    }
 
     private static void CircleVsOBBSDF(
         float px, float py, float radius,

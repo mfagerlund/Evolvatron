@@ -28,7 +28,7 @@ public sealed class GPUStepper : IStepper, IDisposable
     private readonly Action<Index1D, ArrayView<float>, ArrayView<float>, ArrayView<float>, float> _dampingKernel;
 
     // Rigid body kernels
-    private readonly Action<Index1D, ArrayView<GPURigidBody>, float, float> _applyRigidBodyGravityKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, float, float, float> _applyRigidBodyGravityKernel;
     private readonly Action<Index1D, ArrayView<GPURigidBody>, float> _integrateRigidBodiesKernel;
     private readonly Action<Index1D, ArrayView<GPURigidBody>, float> _dampRigidBodiesKernel;
 
@@ -38,6 +38,8 @@ public sealed class GPUStepper : IStepper, IDisposable
     private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>> _solveJointPositionsKernel;
 
     // Rigid body contact kernels
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUCircleCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float> _detectCircleContactsKernel;
+    private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float> _detectCapsuleContactsKernel;
     private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUOBBCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float> _detectOBBContactsKernel;
     private readonly Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUContactConstraint>> _solveContactVelocitiesKernel;
 
@@ -87,7 +89,7 @@ public sealed class GPUStepper : IStepper, IDisposable
             GPUKernels.DampingKernel);
 
         // Load rigid body kernels
-        _applyRigidBodyGravityKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float, float>(
+        _applyRigidBodyGravityKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float, float, float>(
             GPURigidBodyContactKernels.ApplyRigidBodyGravityKernel);
 
         _integrateRigidBodiesKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, float>(
@@ -107,6 +109,12 @@ public sealed class GPUStepper : IStepper, IDisposable
             GPURigidBodyJointKernels.SolveJointPositionsKernel);
 
         // Load rigid body contact kernels
+        _detectCircleContactsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUCircleCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float>(
+            GPURigidBodyContactKernels.DetectCircleContactsKernel);
+
+        _detectCapsuleContactsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUCapsuleCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float>(
+            GPURigidBodyContactKernels.DetectCapsuleContactsKernel);
+
         _detectOBBContactsKernel = _accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURigidBodyGeom>, ArrayView<GPUOBBCollider>, ArrayView<GPUContactConstraint>, int, int, int, int, float, float, float>(
             GPURigidBodyContactKernels.DetectOBBContactsKernel);
 
@@ -228,21 +236,50 @@ public sealed class GPUStepper : IStepper, IDisposable
         if (rigidBodyCount > 0)
         {
             // 9. Apply gravity to rigid bodies
-            _applyRigidBodyGravityKernel(rigidBodyCount, gpu.RigidBodies.View, cfg.GravityX, cfg.GravityY);
+            _applyRigidBodyGravityKernel(rigidBodyCount, gpu.RigidBodies.View, cfg.GravityX, cfg.GravityY, dt);
 
             // 10. Integrate rigid body velocities to positions
             _integrateRigidBodiesKernel(rigidBodyCount, gpu.RigidBodies.View, dt);
 
-            // 11. Detect contacts (rigid body geoms vs OBB colliders)
+            // 11. Detect contacts (rigid body geoms vs all static collider types)
+            int contactOffset = 0;
+
+            // Circle colliders
+            int circleContactCount = rigidBodyCount * gpu.MaxGeomsPerBody * gpu.CircleCount;
+            if (circleContactCount > 0 && gpu.CircleCount > 0)
+            {
+                _detectCircleContactsKernel(circleContactCount,
+                    gpu.RigidBodies.View, gpu.RigidBodyGeoms.View, gpu.Circles.View, gpu.ContactConstraints.View,
+                    contactOffset,
+                    rigidBodyCount, gpu.MaxGeomsPerBody, gpu.CircleCount,
+                    cfg.FrictionMu, cfg.Restitution, dt);
+            }
+            contactOffset += circleContactCount;
+
+            // Capsule colliders
+            int capsuleContactCount = rigidBodyCount * gpu.MaxGeomsPerBody * gpu.CapsuleCount;
+            if (capsuleContactCount > 0 && gpu.CapsuleCount > 0)
+            {
+                _detectCapsuleContactsKernel(capsuleContactCount,
+                    gpu.RigidBodies.View, gpu.RigidBodyGeoms.View, gpu.Capsules.View, gpu.ContactConstraints.View,
+                    contactOffset,
+                    rigidBodyCount, gpu.MaxGeomsPerBody, gpu.CapsuleCount,
+                    cfg.FrictionMu, cfg.Restitution, dt);
+            }
+            contactOffset += capsuleContactCount;
+
+            // OBB colliders
             int obbContactCount = rigidBodyCount * gpu.MaxGeomsPerBody * gpu.OBBCount;
             if (obbContactCount > 0 && gpu.OBBCount > 0)
             {
                 _detectOBBContactsKernel(obbContactCount,
                     gpu.RigidBodies.View, gpu.RigidBodyGeoms.View, gpu.OBBs.View, gpu.ContactConstraints.View,
-                    0, // contact offset
+                    contactOffset,
                     rigidBodyCount, gpu.MaxGeomsPerBody, gpu.OBBCount,
                     cfg.FrictionMu, cfg.Restitution, dt);
             }
+
+            int totalContacts = circleContactCount + capsuleContactCount + obbContactCount;
 
             // 12. Initialize joint constraints
             if (gpu.RevoluteJointCount > 0)
@@ -252,7 +289,6 @@ public sealed class GPUStepper : IStepper, IDisposable
             }
 
             // 13. Sequential impulse iterations
-            int totalContacts = obbContactCount;
             for (int iter = 0; iter < cfg.XpbdIterations; iter++)
             {
                 // Solve contact velocities

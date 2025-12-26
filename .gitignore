@@ -109,3 +109,6 @@ Thumbs.db
 
 # Archives and build artifacts
 *.zip
+
+# Scratch/experimental files
+scratch/
