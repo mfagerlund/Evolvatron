@@ -53,6 +53,11 @@ class Program
             // Launch AI target chase demo
             TargetChaseDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "batched")
+        {
+            // Launch GPU batched evolution demo
+            BatchedTargetChaseDemo.Run();
+        }
         else
         {
             // Launch physics demo by default

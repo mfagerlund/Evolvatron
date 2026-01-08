@@ -1,15 +1,21 @@
 using Evolvatron.Core;
+using Evolvatron.Core.GPU.Batched;
 using Evolvatron.Evolvion;
 using Evolvatron.Evolvion.Environments;
+using Evolvatron.Evolvion.GPU;
 using Raylib_cs;
 using System.Numerics;
 
 namespace Evolvatron.Demo;
 
 /// <summary>
-/// Visual demo showing a GRID of AI-controlled rockets chasing targets.
+/// Visual demo showing a GRID of AI-controlled rockets evolved using GPU batched physics.
 /// Each rocket is controlled by a different neural network from the population.
-/// Evolution happens in real-time - watch them improve!
+///
+/// Key difference from TargetChaseDemo:
+/// - ALL fitness evaluations happen on GPU via GPUBatchedFitnessEvaluator
+/// - Only the TOP 30 performers are visualized (using CPU environments for display)
+/// - This enables evaluating 1000+ individuals per generation efficiently
 ///
 /// Controls:
 ///   SPACE - Pause/Resume
@@ -17,28 +23,27 @@ namespace Evolvatron.Demo;
 ///   +/- - Change simulation speed
 ///   E - Force evolution step
 /// </summary>
-public static class TargetChaseDemo
+public static class BatchedTargetChaseDemo
 {
     private const int ScreenWidth = 1920;
     private const int ScreenHeight = 1080;
 
-    // Grid layout - 30 rockets!
+    // Grid layout - 30 rockets for visualization
     private const int GridCols = 6;
     private const int GridRows = 5;
-    private const int RocketCount = GridCols * GridRows; // 30 rockets
+    private const int RocketCount = GridCols * GridRows; // 30 rockets displayed
 
     // Cell size
     private static readonly int CellWidth = ScreenWidth / GridCols;
     private static readonly int CellHeight = ScreenHeight / GridRows;
-    private const float MetersToPixels = 18f; // Smaller scale to fit cells
 
     public static void Run()
     {
         Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
-        Raylib.InitWindow(ScreenWidth, ScreenHeight, "Evolvatron - AI Target Chase (Population View)");
+        Raylib.InitWindow(ScreenWidth, ScreenHeight, "Evolvatron - GPU Batched Evolution (1000+ Population)");
         Raylib.SetTargetFPS(60);
 
-        // Evolution setup - LARGE population with parallel evaluation
+        // Evolution setup - LARGE population with GPU evaluation
         var evolutionConfig = new EvolutionConfig
         {
             SpeciesCount = 5,             // 5 species competing
@@ -62,7 +67,24 @@ public static class TargetChaseDemo
         var population = evolver.InitializePopulation(evolutionConfig, topology);
         var networkEvaluator = new CPUEvaluator(topology);
 
-        // Create environments and state for each displayed rocket
+        // Create GPU fitness evaluator for batched evaluation
+        GPUBatchedFitnessEvaluator? gpuEvaluator = null;
+        bool gpuAvailable = false;
+        string gpuStatus = "Initializing...";
+
+        try
+        {
+            gpuEvaluator = new GPUBatchedFitnessEvaluator(maxIndividuals: 1500);
+            gpuAvailable = true;
+            gpuStatus = $"GPU: {gpuEvaluator.Accelerator.Name}";
+        }
+        catch (Exception ex)
+        {
+            gpuStatus = $"GPU unavailable: {ex.Message}";
+            Console.WriteLine($"GPU initialization failed, falling back to CPU: {ex.Message}");
+        }
+
+        // Create environments and state for each displayed rocket (CPU visualization)
         var environments = new TargetChaseEnvironment[RocketCount];
         var individuals = new Individual[RocketCount];
         var individualIndices = new int[RocketCount]; // Track which individual from population
@@ -73,22 +95,26 @@ public static class TargetChaseDemo
             environments[i].MaxSteps = 400;
         }
 
-        // Background evaluation environment
-        var evalEnv = new TargetChaseEnvironment();
-        evalEnv.MaxSteps = 300;
-
         // State
         int generation = 0;
         float bestFitness = float.NegativeInfinity;
+        float avgFitness = 0f;
         int bestTargetsHit = 0;
         int totalTargetsThisGen = 0;
         bool paused = false;
         int simulationSpeed = 2;
         float episodeTime = 0f;
         int episodeSeed = 0;
+        double lastEvalTime = 0;
+        int evaluationsPerSecond = 0;
+
+        // Fitness history for graphing
+        var bestFitnessHistory = new List<float>();
+        var avgFitnessHistory = new List<float>();
+        const int MaxHistoryPoints = 100;
 
         // Initialize
-        EvaluatePopulationBackground();
+        EvaluatePopulationOnGPU();
         StartNewEpisodes();
 
         while (!Raylib.WindowShouldClose())
@@ -101,9 +127,12 @@ public static class TargetChaseDemo
             {
                 generation = 0;
                 bestFitness = float.NegativeInfinity;
+                avgFitness = 0f;
                 bestTargetsHit = 0;
+                bestFitnessHistory.Clear();
+                avgFitnessHistory.Clear();
                 population = evolver.InitializePopulation(evolutionConfig, topology);
-                EvaluatePopulationBackground();
+                EvaluatePopulationOnGPU();
                 StartNewEpisodes();
             }
 
@@ -119,7 +148,7 @@ public static class TargetChaseDemo
                 StartNewEpisodes();
             }
 
-            // Simulation
+            // Simulation (visualization only, actual fitness comes from GPU)
             if (!paused)
             {
                 bool allTerminated = true;
@@ -147,10 +176,10 @@ public static class TargetChaseDemo
                     episodeTime += 1f / 120f;
                 }
 
-                // Check if all rockets are done
+                // Check if all displayed rockets are done
                 if (allTerminated)
                 {
-                    // Count total targets hit
+                    // Count total targets hit (for display)
                     totalTargetsThisGen = 0;
                     for (int i = 0; i < RocketCount; i++)
                     {
@@ -192,32 +221,100 @@ public static class TargetChaseDemo
 
             // Draw global UI overlay
             int totalPop = evolutionConfig.SpeciesCount * evolutionConfig.IndividualsPerSpecies;
-            DrawGlobalUI(generation, bestFitness, bestTargetsHit, totalTargetsThisGen, episodeTime, paused, simulationSpeed, totalPop, evolutionConfig.SpeciesCount);
+            DrawGlobalUI(generation, bestFitness, avgFitness, bestTargetsHit, totalTargetsThisGen, episodeTime,
+                paused, simulationSpeed, totalPop, evolutionConfig.SpeciesCount, gpuStatus, lastEvalTime, evaluationsPerSecond,
+                bestFitnessHistory, avgFitnessHistory);
 
             Raylib.EndDrawing();
         }
 
+        // Cleanup
+        gpuEvaluator?.Dispose();
         Raylib.CloseWindow();
 
         // Local functions
-        void EvaluatePopulationBackground()
+        void EvaluatePopulationOnGPU()
         {
-            // Parallel evaluation of all individuals across all species
-            var allIndividuals = new List<(Species species, int idx, Individual ind)>();
+            var startTime = DateTime.Now;
+
+            // Gather all individuals from all species
+            var allIndividuals = new List<Individual>();
+            foreach (var species in population.AllSpecies)
+            {
+                allIndividuals.AddRange(species.Individuals);
+            }
+
+            float[] fitnessValues;
+
+            if (gpuAvailable && gpuEvaluator != null)
+            {
+                // GPU batched evaluation - evaluate ALL individuals in one GPU pass
+                try
+                {
+                    fitnessValues = gpuEvaluator.EvaluatePopulation(
+                        topology,
+                        allIndividuals,
+                        seed: episodeSeed);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"GPU evaluation failed, falling back to CPU: {ex.Message}");
+                    gpuAvailable = false;
+                    gpuStatus = "GPU failed, using CPU";
+                    fitnessValues = EvaluateOnCPU(allIndividuals);
+                }
+            }
+            else
+            {
+                // CPU fallback
+                fitnessValues = EvaluateOnCPU(allIndividuals);
+            }
+
+            // Apply fitness values back to individuals and compute stats
+            int idx = 0;
+            float genBestFitness = float.NegativeInfinity;
+            float genTotalFitness = 0f;
             foreach (var species in population.AllSpecies)
             {
                 for (int i = 0; i < species.Individuals.Count; i++)
                 {
-                    allIndividuals.Add((species, i, species.Individuals[i]));
+                    var ind = species.Individuals[i];
+                    ind.Fitness = fitnessValues[idx++];
+                    species.Individuals[i] = ind;
+
+                    genTotalFitness += ind.Fitness;
+                    if (ind.Fitness > genBestFitness)
+                        genBestFitness = ind.Fitness;
+                    if (ind.Fitness > bestFitness)
+                        bestFitness = ind.Fitness;
                 }
             }
 
-            // Parallel evaluation using all CPU cores
+            // Update average fitness
+            avgFitness = genTotalFitness / allIndividuals.Count;
+
+            // Add to history (limit size)
+            bestFitnessHistory.Add(genBestFitness);
+            avgFitnessHistory.Add(avgFitness);
+            if (bestFitnessHistory.Count > MaxHistoryPoints)
+            {
+                bestFitnessHistory.RemoveAt(0);
+                avgFitnessHistory.RemoveAt(0);
+            }
+
+            var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+            lastEvalTime = elapsed;
+            evaluationsPerSecond = (int)(allIndividuals.Count / (elapsed / 1000.0));
+        }
+
+        float[] EvaluateOnCPU(List<Individual> allIndividuals)
+        {
+            // Parallel CPU evaluation as fallback
             var results = new float[allIndividuals.Count];
             Parallel.For(0, allIndividuals.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
                 evalIndex =>
                 {
-                    var (species, idx, ind) = allIndividuals[evalIndex];
+                    var ind = allIndividuals[evalIndex];
 
                     // Thread-local environment and evaluator
                     var localEnv = new TargetChaseEnvironment();
@@ -242,23 +339,15 @@ public static class TargetChaseDemo
                     results[evalIndex] = totalFitness / 2f;
                 });
 
-            // Apply results back
-            for (int i = 0; i < allIndividuals.Count; i++)
-            {
-                var (species, idx, ind) = allIndividuals[i];
-                ind.Fitness = results[i];
-                species.Individuals[idx] = ind;
-
-                if (ind.Fitness > bestFitness)
-                    bestFitness = ind.Fitness;
-            }
+            return results;
         }
 
         void EvolveGeneration()
         {
             evolver.StepGeneration(population);
             generation++;
-            EvaluatePopulationBackground();
+            episodeSeed++;
+            EvaluatePopulationOnGPU();
         }
 
         void StartNewEpisodes()
@@ -377,29 +466,102 @@ public static class TargetChaseDemo
             env.TargetsHit > 0 ? Color.Green : Color.Gray);
     }
 
-    private static void DrawGlobalUI(int generation, float bestFitness, int bestTargetsHit, int totalTargets,
-        float episodeTime, bool paused, int speed, int popSize, int speciesCount)
+    private static void DrawGlobalUI(int generation, float bestFitness, float avgFitness, int bestTargetsHit, int totalTargets,
+        float episodeTime, bool paused, int speed, int popSize, int speciesCount, string gpuStatus,
+        double evalTime, int evalsPerSec, List<float> bestHistory, List<float> avgHistory)
     {
         // Semi-transparent overlay at top
-        Raylib.DrawRectangle(0, 0, ScreenWidth, 35, new Color(0, 0, 0, 180));
+        Raylib.DrawRectangle(0, 0, ScreenWidth, 55, new Color(0, 0, 0, 200));
 
-        // Stats
-        Raylib.DrawText($"Gen: {generation}", 10, 8, 20, Color.White);
-        Raylib.DrawText($"Best: {bestFitness:F0}", 130, 8, 20, Color.Green);
-        Raylib.DrawText($"Targets: {bestTargetsHit}", 280, 8, 20, Color.Yellow);
-        Raylib.DrawText($"Pop: {popSize} ({speciesCount} species)", 420, 8, 20, new Color(0, 255, 255, 255));
-        Raylib.DrawText($"Speed: {speed}x", 650, 8, 20, Color.LightGray);
-        Raylib.DrawText($"Time: {episodeTime:F1}s", 760, 8, 20, Color.LightGray);
+        // Stats - Row 1
+        Raylib.DrawText($"Gen: {generation}", 10, 6, 20, Color.White);
+        Raylib.DrawText($"Best: {bestFitness:F0}", 130, 6, 20, Color.Green);
+        Raylib.DrawText($"Avg: {avgFitness:F0}", 280, 6, 20, Color.Yellow);
+        Raylib.DrawText($"Pop: {popSize}", 420, 6, 20, new Color(0, 255, 255, 255));
+        Raylib.DrawText($"Speed: {speed}x", 520, 6, 20, Color.LightGray);
 
         if (paused)
         {
-            Raylib.DrawText("PAUSED", ScreenWidth / 2 - 50, 8, 24, Color.Red);
+            Raylib.DrawText("PAUSED", ScreenWidth / 2 - 50, 6, 24, Color.Red);
         }
 
+        // Stats - Row 2 (GPU info)
+        Raylib.DrawText(gpuStatus, 10, 32, 16, new Color(100, 200, 255, 255));
+        Raylib.DrawText($"Eval: {evalTime:F0}ms ({evalsPerSec}/s)", 400, 32, 16, Color.LightGray);
+
         // Controls hint
-        Raylib.DrawText("SPACE:Pause  R:Reset  E:Evolve  +/-:Speed", ScreenWidth - 400, 8, 16, Color.Gray);
+        Raylib.DrawText("SPACE:Pause  R:Reset  E:Evolve  +/-:Speed", ScreenWidth - 400, 32, 14, Color.Gray);
 
         // FPS
-        Raylib.DrawText($"FPS:{Raylib.GetFPS()}", ScreenWidth - 80, 8, 16, Color.Green);
+        Raylib.DrawText($"FPS:{Raylib.GetFPS()}", ScreenWidth - 80, 6, 16, Color.Green);
+
+        // Mode indicator
+        Raylib.DrawText("GPU BATCHED", ScreenWidth - 150, 6, 16, new Color(255, 200, 50, 255));
+
+        // Draw fitness graph in bottom-right corner
+        DrawFitnessGraph(bestHistory, avgHistory);
+    }
+
+    private static void DrawFitnessGraph(List<float> bestHistory, List<float> avgHistory)
+    {
+        if (bestHistory.Count < 2) return;
+
+        // Graph dimensions
+        const int graphWidth = 300;
+        const int graphHeight = 150;
+        int graphX = ScreenWidth - graphWidth - 20;
+        int graphY = ScreenHeight - graphHeight - 20;
+
+        // Background
+        Raylib.DrawRectangle(graphX - 5, graphY - 25, graphWidth + 10, graphHeight + 35, new Color(0, 0, 0, 200));
+        Raylib.DrawRectangleLines(graphX, graphY, graphWidth, graphHeight, Color.DarkGray);
+
+        // Title
+        Raylib.DrawText("Fitness History", graphX, graphY - 20, 16, Color.White);
+
+        // Find min/max for scaling
+        float minVal = float.MaxValue;
+        float maxVal = float.MinValue;
+        foreach (var v in bestHistory) { minVal = Math.Min(minVal, v); maxVal = Math.Max(maxVal, v); }
+        foreach (var v in avgHistory) { minVal = Math.Min(minVal, v); maxVal = Math.Max(maxVal, v); }
+
+        // Add some padding
+        float range = maxVal - minVal;
+        if (range < 100) range = 100;
+        minVal -= range * 0.1f;
+        maxVal += range * 0.1f;
+        range = maxVal - minVal;
+
+        // Draw axis labels
+        Raylib.DrawText($"{maxVal:F0}", graphX - 40, graphY - 5, 12, Color.Gray);
+        Raylib.DrawText($"{minVal:F0}", graphX - 40, graphY + graphHeight - 10, 12, Color.Gray);
+
+        // Draw lines
+        int pointCount = bestHistory.Count;
+        float xStep = (float)graphWidth / Math.Max(pointCount - 1, 1);
+
+        // Average fitness (yellow)
+        for (int i = 1; i < avgHistory.Count; i++)
+        {
+            float x1 = graphX + (i - 1) * xStep;
+            float y1 = graphY + graphHeight - ((avgHistory[i - 1] - minVal) / range * graphHeight);
+            float x2 = graphX + i * xStep;
+            float y2 = graphY + graphHeight - ((avgHistory[i] - minVal) / range * graphHeight);
+            Raylib.DrawLineEx(new Vector2(x1, y1), new Vector2(x2, y2), 2f, Color.Yellow);
+        }
+
+        // Best fitness (green)
+        for (int i = 1; i < bestHistory.Count; i++)
+        {
+            float x1 = graphX + (i - 1) * xStep;
+            float y1 = graphY + graphHeight - ((bestHistory[i - 1] - minVal) / range * graphHeight);
+            float x2 = graphX + i * xStep;
+            float y2 = graphY + graphHeight - ((bestHistory[i] - minVal) / range * graphHeight);
+            Raylib.DrawLineEx(new Vector2(x1, y1), new Vector2(x2, y2), 2f, Color.Green);
+        }
+
+        // Legend
+        Raylib.DrawText("Best", graphX + graphWidth - 80, graphY + 5, 12, Color.Green);
+        Raylib.DrawText("Avg", graphX + graphWidth - 40, graphY + 5, 12, Color.Yellow);
     }
 }

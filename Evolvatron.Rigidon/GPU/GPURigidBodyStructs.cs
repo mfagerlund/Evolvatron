@@ -30,6 +30,15 @@ public struct GPURigidBody
     /// <summary>Angular velocity (rad/s).</summary>
     public float AngularVel;
 
+    /// <summary>Previous X position for velocity stabilization.</summary>
+    public float PrevX;
+
+    /// <summary>Previous Y position for velocity stabilization.</summary>
+    public float PrevY;
+
+    /// <summary>Previous angle for velocity stabilization.</summary>
+    public float PrevAngle;
+
     /// <summary>Inverse mass (1/kg). Zero for static bodies.</summary>
     public float InvMass;
 
@@ -54,6 +63,9 @@ public struct GPURigidBody
         VelX = rb.VelX;
         VelY = rb.VelY;
         AngularVel = rb.AngularVel;
+        PrevX = rb.X;   // Initialize to current position
+        PrevY = rb.Y;
+        PrevAngle = rb.Angle;
         InvMass = rb.InvMass;
         InvInertia = rb.InvInertia;
         GeomStartIndex = rb.GeomStartIndex;
@@ -84,6 +96,7 @@ public struct GPURigidBody
 /// <summary>
 /// GPU-compatible circle geometry attached to a rigid body.
 /// Position is relative to the parent body's center of mass in local space.
+/// WorldX/WorldY are computed each step by transforming local coords to world space.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct GPURigidBodyGeom
@@ -97,15 +110,28 @@ public struct GPURigidBodyGeom
     /// <summary>Circle radius.</summary>
     public float Radius;
 
+    /// <summary>Transformed X position in world space (computed each step).</summary>
+    public float WorldX;
+
+    /// <summary>Transformed Y position in world space (computed each step).</summary>
+    public float WorldY;
+
+    /// <summary>Index of the parent rigid body within the world (local index, not global).</summary>
+    public int BodyIndex;
+
     /// <summary>
     /// Creates a GPU-compatible geom from a CPU RigidBodyGeom.
     /// </summary>
     /// <param name="geom">The CPU geometry to convert.</param>
-    public GPURigidBodyGeom(RigidBodyGeom geom)
+    /// <param name="bodyIndex">Local index of the parent rigid body within the world.</param>
+    public GPURigidBodyGeom(RigidBodyGeom geom, int bodyIndex = 0)
     {
         LocalX = geom.LocalX;
         LocalY = geom.LocalY;
         Radius = geom.Radius;
+        WorldX = 0f;  // Computed at runtime
+        WorldY = 0f;
+        BodyIndex = bodyIndex;
     }
 
     /// <summary>

@@ -1,51 +1,46 @@
 using Evolvatron.Core;
-using Evolvatron.Core.Templates;
 
 namespace Evolvatron.Evolvion.Environments;
 
 /// <summary>
-/// Simple environment where a rocket chases targets in 2D space.
-/// Fast-paced gameplay suitable for evolution visualization.
+/// Simple spherical rocket chasing targets in 2D space.
+/// No rotation/orientation - just direct X/Y thrust control.
 ///
-/// Observations (6D): [targetDirX, targetDirY, velX, velY, upX, upY]
-/// Actions (2D): [throttle (0-1), gimbal (-1 to 1)]
+/// Observations (4D): [dx, dy, vx, vy]
+/// Actions (2D): [thrust_x, thrust_y] in [-1, 1]
 ///
-/// Scoring: Hit targets for points, avoid crashing or going out of bounds.
+/// Scoring: Hit targets for points, avoid going out of bounds.
 /// </summary>
 public class TargetChaseEnvironment : IEnvironment
 {
-    // Pre-allocated state
-    private readonly WorldState _world;
     private readonly SimulationConfig _config;
-    private readonly CPUStepper _stepper;
     private Random _random;
 
-    // Rocket state
-    private int[] _rocketIndices = Array.Empty<int>();
+    // Rocket state (simple point mass)
+    private float _rocketX;
+    private float _rocketY;
+    private float _rocketVelX;
+    private float _rocketVelY;
 
     // Target state
     private float _targetX;
     private float _targetY;
-    private const float TargetRadius = 1.0f;
+    private const float TargetRadius = 1.5f;  // Match GPU
 
-    // Arena bounds
-    public const float ArenaHalfWidth = 12f;
-    public const float ArenaHalfHeight = 10f;
-    public const float GroundY = -8f;
+    // Arena bounds (symmetric box: -10 to 10)
+    public const float ArenaHalfSize = 10f;
 
     // Episode state
     private int _steps;
     private int _targetsHit;
     private float _cumulativeReward;
     private bool _terminated;
-    private float _lastThrottle;
 
     // Physics parameters
     private readonly float _maxThrust;
-    private readonly float _maxGimbalTorque;
 
-    public int InputCount => 8; // dir(2) + vel(2) + up(2) + dist + angVel
-    public int OutputCount => 2;
+    public int InputCount => 4; // dx, dy, vx, vy
+    public int OutputCount => 2; // thrust_x, thrust_y
     public int MaxSteps { get; set; } = 300;
 
     /// <summary>
@@ -59,65 +54,33 @@ public class TargetChaseEnvironment : IEnvironment
     public (float X, float Y) TargetPosition => (_targetX, _targetY);
 
     /// <summary>
-    /// Gets current throttle for visualization.
+    /// Gets current throttle for visualization (magnitude of thrust).
     /// </summary>
-    public float CurrentThrottle => _lastThrottle;
+    public float CurrentThrottle => 0f; // Not applicable for spherical
 
-    public TargetChaseEnvironment(
-        float maxThrust = 500f,       // Much stronger thrust!
-        float maxGimbalTorque = 150f) // Stronger gimbal
+    public TargetChaseEnvironment(float maxThrust = 30f)
     {
         _maxThrust = maxThrust;
-        _maxGimbalTorque = maxGimbalTorque;
         _random = new Random();
 
-        _world = new WorldState(32);
         _config = new SimulationConfig
         {
-            Dt = 1f / 120f,
-            XpbdIterations = 6,
-            Substeps = 1,
-            GravityY = -4f, // Even lighter gravity for agile movement
-            FrictionMu = 0.8f,
-            Restitution = 0.1f,
-            GlobalDamping = 0.01f,
-            AngularDamping = 0.1f
+            Dt = 1f / 60f,
+            GravityX = 0f,
+            GravityY = 0f,            // No gravity
+            GlobalDamping = 0.05f,    // Some velocity damping
         };
-
-        _stepper = new CPUStepper();
     }
 
     public void Reset(int seed = 0)
     {
         _random = new Random(seed);
 
-        _world.Clear();
-
-        // Ground
-        _world.Obbs.Add(OBBCollider.AxisAligned(0f, GroundY, ArenaHalfWidth + 2f, 0.5f));
-
-        // Side walls
-        _world.Obbs.Add(OBBCollider.AxisAligned(-ArenaHalfWidth - 0.5f, 0f, 0.5f, ArenaHalfHeight + 5f));
-        _world.Obbs.Add(OBBCollider.AxisAligned(ArenaHalfWidth + 0.5f, 0f, 0.5f, ArenaHalfHeight + 5f));
-
-        // Ceiling
-        _world.Obbs.Add(OBBCollider.AxisAligned(0f, ArenaHalfHeight + 0.5f, ArenaHalfWidth + 2f, 0.5f));
-
-        // Spawn rocket in center area
-        float spawnX = (float)(_random.NextDouble() * 4f - 2f);
-        float spawnY = 0f;
-
-        // Lighter, smaller rocket for more agility
-        _rocketIndices = RigidBodyRocketTemplate.CreateRocket(
-            _world,
-            centerX: spawnX,
-            centerY: spawnY,
-            bodyHeight: 1.0f,
-            bodyRadius: 0.12f,
-            legLength: 0.6f,
-            legRadius: 0.06f,
-            bodyMass: 3f,   // Lighter!
-            legMass: 0.5f);
+        // Spawn rocket at center
+        _rocketX = 0f;
+        _rocketY = 0f;
+        _rocketVelX = 0f;
+        _rocketVelY = 0f;
 
         // Spawn first target
         SpawnNewTarget();
@@ -127,66 +90,27 @@ public class TargetChaseEnvironment : IEnvironment
         _targetsHit = 0;
         _cumulativeReward = 0f;
         _terminated = false;
-        _lastThrottle = 0f;
     }
 
     private void SpawnNewTarget()
     {
-        // Spawn target at random position, avoiding rocket's current position
-        float rocketX = 0f, rocketY = 0f;
-        if (_rocketIndices.Length > 0)
-        {
-            RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out rocketX, out rocketY);
-        }
-
-        // Keep trying until we find a position far enough from rocket
-        for (int attempt = 0; attempt < 10; attempt++)
-        {
-            _targetX = (float)(_random.NextDouble() * (ArenaHalfWidth * 2 - 4) - ArenaHalfWidth + 2);
-            _targetY = (float)(_random.NextDouble() * (ArenaHalfHeight + GroundY - 2) + GroundY + 2);
-
-            float dx = _targetX - rocketX;
-            float dy = _targetY - rocketY;
-            float dist = MathF.Sqrt(dx * dx + dy * dy);
-
-            if (dist > 5f) break; // Good distance from rocket
-        }
+        // Spawn target at random position within arena with margin
+        float margin = 2f;
+        _targetX = (float)(_random.NextDouble() * (ArenaHalfSize * 2 - margin * 2) - ArenaHalfSize + margin);
+        _targetY = (float)(_random.NextDouble() * (ArenaHalfSize * 2 - margin * 2) - ArenaHalfSize + margin);
     }
 
     public void GetObservations(Span<float> observations)
     {
-        if (_rocketIndices.Length == 0)
-        {
-            observations.Fill(0f);
-            return;
-        }
+        // Delta to target (normalized to arena size)
+        float dx = (_targetX - _rocketX) / 20f;
+        float dy = (_targetY - _rocketY) / 20f;
 
-        RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out float comX, out float comY);
-        RigidBodyRocketTemplate.GetVelocity(_world, _rocketIndices, out float velX, out float velY);
-        RigidBodyRocketTemplate.GetUpVector(_world, _rocketIndices, out float upX, out float upY);
-
-        // Get angular velocity from main body
-        float angVel = _world.RigidBodies[_rocketIndices[0]].AngularVel;
-
-        // Direction to target (normalized)
-        float dx = _targetX - comX;
-        float dy = _targetY - comY;
-        float dist = MathF.Sqrt(dx * dx + dy * dy);
-        if (dist > 0.001f)
-        {
-            dx /= dist;
-            dy /= dist;
-        }
-
-        // Observations: target direction, velocity, up vector, distance, angular velocity
-        observations[0] = dx;                    // Target dir X
-        observations[1] = dy;                    // Target dir Y
-        observations[2] = velX / 15f;            // Velocity X (normalized)
-        observations[3] = velY / 15f;            // Velocity Y (normalized)
-        observations[4] = upX;                   // Up vector X (orientation)
-        observations[5] = upY;                   // Up vector Y (orientation)
-        observations[6] = dist / 20f;            // Distance to target (normalized)
-        observations[7] = angVel / 10f;          // Angular velocity (normalized)
+        // Simple observations: dx, dy, vx, vy
+        observations[0] = dx;
+        observations[1] = dy;
+        observations[2] = _rocketVelX / 15f;
+        observations[3] = _rocketVelY / 15f;
     }
 
     public float Step(ReadOnlySpan<float> actions)
@@ -196,62 +120,58 @@ public class TargetChaseEnvironment : IEnvironment
 
         _steps++;
 
-        // Parse actions - scale throttle to be more useful
-        float throttle = Math.Clamp((actions[0] + 1f) * 0.5f, 0f, 1f); // Map [-1,1] to [0,1]
-        float gimbal = Math.Clamp(actions[1], -1f, 1f);
-        _lastThrottle = throttle;
+        // Parse actions - direct X/Y thrust
+        float thrustX = Math.Clamp(actions[0], -1f, 1f);
+        float thrustY = Math.Clamp(actions[1], -1f, 1f);
 
-        // Apply controls
-        RigidBodyRocketTemplate.ApplyThrust(_world, _rocketIndices, throttle, _maxThrust, _config.Dt);
-        RigidBodyRocketTemplate.ApplyGimbal(_world, _rocketIndices, gimbal * _maxGimbalTorque, _config.Dt);
+        // Apply thrust
+        float dt = _config.Dt;
+        _rocketVelX += thrustX * _maxThrust * dt;
+        _rocketVelY += thrustY * _maxThrust * dt;
 
-        // Step physics
-        _stepper.Step(_world, _config);
+        // Apply damping
+        float damping = 1f - _config.GlobalDamping;
+        _rocketVelX *= damping;
+        _rocketVelY *= damping;
 
-        // Get rocket state
-        RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out float comX, out float comY);
-        RigidBodyRocketTemplate.GetVelocity(_world, _rocketIndices, out float velX, out float velY);
-        RigidBodyRocketTemplate.GetUpVector(_world, _rocketIndices, out float upX, out float upY);
+        // Clamp velocity
+        float maxVel = 15f;
+        float speed = MathF.Sqrt(_rocketVelX * _rocketVelX + _rocketVelY * _rocketVelY);
+        if (speed > maxVel)
+        {
+            _rocketVelX *= maxVel / speed;
+            _rocketVelY *= maxVel / speed;
+        }
+
+        // Update position
+        _rocketX += _rocketVelX * dt;
+        _rocketY += _rocketVelY * dt;
 
         float stepReward = 0f;
 
         // Check target collision
-        float dx = _targetX - comX;
-        float dy = _targetY - comY;
+        float dx = _targetX - _rocketX;
+        float dy = _targetY - _rocketY;
         float distToTarget = MathF.Sqrt(dx * dx + dy * dy);
 
-        if (distToTarget < TargetRadius + 0.5f) // Hit target!
+        if (distToTarget < TargetRadius) // Hit target!
         {
             _targetsHit++;
-            stepReward += 200f; // Big bonus
+            stepReward += 100f; // Match GPU
             SpawnNewTarget();
         }
         else
         {
-            // Reward for getting closer (strong shaping)
-            stepReward += (20f - distToTarget) * 0.1f;
-
-            // Reward for pointing toward target
-            float dotProduct = dx / distToTarget * upX + dy / distToTarget * upY;
-            stepReward += dotProduct * 0.5f;
+            // Simple proximity-based reward (match GPU)
+            float proximityReward = (14f - distToTarget) * 0.1f;
+            stepReward += proximityReward;
         }
 
-        // Small time penalty
-        stepReward -= 0.05f;
+        // Time penalty (match GPU)
+        stepReward -= 0.1f;
 
-        // Check terminal conditions
-        float speed = MathF.Sqrt(velX * velX + velY * velY);
-        float angleErr = MathF.Abs(MathF.Atan2(upX, upY));
-
-        // Out of bounds
-        if (MathF.Abs(comX) > ArenaHalfWidth || comY < GroundY - 1f || comY > ArenaHalfHeight + 2f)
-        {
-            _terminated = true;
-            stepReward -= 100f;
-        }
-
-        // Crashed (flipped over)
-        if (angleErr > MathF.PI * 0.7f)
+        // Check terminal conditions - out of bounds
+        if (MathF.Abs(_rocketX) > ArenaHalfSize || MathF.Abs(_rocketY) > ArenaHalfSize)
         {
             _terminated = true;
             stepReward -= 50f;
@@ -271,8 +191,7 @@ public class TargetChaseEnvironment : IEnvironment
 
     public float GetFinalFitness()
     {
-        // Fitness = targets hit * big bonus + cumulative reward
-        return _targetsHit * 200f + _cumulativeReward;
+        return _cumulativeReward;
     }
 
     /// <summary>
@@ -280,20 +199,17 @@ public class TargetChaseEnvironment : IEnvironment
     /// </summary>
     public void GetRocketState(out float x, out float y, out float vx, out float vy, out float upX, out float upY, out float angle)
     {
-        if (_rocketIndices.Length == 0)
-        {
-            x = y = vx = vy = upX = upY = angle = 0f;
-            return;
-        }
-
-        RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out x, out y);
-        RigidBodyRocketTemplate.GetVelocity(_world, _rocketIndices, out vx, out vy);
-        RigidBodyRocketTemplate.GetUpVector(_world, _rocketIndices, out upX, out upY);
-        angle = _world.RigidBodies[_rocketIndices[0]].Angle;
+        x = _rocketX;
+        y = _rocketY;
+        vx = _rocketVelX;
+        vy = _rocketVelY;
+        upX = 0f;
+        upY = 1f;
+        angle = 0f;
     }
 
     /// <summary>
-    /// Gets the underlying WorldState for visualization.
+    /// Gets the underlying WorldState for visualization (empty for spherical rocket).
     /// </summary>
-    public WorldState GetWorld() => _world;
+    public WorldState GetWorld() => new WorldState(1);
 }
