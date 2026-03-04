@@ -48,6 +48,14 @@ public class GPUBatchedStepper : IDisposable
     private Action<Index1D, ArrayView<GPUContactConstraint>, ArrayView<GPURigidBody>,
         ArrayView<int>, int, int, int> _solveContactVelocitiesKernel = null!;
 
+    // Joint solving kernels (reuse non-batched kernels - they use global indices + atomics)
+    private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>,
+        ArrayView<GPUJointConstraint>, float> _initializeJointConstraintsKernel = null!;
+    private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>,
+        float> _solveJointVelocitiesKernel = null!;
+    private Action<Index1D, ArrayView<GPURigidBody>,
+        ArrayView<GPUJointConstraint>> _solveJointPositionsKernel = null!;
+
     /// <summary>
     /// Creates a new batched GPU stepper using the provided accelerator.
     /// </summary>
@@ -114,6 +122,22 @@ public class GPUBatchedStepper : IDisposable
             Index1D, ArrayView<GPUContactConstraint>, ArrayView<GPURigidBody>,
             ArrayView<int>, int, int, int>(
             GPUBatchedContactKernels.BatchedSolveContactVelocitiesKernel);
+
+        // Load joint solver kernels (reuse non-batched kernels - they use global body indices + atomics)
+        _initializeJointConstraintsKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>,
+            ArrayView<GPUJointConstraint>, float>(
+            GPURigidBodyJointKernels.InitializeJointConstraintsKernel);
+
+        _solveJointVelocitiesKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>,
+            float>(
+            GPURigidBodyJointKernels.SolveJointVelocitiesKernel);
+
+        _solveJointPositionsKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURigidBody>,
+            ArrayView<GPUJointConstraint>>(
+            GPURigidBodyJointKernels.SolveJointPositionsKernel);
     }
 
     /// <summary>
@@ -215,7 +239,18 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 7. Solve constraints iteratively (sequential impulse method)
+        // 7. Initialize joint constraints (precompute effective masses)
+        if (config.TotalJoints > 0)
+        {
+            _initializeJointConstraintsKernel(
+                config.TotalJoints,
+                worldState.RigidBodies.View,
+                worldState.Joints.View,
+                worldState.JointConstraints.View,
+                dt);
+        }
+
+        // 8. Solve constraints iteratively (sequential impulse method)
         for (int iter = 0; iter < iterations; iter++)
         {
             // Solve contact velocity constraints
@@ -231,12 +266,25 @@ public class GPUBatchedStepper : IDisposable
                     config.MaxContactsPerWorld);
             }
 
-            // TODO: Add joint solving kernels when GPUBatchedJointKernels is implemented
-            // _solveJointVelocitiesKernel(...)
+            // Solve joint velocity constraints
+            if (config.TotalJoints > 0)
+            {
+                _solveJointVelocitiesKernel(
+                    config.TotalJoints,
+                    worldState.RigidBodies.View,
+                    worldState.JointConstraints.View,
+                    dt);
+            }
         }
 
-        // TODO: Add joint position solving when GPUBatchedJointKernels is implemented
-        // _solveJointPositionsKernel(...)
+        // 9. Solve joint position constraints (additional stability pass)
+        if (config.TotalJoints > 0)
+        {
+            _solveJointPositionsKernel(
+                config.TotalJoints,
+                worldState.RigidBodies.View,
+                worldState.JointConstraints.View);
+        }
 
         // 8. Velocity stabilization: derive velocities from position changes
         if (config.TotalRigidBodies > 0 && simConfig.VelocityStabilizationBeta > 0f)
@@ -376,7 +424,18 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 7-9. Solve, stabilize, damp (same as base Step)
+        // 7. Initialize joint constraints
+        if (config.TotalJoints > 0)
+        {
+            _initializeJointConstraintsKernel(
+                config.TotalJoints,
+                worldState.RigidBodies.View,
+                worldState.Joints.View,
+                worldState.JointConstraints.View,
+                dt);
+        }
+
+        // 8. Solve constraints iteratively
         for (int iter = 0; iter < iterations; iter++)
         {
             if (config.TotalContacts > 0)
@@ -390,6 +449,24 @@ public class GPUBatchedStepper : IDisposable
                     config.RigidBodiesPerWorld,
                     config.MaxContactsPerWorld);
             }
+
+            if (config.TotalJoints > 0)
+            {
+                _solveJointVelocitiesKernel(
+                    config.TotalJoints,
+                    worldState.RigidBodies.View,
+                    worldState.JointConstraints.View,
+                    dt);
+            }
+        }
+
+        // 9. Solve joint position constraints
+        if (config.TotalJoints > 0)
+        {
+            _solveJointPositionsKernel(
+                config.TotalJoints,
+                worldState.RigidBodies.View,
+                worldState.JointConstraints.View);
         }
 
         if (config.TotalRigidBodies > 0 && simConfig.VelocityStabilizationBeta > 0f)

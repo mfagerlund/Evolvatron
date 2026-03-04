@@ -58,6 +58,16 @@ class Program
             // Launch GPU batched evolution demo
             BatchedTargetChaseDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "lander")
+        {
+            // Launch LM trajectory optimization lander demo
+            LunarLanderDemo.Run();
+        }
+        else if (args.Length > 0 && args[0] == "evolander")
+        {
+            // Launch neuroevolution lander demo
+            EvolutionLanderDemo.Run();
+        }
         else
         {
             // Launch physics demo by default

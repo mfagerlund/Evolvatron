@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Colonel\Colonel.Core\Colonel.Core.csproj" />
     <ProjectReference Include="..\..\Colonel\Colonel.Framework\Colonel.Framework.csproj" />
     <ProjectReference Include="..\..\Colonel\Colonel.Tests\Colonel.Tests.csproj" />
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />

@@ -34,7 +34,7 @@ public class RocketEvolutionIntegrationTest
         Assert.Equal(8, observations.Length);
 
         // Get rocket state to help debug
-        environment.GetRocketState(out float x, out float y, out float vx, out float vy, out float upX, out float upY);
+        environment.GetRocketState(out float x, out float y, out float vx, out float vy, out float upX, out float upY, out _);
 
         // At first step, rocket should not be terminal (just started falling)
         // Allow terminal if crash (high velocity) but not on step 1
@@ -273,7 +273,7 @@ public class RocketEvolutionIntegrationTest
         environment.Reset(seed: 42);
 
         // Get initial state
-        environment.GetRocketState(out float x0, out float y0, out float vx0, out float vy0, out _, out _);
+        environment.GetRocketState(out float x0, out float y0, out float vx0, out float vy0, out _, out _, out _);
 
         // Act - Apply full thrust for several steps
         var thrustActions = new float[] { 1f, 0f }; // Full throttle, no gimbal
@@ -283,7 +283,7 @@ public class RocketEvolutionIntegrationTest
         }
 
         // Get final state
-        environment.GetRocketState(out float x1, out float y1, out float vx1, out float vy1, out _, out _);
+        environment.GetRocketState(out float x1, out float y1, out float vx1, out float vy1, out _, out _, out _);
 
         // Assert - With thrust, rocket should have different velocity than free fall
         // At full thrust, upward velocity should be better than gravity alone would give
@@ -306,7 +306,7 @@ public class RocketEvolutionIntegrationTest
         environment.Reset(seed: 42);
 
         // Get initial up vector
-        environment.GetRocketState(out _, out _, out _, out _, out float upX0, out float upY0);
+        environment.GetRocketState(out _, out _, out _, out _, out float upX0, out float upY0, out _);
 
         // Act - Apply gimbal torque while thrusting to keep rocket in air
         var gimbalActions = new float[] { 0.8f, 1f }; // Thrust + full gimbal
@@ -316,7 +316,7 @@ public class RocketEvolutionIntegrationTest
         }
 
         // Get final up vector
-        environment.GetRocketState(out _, out _, out _, out _, out float upX1, out float upY1);
+        environment.GetRocketState(out _, out _, out _, out _, out float upX1, out float upY1, out _);
 
         // Assert - Rocket should have rotated (up vector changed)
         float angleDiff = MathF.Abs(MathF.Atan2(upX1, upY1) - MathF.Atan2(upX0, upY0));

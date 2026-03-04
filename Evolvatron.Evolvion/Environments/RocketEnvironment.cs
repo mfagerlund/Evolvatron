@@ -34,11 +34,13 @@ public class RocketEnvironment : IEnvironment
     private float _prevGimbal;
     private int _steps;
     private bool _terminated;
+    private bool _landed;
     private float _cumulativeReward;
 
     // Physics parameters
     private readonly float _maxThrust;
     private readonly float _maxGimbalTorque;
+    private readonly bool _singleBody;
 
     // Scene parameters
     private readonly float _spawnHeight;
@@ -48,19 +50,33 @@ public class RocketEnvironment : IEnvironment
     public int OutputCount => 2; // throttle, gimbal
     public int MaxSteps { get; set; } = 500;
 
+    // Rendering properties
+    public float CurrentThrottle => _currentThrottle;
+    public float CurrentGimbal => _currentGimbal;
+    public float GroundSurfaceY => _groundY + 0.5f;
+    public float PadX => _rewardParams.PadX;
+    public float PadY => _rewardParams.PadY;
+    public float PadHalfWidth => _rewardParams.PadHalfWidth;
+    public WorldState World => _world;
+    public int[] RocketIndices => _rocketIndices;
+
     /// <summary>
     /// Creates a rocket environment with default parameters.
     /// </summary>
+    /// <param name="singleBody">When true, uses a single capsule body matching GPU physics exactly.
+    /// When false, uses 3-body rocket (body + 2 legs with joints).</param>
     public RocketEnvironment(
         float maxThrust = 200f,
         float maxGimbalTorque = 50f,
         float spawnHeight = 15f,
-        float groundY = -5f)
+        float groundY = -5f,
+        bool singleBody = false)
     {
         _maxThrust = maxThrust;
         _maxGimbalTorque = maxGimbalTorque;
         _spawnHeight = spawnHeight;
         _groundY = groundY;
+        _singleBody = singleBody;
 
         // Pre-allocate world and config (reused across episodes)
         _world = new WorldState(64); // Small initial capacity, will grow if needed
@@ -105,25 +121,46 @@ public class RocketEnvironment : IEnvironment
         float initialVelX = (float)(random.NextDouble() * 2f - 1f); // -1 to 1 m/s
         float initialVelY = (float)(random.NextDouble() * -2f); // 0 to -2 m/s (falling)
 
-        // Create rocket
-        _rocketIndices = RigidBodyRocketTemplate.CreateRocket(
-            _world,
-            centerX: spawnX,
-            centerY: spawnY,
-            bodyHeight: 1.5f,
-            bodyRadius: 0.2f,
-            legLength: 1.0f,
-            legRadius: 0.1f,
-            bodyMass: 8f,
-            legMass: 1.5f);
-
-        // Apply initial velocity to all rigid bodies
-        for (int i = 0; i < _rocketIndices.Length; i++)
+        if (_singleBody)
         {
-            var rb = _world.RigidBodies[_rocketIndices[i]];
+            // Single capsule body matching GPU physics exactly
+            // Total mass = body(8) + legs(1.5+1.5) = 11 kg
+            float bodyHeight = 1.5f;
+            float bodyRadius = 0.2f;
+            float halfLength = bodyHeight * 0.5f;
+            float centerY = spawnY + halfLength; // Match GPU: baseY = spawnHeight + halfLength
+
+            int bodyIdx = RigidBodyFactory.CreateCapsule(
+                _world, spawnX, centerY, halfLength, bodyRadius,
+                mass: 11f, angle: MathF.PI / 2f);
+            _rocketIndices = new[] { bodyIdx };
+
+            var rb = _world.RigidBodies[bodyIdx];
             rb.VelX = initialVelX;
             rb.VelY = initialVelY;
-            _world.RigidBodies[_rocketIndices[i]] = rb;
+            _world.RigidBodies[bodyIdx] = rb;
+        }
+        else
+        {
+            // Full 3-body rocket with legs and joints
+            _rocketIndices = RigidBodyRocketTemplate.CreateRocket(
+                _world,
+                centerX: spawnX,
+                centerY: spawnY,
+                bodyHeight: 1.5f,
+                bodyRadius: 0.2f,
+                legLength: 1.0f,
+                legRadius: 0.1f,
+                bodyMass: 8f,
+                legMass: 1.5f);
+
+            for (int i = 0; i < _rocketIndices.Length; i++)
+            {
+                var rb = _world.RigidBodies[_rocketIndices[i]];
+                rb.VelX = initialVelX;
+                rb.VelY = initialVelY;
+                _world.RigidBodies[_rocketIndices[i]] = rb;
+            }
         }
 
         // Reset episode state
@@ -133,6 +170,7 @@ public class RocketEnvironment : IEnvironment
         _prevGimbal = 0f;
         _steps = 0;
         _terminated = false;
+        _landed = false;
         _cumulativeReward = 0f;
     }
 
@@ -225,13 +263,49 @@ public class RocketEnvironment : IEnvironment
     }
 
     /// <summary>
-    /// Returns final fitness for goal-based evaluation.
+    /// Returns terminal-state fitness for evolutionary optimization.
+    /// Evaluates how good the final state is rather than accumulating per-step penalties.
+    /// This prevents the "die quickly" degenerate strategy that cumulative rewards create.
     /// </summary>
     public float GetFinalFitness()
     {
-        // Return cumulative reward (default behavior)
-        return 0f;
+        if (_rocketIndices.Length == 0)
+            return -100f;
+
+        RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out float comX, out float comY);
+        RigidBodyRocketTemplate.GetVelocity(_world, _rocketIndices, out float velX, out float velY);
+        RigidBodyRocketTemplate.GetUpVector(_world, _rocketIndices, out float upX, out float upY);
+
+        float errX = comX - _rewardParams.PadX;
+        float errY = comY - _rewardParams.PadY;
+        float distToPad = MathF.Sqrt(errX * errX + errY * errY);
+        float speed = MathF.Sqrt(velX * velX + velY * velY);
+        float angleErr = MathF.Abs(MathF.Atan2(upX, upY));
+        float survivalFrac = (float)_steps / MaxSteps;
+
+        // Terminal-state fitness components:
+        // Survival bonus: staying alive is always better (max +20)
+        float fitness = 20f * survivalFrac;
+
+        // Closeness bonus: being near the pad at termination (max +20)
+        const float maxDist = 30f;
+        fitness += 20f * MathF.Max(0f, 1f - distToPad / maxDist);
+
+        // Velocity penalty: high terminal speed is bad (max -5)
+        const float maxSpeed = 20f;
+        fitness -= 5f * MathF.Min(1f, speed / maxSpeed);
+
+        // Angle penalty: being tilted at termination (max -5)
+        fitness -= 5f * MathF.Min(1f, angleErr / MathF.PI);
+
+        // Landing bonus: dominates everything
+        if (_landed)
+            fitness += 200f;
+
+        return fitness;
     }
+
+    public bool Landed => _landed;
 
     /// <summary>
     /// Computes step reward and terminal conditions using rigid body state.
@@ -280,6 +354,7 @@ public class RocketEnvironment : IEnvironment
         if (nearPad && lowVelocity && upright)
         {
             terminal = true;
+            _landed = true;
             terminalReward = _rewardParams.R_Land;
             return stepReward;
         }
@@ -309,17 +384,18 @@ public class RocketEnvironment : IEnvironment
     /// <summary>
     /// Gets the current rocket state for debugging/visualization.
     /// </summary>
-    public void GetRocketState(out float x, out float y, out float vx, out float vy, out float upX, out float upY)
+    public void GetRocketState(out float x, out float y, out float vx, out float vy, out float upX, out float upY, out float angle)
     {
         if (_rocketIndices.Length == 0)
         {
-            x = y = vx = vy = upX = upY = 0f;
+            x = y = vx = vy = upX = upY = angle = 0f;
             return;
         }
 
         RigidBodyRocketTemplate.GetCenterOfMass(_world, _rocketIndices, out x, out y);
         RigidBodyRocketTemplate.GetVelocity(_world, _rocketIndices, out vx, out vy);
         RigidBodyRocketTemplate.GetUpVector(_world, _rocketIndices, out upX, out upY);
+        angle = _world.RigidBodies[_rocketIndices[0]].Angle;
     }
 
     /// <summary>
