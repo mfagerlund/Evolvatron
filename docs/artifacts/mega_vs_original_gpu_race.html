@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Mega vs Original GPU Evaluator — Rocket Landing</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #1a1a2e; color: #e0e0e0; margin: 0; padding: 20px; }
+  h1 { color: #fff; text-align: center; margin-bottom: 5px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 20px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; }
+  .chart-box { background: #16213e; border-radius: 8px; padding: 15px; }
+  .chart-box canvas { max-height: 350px; }
+  .stats { display: flex; justify-content: center; gap: 40px; margin: 20px auto; max-width: 1000px; flex-wrap: wrap; }
+  .stat-card { background: #16213e; border-radius: 8px; padding: 15px 25px; text-align: center; }
+  .stat-card .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .stat-card .value { font-size: 24px; font-weight: bold; margin-top: 4px; }
+  .mega { color: #00d4aa; }
+  .orig { color: #ff6b6b; }
+  .speedup { color: #ffd700; }
+</style>
+</head><body>
+<h1>Mega Kernel vs Original GPU Evaluator</h1>
+<p class="subtitle">Fused kernel + terminal skip vs 35 dispatches/step &middot; 10 000 pop &middot; 60s wall time &middot; 3-seed avg</p>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="label">Mega Generations</div>
+    <div class="value mega">24</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Original Generations</div>
+    <div class="value orig">13</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Gen Throughput</div>
+    <div class="value speedup">1,8x</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Mega Total Evals</div>
+    <div class="value mega">750 000</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Original Total Evals</div>
+    <div class="value orig">420 000</div>
+  </div>
+</div>
+
+<div class="charts">
+  <div class="chart-box"><canvas id="bestFitness"></canvas></div>
+  <div class="chart-box"><canvas id="landingRate"></canvas></div>
+  <div class="chart-box"><canvas id="meanFitness"></canvas></div>
+  <div class="chart-box"><canvas id="landings"></canvas></div>
+</div>
+
+<script>
+const megaColor = '#00d4aa';
+const origColor = '#ff6b6b';
+const gridColor = 'rgba(255,255,255,0.08)';
+
+const megaGenTimesArr = [0.74,1.89,3.36,5.23,7.35,9.66,11.99,14.39,16.89,19.36,21.90,24.43,27.03,29.69,32.42,35.21,37.99,40.85,43.69,46.60,49.43,52.35,55.22,58.10,60.94];
+const origGenTimesArr = [4.54,9.16,13.71,18.20,22.65,27.07,31.49,35.91,40.33,44.74,49.12,53.52,57.95,62.27];
+
+const genStripesPlugin = {
+  id: 'genStripes',
+  beforeDraw(chart) {
+    const ctx = chart.ctx;
+    const xScale = chart.scales.x;
+    const yTop = chart.chartArea.top;
+    const yBot = chart.chartArea.bottom;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 212, 170, 0.35)';
+    megaGenTimesArr.forEach((t, i) => {
+      if (i % 5 !== 0) return;
+      const x = xScale.getPixelForValue(t);
+      if (x >= chart.chartArea.left && x <= chart.chartArea.right) {
+        ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      }
+    });
+    ctx.strokeStyle = 'rgba(255, 107, 107, 0.35)';
+    origGenTimesArr.forEach((t, i) => {
+      if (i % 5 !== 0) return;
+      const x = xScale.getPixelForValue(t);
+      if (x >= chart.chartArea.left && x <= chart.chartArea.right) {
+        ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+};
+
+Chart.register(genStripesPlugin);
+
+const defaultOpts = {
+  responsive: true,
+  plugins: { legend: { labels: { color: '#ccc' } } },
+  scales: {
+    x: { title: { display: true, text: 'Wall Time (s)', color: '#888' }, ticks: { color: '#888' }, grid: { color: gridColor } },
+    y: { ticks: { color: '#888' }, grid: { color: gridColor } }
+  }
+};
+
+function makeDataset(label, times, values, color) {
+  return {
+    label, borderColor: color, backgroundColor: color + '20',
+    data: times.map((t,i) => ({ x: t, y: values[i] })),
+    showLine: true, pointRadius: 0, borderWidth: 2, tension: 0.3
+  };
+}
+
+const megaTimes = [0.74,1.89,3.36,5.23,7.35,9.66,11.99,14.39,16.89,19.36,21.90,24.43,27.03,29.69,32.42,35.21,37.99,40.85,43.69,46.60,49.43,52.35,55.22,58.10,60.94];
+const origTimes = [4.54,9.16,13.71,18.20,22.65,27.07,31.49,35.91,40.33,44.74,49.12,53.52,57.95,62.27];
+const megaBest = [89.8,98.4,100.2,164.2,166.4,231.6,232.4,169.4,167.0,229.8,230.2,231.7,236.8,235.8,236.3,237.1,236.7,237.1,236.6,237.5,237.9,237.0,237.1,237.8,237.6];
+const origBest = [88.5,91.6,162.0,232.2,162.9,168.1,168.5,230.4,167.8,227.3,233.6,236.7,234.9,235.7];
+const megaMean = [5.6,9.4,12.8,17.0,19.2,21.4,22.6,23.5,24.8,25.6,27.2,29.1,32.3,37.8,43.1,46.7,49.1,51.1,52.2,53.6,55.0,56.2,57.2,58.4,59.4];
+const origMean = [12.5,14.2,16.3,19.7,22.6,24.3,25.0,25.8,27.0,27.9,29.6,31.0,33.6,36.6];
+const megaLandings = [5,20,110,269,363,503,620,686,791,900,1058,1298,1690,2378,3049,3523,3844,4078,4232,4423,4591,4785,4940,5119,5271];
+const origLandings = [5,15,90,251,406,553,637,689,821,930,1113,1281,1578,1919];
+const megaLandRate = [0.0,0.1,0.4,0.9,1.2,1.7,2.1,2.3,2.6,3.0,3.5,4.3,5.6,7.9,10.2,11.7,12.8,13.6,14.1,14.7,15.3,15.9,16.5,17.1,17.6];
+const origLandRate = [0.0,0.1,0.3,0.8,1.4,1.8,2.1,2.3,2.7,3.1,3.7,4.3,5.3,6.4];
+
+new Chart('bestFitness', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('Mega Best', megaTimes, megaBest, megaColor),
+    makeDataset('Original Best', origTimes, origBest, origColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Best Avg Fitness vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Best Fitness (3-seed avg)', color: '#888' } } }
+  }
+});
+
+new Chart('landingRate', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('Mega Landing %', megaTimes, megaLandRate, megaColor),
+    makeDataset('Original Landing %', origTimes, origLandRate, origColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Landing Rate % vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Landing Rate %', color: '#888' } } }
+  }
+});
+
+new Chart('meanFitness', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('Mega Mean', megaTimes, megaMean, megaColor),
+    makeDataset('Original Mean', origTimes, origMean, origColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Mean Fitness vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Mean Fitness', color: '#888' } } }
+  }
+});
+
+new Chart('landings', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('Mega Landings', megaTimes, megaLandings, megaColor),
+    makeDataset('Original Landings', origTimes, origLandings, origColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Landings per Generation (raw count)', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Landings', color: '#888' } } }
+  }
+});
+</script>
+</body></html>
