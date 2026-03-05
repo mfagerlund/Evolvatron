@@ -27,6 +27,8 @@ public class GPURocketLandingMegaEvaluator : IDisposable
     // Physics state
     private GPUBatchedWorldState? _worldState;
     private int _lastWorldCount;
+    private int _lastObstacleCount = -1;
+    private int _lastSensorCount = -1;
 
     // Landing-specific GPU buffers
     private MemoryBuffer1D<float, Stride1D.Dense>? _observations;
@@ -37,6 +39,7 @@ public class GPURocketLandingMegaEvaluator : IDisposable
     private MemoryBuffer1D<byte, Stride1D.Dense>? _hasLanded;
     private MemoryBuffer1D<int, Stride1D.Dense>? _stepCounters;
     private MemoryBuffer1D<float, Stride1D.Dense>? _fitnessValues;
+    private MemoryBuffer1D<float, Stride1D.Dense>? _waggleAccum;
 
     // The single fused kernel
     private readonly Action<Index1D, PhysicsViews, NNViews, EpisodeViews,
@@ -71,7 +74,18 @@ public class GPURocketLandingMegaEvaluator : IDisposable
     public float InitialVelXRange { get; set; } = 1f;
     public float InitialVelYMax { get; set; } = 2f;
 
-    public int SolverIterations { get; set; } = 8;
+    public int SolverIterations { get; set; } = 6;
+
+    // Static obstacles (OBBs added alongside the ground collider)
+    public List<GPUOBBCollider> Obstacles { get; set; } = new();
+
+    // Sensor config
+    public int SensorCount { get; set; } = 0;
+    public float MaxSensorRange { get; set; } = 30f;
+
+    // Behaviour shaping
+    public float WagglePenalty { get; set; } = 0f;
+    public bool ObstacleDeathEnabled { get; set; } = false;
 
     public Accelerator Accelerator => _accelerator;
 
@@ -107,7 +121,7 @@ public class GPURocketLandingMegaEvaluator : IDisposable
     /// <summary>
     /// Evaluates all individuals using the fused mega-kernel.
     /// </summary>
-    public (float[] fitness, int landings) EvaluatePopulation(
+    public (float[] fitness, int landings, bool[] landed) EvaluatePopulation(
         SpeciesSpec spec,
         List<Individual> individuals,
         int seed,
@@ -115,7 +129,7 @@ public class GPURocketLandingMegaEvaluator : IDisposable
     {
         int worldCount = individuals.Count;
         if (worldCount == 0)
-            return (Array.Empty<float>(), 0);
+            return (Array.Empty<float>(), 0, Array.Empty<bool>());
 
         if (worldCount > _maxIndividuals)
             throw new ArgumentException($"Population size ({worldCount}) exceeds maximum ({_maxIndividuals})");
@@ -124,10 +138,11 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         EnsureBuffers(worldCount);
         CreateAndUploadRocketTemplate(worldCount, seed);
 
-        _worldState!.UploadSharedColliders(new GPUOBBCollider[]
-        {
-            new GPUOBBCollider { CX = 0f, CY = GroundY, UX = 1f, UY = 0f, HalfExtentX = 30f, HalfExtentY = 0.5f }
-        });
+        var allColliders = new GPUOBBCollider[1 + Obstacles.Count];
+        allColliders[0] = new GPUOBBCollider { CX = 0f, CY = GroundY, UX = 1f, UY = 0f, HalfExtentX = 30f, HalfExtentY = 0.5f };
+        for (int i = 0; i < Obstacles.Count; i++)
+            allColliders[1 + i] = Obstacles[i];
+        _worldState!.UploadSharedColliders(allColliders);
 
         // Reset landing state
         _resetLandingStateKernel(
@@ -138,18 +153,23 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             _currentThrottle!.View,
             _currentGimbal!.View,
             _fitnessValues!.View);
+        _waggleAccum!.MemSetToZero();
         _worldState.ClearContactCounts();
         _worldState.ClearContactCache();
         _accelerator.Synchronize();
 
         // Build config struct
+        int totalColliders = 1 + Obstacles.Count;
+        int maxContacts = 24 + Obstacles.Count * 4;
+        int inputSize = 8 + SensorCount;
+
         var megaConfig = new MegaKernelConfig
         {
             BodiesPerWorld = 3,
             GeomsPerWorld = 19,
             JointsPerWorld = 2,
-            SharedColliderCount = 1,
-            MaxContactsPerWorld = 48,
+            SharedColliderCount = totalColliders,
+            MaxContactsPerWorld = maxContacts,
             Dt = 1f / 120f,
             GravityX = 0f,
             GravityY = -9.81f,
@@ -161,7 +181,7 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             TotalNodes = spec.TotalNodes,
             TotalEdges = spec.TotalEdges,
             NumRows = spec.RowPlans.Length,
-            InputSize = 8,
+            InputSize = inputSize,
             OutputSize = 2,
             MaxSteps = maxSteps,
             MaxThrust = MaxThrust,
@@ -173,7 +193,11 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             MaxLandingAngle = MaxLandingAngle,
             GroundY = GroundY,
             SpawnHeight = SpawnHeight,
-            LandingBonus = LandingBonus
+            LandingBonus = LandingBonus,
+            SensorCount = SensorCount,
+            MaxSensorRange = MaxSensorRange,
+            WagglePenalty = WagglePenalty,
+            ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0
         };
 
         // Build view structs
@@ -207,14 +231,15 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             IsTerminal = _isTerminal!.View,
             HasLanded = _hasLanded!.View,
             StepCounters = _stepCounters!.View,
-            FitnessValues = _fitnessValues!.View
+            FitnessValues = _fitnessValues!.View,
+            WaggleAccum = _waggleAccum!.View
         };
 
         // Main simulation loop — 1 kernel per step
         for (int step = 0; step < maxSteps; step++)
         {
-            // Early exit check every 60 steps
-            if (step > 0 && step % 60 == 0)
+            // Early exit check every 30 steps
+            if (step > 0 && step % 30 == 0)
             {
                 _accelerator.Synchronize();
                 _isTerminal!.CopyToCPU(_terminalCache!);
@@ -242,17 +267,25 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         _hasLanded!.CopyToCPU(_landedCache!);
 
         int landings = 0;
+        var landedArr = new bool[worldCount];
         for (int i = 0; i < worldCount; i++)
-            if (_landedCache![i] != 0) landings++;
+        {
+            if (_landedCache![i] != 0)
+            {
+                landings++;
+                landedArr[i] = true;
+            }
+        }
 
         var result = new float[worldCount];
         Array.Copy(_fitnessCache!, result, worldCount);
-        return (result, landings);
+        return (result, landings, landedArr);
     }
 
     private void EnsureBuffers(int worldCount)
     {
-        if (_lastWorldCount == worldCount && _worldState != null)
+        if (_lastWorldCount == worldCount && _lastObstacleCount == Obstacles.Count
+            && _lastSensorCount == SensorCount && _worldState != null)
             return;
 
         _worldState?.Dispose();
@@ -264,6 +297,11 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         _hasLanded?.Dispose();
         _stepCounters?.Dispose();
         _fitnessValues?.Dispose();
+        _waggleAccum?.Dispose();
+
+        int totalColliders = 1 + Obstacles.Count;
+        int maxContacts = 24 + Obstacles.Count * 4;
+        int inputSize = 8 + SensorCount;
 
         var worldConfig = new GPUBatchedWorldConfig
         {
@@ -271,14 +309,14 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             RigidBodiesPerWorld = 3,
             GeomsPerWorld = 19,
             JointsPerWorld = 2,
-            SharedColliderCount = 1,
+            SharedColliderCount = totalColliders,
             TargetsPerWorld = 0,
-            MaxContactsPerWorld = 48
+            MaxContactsPerWorld = maxContacts
         };
 
         _worldState = new GPUBatchedWorldState(_accelerator, worldConfig);
 
-        _observations = _accelerator.Allocate1D<float>(worldCount * 8);
+        _observations = _accelerator.Allocate1D<float>(worldCount * inputSize);
         _actions = _accelerator.Allocate1D<float>(worldCount * 2);
         _currentThrottle = _accelerator.Allocate1D<float>(worldCount);
         _currentGimbal = _accelerator.Allocate1D<float>(worldCount);
@@ -286,11 +324,14 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         _hasLanded = _accelerator.Allocate1D<byte>(worldCount);
         _stepCounters = _accelerator.Allocate1D<int>(worldCount);
         _fitnessValues = _accelerator.Allocate1D<float>(worldCount);
+        _waggleAccum = _accelerator.Allocate1D<float>(worldCount);
 
         _terminalCache = new byte[worldCount];
         _fitnessCache = new float[worldCount];
         _landedCache = new byte[worldCount];
         _lastWorldCount = worldCount;
+        _lastObstacleCount = Obstacles.Count;
+        _lastSensorCount = SensorCount;
     }
 
     private void CreateAndUploadRocketTemplate(int worldCount, int seed)
@@ -502,6 +543,124 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         _neuralState.UploadIndividuals(individuals, spec);
     }
 
+    // --- Step-by-step visualization API ---
+    private PhysicsViews _vizPhysics;
+    private NNViews _vizNN;
+    private EpisodeViews _vizEpisode;
+    private MegaKernelConfig _vizConfig;
+    private int _vizWorldCount;
+    private GPURigidBody[]? _vizBodiesCache;
+    private GPURigidBodyGeom[]? _vizGeomsCache;
+
+    /// <summary>
+    /// Sets up worlds for step-by-step visualization. Call StepVisualization() each frame.
+    /// </summary>
+    public void PrepareVisualization(SpeciesSpec spec, List<Individual> individuals, int seed, int maxSteps)
+    {
+        _vizWorldCount = individuals.Count;
+        InitializeNeuralState(spec, individuals);
+        EnsureBuffers(_vizWorldCount);
+        CreateAndUploadRocketTemplate(_vizWorldCount, seed);
+
+        var allColliders = new GPUOBBCollider[1 + Obstacles.Count];
+        allColliders[0] = new GPUOBBCollider { CX = 0f, CY = GroundY, UX = 1f, UY = 0f, HalfExtentX = 30f, HalfExtentY = 0.5f };
+        for (int i = 0; i < Obstacles.Count; i++)
+            allColliders[1 + i] = Obstacles[i];
+        _worldState!.UploadSharedColliders(allColliders);
+
+        _resetLandingStateKernel(
+            _vizWorldCount,
+            _stepCounters!.View, _isTerminal!.View, _hasLanded!.View,
+            _currentThrottle!.View, _currentGimbal!.View, _fitnessValues!.View);
+        _waggleAccum!.MemSetToZero();
+        _worldState.ClearContactCounts();
+        _worldState.ClearContactCache();
+        _accelerator.Synchronize();
+
+        int totalColliders = 1 + Obstacles.Count;
+        int maxContacts = 24 + Obstacles.Count * 4;
+        int inputSize = 8 + SensorCount;
+
+        _vizConfig = new MegaKernelConfig
+        {
+            BodiesPerWorld = 3, GeomsPerWorld = 19, JointsPerWorld = 2,
+            SharedColliderCount = totalColliders, MaxContactsPerWorld = maxContacts,
+            Dt = 1f / 120f, GravityX = 0f, GravityY = -9.81f,
+            FrictionMu = 0.8f, Restitution = 0.0f,
+            GlobalDamping = 0.02f, AngularDamping = 0.1f,
+            SolverIterations = SolverIterations,
+            TotalNodes = spec.TotalNodes, TotalEdges = spec.TotalEdges,
+            NumRows = spec.RowPlans.Length, InputSize = inputSize, OutputSize = 2,
+            MaxSteps = maxSteps, MaxThrust = MaxThrust, MaxGimbalTorque = MaxGimbalTorque,
+            PadX = PadX, PadY = PadY, PadHalfWidth = PadHalfWidth,
+            MaxLandingVel = MaxLandingVel, MaxLandingAngle = MaxLandingAngle,
+            GroundY = GroundY, SpawnHeight = SpawnHeight, LandingBonus = LandingBonus,
+            SensorCount = SensorCount, MaxSensorRange = MaxSensorRange,
+            WagglePenalty = WagglePenalty, ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0
+        };
+
+        _vizPhysics = new PhysicsViews
+        {
+            Bodies = _worldState.RigidBodies.View, Geoms = _worldState.Geoms.View,
+            Joints = _worldState.Joints.View, JointConstraints = _worldState.JointConstraints.View,
+            Contacts = _worldState.ContactConstraints.View, ContactCache = _worldState.ContactCache.View,
+            ContactCounts = _worldState.ContactCounts.View, SharedOBBColliders = _worldState.SharedOBBColliders.View
+        };
+        _vizNN = new NNViews
+        {
+            NodeValues = _neuralState!.NodeValues.View, Edges = _neuralState.Edges.View,
+            Weights = _neuralState.Individuals.Weights.View, Biases = _neuralState.Individuals.Biases.View,
+            Activations = _neuralState.Individuals.Activations.View,
+            NodeParams = _neuralState.Individuals.NodeParams.View, RowPlans = _neuralState.RowPlans.View
+        };
+        _vizEpisode = new EpisodeViews
+        {
+            CurrentThrottle = _currentThrottle!.View, CurrentGimbal = _currentGimbal!.View,
+            IsTerminal = _isTerminal!.View, HasLanded = _hasLanded!.View,
+            StepCounters = _stepCounters!.View, FitnessValues = _fitnessValues!.View,
+            WaggleAccum = _waggleAccum!.View
+        };
+
+        int totalBodies = _worldState.Config.TotalRigidBodies;
+        int totalGeoms = _worldState.Config.TotalGeoms;
+        if (_vizBodiesCache == null || _vizBodiesCache.Length < totalBodies)
+            _vizBodiesCache = new GPURigidBody[totalBodies];
+        if (_vizGeomsCache == null || _vizGeomsCache.Length < totalGeoms)
+            _vizGeomsCache = new GPURigidBodyGeom[totalGeoms];
+    }
+
+    /// <summary>
+    /// Runs one simulation step. Call after PrepareVisualization().
+    /// </summary>
+    public void StepVisualization()
+    {
+        _fusedStepKernel(_vizWorldCount, _vizPhysics, _vizNN, _vizEpisode,
+            _vizConfig, _observations!.View, _actions!.View);
+        _accelerator.Synchronize();
+    }
+
+    /// <summary>
+    /// Reads back current state from GPU for rendering.
+    /// </summary>
+    public void ReadVisualizationState(
+        out GPURigidBody[] bodies, out GPURigidBodyGeom[] geoms,
+        byte[] terminal, byte[] landed, float[] throttle, float[] gimbal)
+    {
+        _worldState!.RigidBodies.CopyToCPU(_vizBodiesCache!);
+        _worldState.Geoms.CopyToCPU(_vizGeomsCache!);
+        _isTerminal!.CopyToCPU(terminal);
+        _hasLanded!.CopyToCPU(landed);
+        _currentThrottle!.CopyToCPU(throttle);
+        _currentGimbal!.CopyToCPU(gimbal);
+        bodies = _vizBodiesCache!;
+        geoms = _vizGeomsCache!;
+    }
+
+    /// <summary>Number of bodies per world (3 for rocket: body + 2 legs).</summary>
+    public int BodiesPerWorld => 3;
+    /// <summary>Number of geoms per world (19 for rocket).</summary>
+    public int GeomsPerWorld => 19;
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -516,6 +675,7 @@ public class GPURocketLandingMegaEvaluator : IDisposable
         _hasLanded?.Dispose();
         _stepCounters?.Dispose();
         _fitnessValues?.Dispose();
+        _waggleAccum?.Dispose();
         _neuralState?.Dispose();
         _accelerator?.Dispose();
         _context?.Dispose();

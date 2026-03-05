@@ -88,6 +88,7 @@ public sealed class TrajectoryOptimizer
         _epsilon = opt.Epsilon;
         _logCallback = opt.LogCallback;
         _onIterationComplete = opt.OnIterationComplete;
+        _obstacles = opt.Obstacles;
 
         _world = new WorldState(64);
         _config = new SimulationConfig
@@ -344,12 +345,18 @@ public sealed class TrajectoryOptimizer
         };
     }
 
+    private readonly List<OBBCollider> _obstacles;
+
     private int[] SetupWorld(float startX, float startY, float startVelX, float startVelY, float startAngle)
     {
         _world.Clear();
 
         // Ground
         _world.Obbs.Add(OBBCollider.AxisAligned(0f, _groundY, 30f, 0.5f));
+
+        // Obstacles
+        foreach (var obs in _obstacles)
+            _world.Obbs.Add(obs);
 
         // Create rocket
         var rocketIndices = RigidBodyRocketTemplate.CreateRocket(
@@ -425,4 +432,7 @@ public sealed class TrajectoryOptimizerOptions
 
     /// <summary>Called from the optimizer thread each time a baseline rollout completes.</summary>
     public Action<IterationSnapshot>? OnIterationComplete { get; set; }
+
+    /// <summary>Static obstacle OBBs to add to the world (in addition to the ground).</summary>
+    public List<OBBCollider> Obstacles { get; set; } = new();
 }

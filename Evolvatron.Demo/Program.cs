@@ -68,6 +68,11 @@ class Program
             // Launch neuroevolution lander demo
             EvolutionLanderDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "obstacles")
+        {
+            // Launch obstacle lander demo (evolution + sensors)
+            ObstacleLanderDemo.Run();
+        }
         else
         {
             // Launch physics demo by default

@@ -57,6 +57,12 @@ public class RocketEnvironment : IEnvironment
     public float InitialVelXRange { get; set; } = 1f;    // ±1 m/s horizontal
     public float InitialVelYMax { get; set; } = 2f;      // 0 to -2 m/s (downward)
 
+    /// <summary>Static obstacle OBBs added to the world on each Reset (in addition to ground).</summary>
+    public List<OBBCollider> Obstacles { get; set; } = new();
+
+    /// <summary>Override solver iterations (default 8). Set to match GPU config if needed.</summary>
+    public int SolverIterations { set => _config.XpbdIterations = value; }
+
     // Rendering properties
     public float CurrentThrottle => _currentThrottle;
     public float CurrentGimbal => _currentGimbal;
@@ -119,6 +125,10 @@ public class RocketEnvironment : IEnvironment
 
         // Add ground collider
         _world.Obbs.Add(OBBCollider.AxisAligned(0f, _groundY, 30f, 0.5f));
+
+        // Add obstacles
+        foreach (var obs in Obstacles)
+            _world.Obbs.Add(obs);
 
         // Random spawn position
         float spawnX;
@@ -331,6 +341,9 @@ public class RocketEnvironment : IEnvironment
     }
 
     public bool Landed => _landed;
+
+    /// <summary>Force-terminate the episode (e.g., obstacle death).</summary>
+    public void ForceTerminate() => _terminated = true;
 
     /// <summary>
     /// Computes step reward and terminal conditions using rigid body state.

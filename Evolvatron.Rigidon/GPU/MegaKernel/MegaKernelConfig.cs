@@ -45,4 +45,12 @@ public struct MegaKernelConfig
     public float GroundY;
     public float SpawnHeight;
     public float LandingBonus;
+
+    // Sensors
+    public int SensorCount;
+    public float MaxSensorRange;
+
+    // Behaviour shaping
+    public float WagglePenalty;     // per-step penalty weight for throttle/gimbal changes
+    public int ObstacleDeathEnabled; // 1 = contact with any collider index > 0 is terminal
 }

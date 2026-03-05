@@ -72,6 +72,38 @@ public static class RocketLandingStepKernel
         observations[obsBase + 6] = episode.CurrentGimbal[worldIdx];
         observations[obsBase + 7] = episode.CurrentThrottle[worldIdx];
 
+        // === 1b. Distance sensors (body-frame raycasts) ===
+        if (config.SensorCount >= 4)
+        {
+            float maxRange = config.MaxSensorRange;
+            // 4 rays: forward, backward, left, right in body frame
+            // Forward = along body axis (upX, upY), Left = (-upY, upX)
+            float d0 = maxRange, d1 = maxRange, d2 = maxRange, d3 = maxRange;
+
+            for (int ci = 0; ci < config.SharedColliderCount; ci++)
+            {
+                var obb = physics.SharedOBBColliders[ci];
+                float t;
+
+                t = RayVsOBB(comX, comY, upX, upY, maxRange, obb);
+                if (t < d0) d0 = t;
+
+                t = RayVsOBB(comX, comY, -upX, -upY, maxRange, obb);
+                if (t < d1) d1 = t;
+
+                t = RayVsOBB(comX, comY, -upY, upX, maxRange, obb);
+                if (t < d2) d2 = t;
+
+                t = RayVsOBB(comX, comY, upY, -upX, maxRange, obb);
+                if (t < d3) d3 = t;
+            }
+
+            observations[obsBase + 8] = d0 / maxRange;
+            observations[obsBase + 9] = d1 / maxRange;
+            observations[obsBase + 10] = d2 / maxRange;
+            observations[obsBase + 11] = d3 / maxRange;
+        }
+
         // === 2. NN forward pass ===
         InlineNN.ForwardPassOneWorld(nn, observations, actions, worldIdx, config);
 
@@ -83,6 +115,9 @@ public static class RocketLandingStepKernel
         throttle = XMath.Max(0f, XMath.Min(1f, throttle));
         gimbal = XMath.Max(-1f, XMath.Min(1f, gimbal));
 
+        // Track previous controls for waggle penalty
+        float prevThrottle = episode.CurrentThrottle[worldIdx];
+        float prevGimbal = episode.CurrentGimbal[worldIdx];
         episode.CurrentThrottle[worldIdx] = throttle;
         episode.CurrentGimbal[worldIdx] = gimbal;
 
@@ -128,8 +163,34 @@ public static class RocketLandingStepKernel
         float upY2 = XMath.Sin(body0post.Angle);
         float angleErr = XMath.Abs(XMath.Atan2(upX2, upY2));
 
+        // Waggle penalty: accumulated control change
+        float dThrottle = throttle - prevThrottle;
+        float dGimbal = gimbal - prevGimbal;
+        float stepWaggle = dThrottle * dThrottle + dGimbal * dGimbal;
+        episode.WaggleAccum[worldIdx] += stepWaggle;
+        float waggle = episode.WaggleAccum[worldIdx];
+
         float errX = comX2 - config.PadX;
         float errY = comY2 - config.PadY;
+
+        // Obstacle death: any contact with collider index > 0 is terminal
+        if (config.ObstacleDeathEnabled != 0)
+        {
+            int contactBase2 = worldIdx * config.MaxContactsPerWorld;
+            int nContacts = physics.ContactCounts[worldIdx];
+            for (int c = 0; c < nContacts; c++)
+            {
+                var contact = physics.Contacts[contactBase2 + c];
+                if (contact.IsValid != 0 && contact.ColliderIndex > 0)
+                {
+                    episode.IsTerminal[worldIdx] = 1;
+                    episode.FitnessValues[worldIdx] = ComputeFitness(
+                        steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
+                        velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
+                    return;
+                }
+            }
+        }
 
         // Landing success
         bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
@@ -142,7 +203,7 @@ public static class RocketLandingStepKernel
             episode.HasLanded[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
                 steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 1, config.LandingBonus);
+                velX2, velY2, angleErr, 1, config.LandingBonus, waggle, config.WagglePenalty);
             return;
         }
 
@@ -152,7 +213,7 @@ public static class RocketLandingStepKernel
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
                 steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus);
+                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
             return;
         }
 
@@ -163,7 +224,7 @@ public static class RocketLandingStepKernel
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
                 steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus);
+                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
             return;
         }
 
@@ -173,7 +234,7 @@ public static class RocketLandingStepKernel
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
                 steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus);
+                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
         }
     }
 
@@ -181,7 +242,8 @@ public static class RocketLandingStepKernel
         int steps, int maxSteps,
         float comX, float comY, float padX, float padY,
         float velX, float velY, float angleErr,
-        byte hasLanded, float landingBonus)
+        byte hasLanded, float landingBonus,
+        float waggle, float wagglePenalty)
     {
         float errX = comX - padX;
         float errY = comY - padY;
@@ -203,6 +265,69 @@ public static class RocketLandingStepKernel
         if (hasLanded != 0)
             fitness += landingBonus;
 
+        // Waggle penalty: penalize accumulated control oscillation
+        fitness -= waggle * wagglePenalty;
+
         return fitness;
+    }
+
+    /// <summary>
+    /// 2D ray vs axis-aligned OBB using slab intersection.
+    /// Returns distance to hit, or maxRange if no hit.
+    /// Ray: origin (ox,oy), direction (dx,dy), max length maxRange.
+    /// OBB defined by center, local axes (UX,UY), and half-extents.
+    /// </summary>
+    private static float RayVsOBB(
+        float ox, float oy, float dx, float dy, float maxRange,
+        GPUOBBCollider obb)
+    {
+        // Transform ray into OBB local space
+        float relX = ox - obb.CX;
+        float relY = oy - obb.CY;
+
+        // OBB axes: primary = (UX, UY), secondary = (-UY, UX)
+        float localOX = relX * obb.UX + relY * obb.UY;
+        float localOY = -relX * obb.UY + relY * obb.UX;
+        float localDX = dx * obb.UX + dy * obb.UY;
+        float localDY = -dx * obb.UY + dy * obb.UX;
+
+        // Slab intersection on X axis
+        float tMin = 0f;
+        float tMax = maxRange;
+
+        if (XMath.Abs(localDX) < 1e-8f)
+        {
+            if (localOX < -obb.HalfExtentX || localOX > obb.HalfExtentX)
+                return maxRange;
+        }
+        else
+        {
+            float invD = 1f / localDX;
+            float t1 = (-obb.HalfExtentX - localOX) * invD;
+            float t2 = (obb.HalfExtentX - localOX) * invD;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tMin = XMath.Max(tMin, t1);
+            tMax = XMath.Min(tMax, t2);
+            if (tMin > tMax) return maxRange;
+        }
+
+        // Slab intersection on Y axis
+        if (XMath.Abs(localDY) < 1e-8f)
+        {
+            if (localOY < -obb.HalfExtentY || localOY > obb.HalfExtentY)
+                return maxRange;
+        }
+        else
+        {
+            float invD = 1f / localDY;
+            float t1 = (-obb.HalfExtentY - localOY) * invD;
+            float t2 = (obb.HalfExtentY - localOY) * invD;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tMin = XMath.Max(tMin, t1);
+            tMax = XMath.Min(tMax, t2);
+            if (tMin > tMax) return maxRange;
+        }
+
+        return tMin > 0f ? tMin : maxRange;
     }
 }

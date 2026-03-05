@@ -1,4 +1,5 @@
 using Evolvatron.Core;
+using Evolvatron.Core.GPU;
 using Evolvatron.Evolvion;
 using Evolvatron.Evolvion.Environments;
 using Evolvatron.Evolvion.GPU;
@@ -141,6 +142,7 @@ public class GPUvsCPUEvolutionRace
     }
 
     [Theory]
+    [InlineData(6)]
     [InlineData(12)]
     [InlineData(16)]
     public void BenchmarkGPUSolverIterations(int solverIterations)
@@ -179,6 +181,147 @@ public class GPUvsCPUEvolutionRace
             float landRate = 100f * g.Landings / (gpuPopSize * evalRounds);
             _output.WriteLine($"{t,8} | {g.BestFitness,10:F1} {g.Landings,10} {landRate,7:F1}% {g.TotalEvals,10}");
         }
+    }
+
+    /// <summary>
+    /// Evolution race with obstacles and distance sensors.
+    /// Uses 12-input NN (8 base + 4 sensors), funnel obstacles, harder spawns.
+    /// </summary>
+    [Fact]
+    public void RaceWithObstacles()
+    {
+        const int timeBudgetSeconds = 60;
+        const int popSize = 10000;
+        const int maxSteps = 900;
+        const int evalRounds = 3;
+
+        var topology = new SpeciesBuilder()
+            .AddInputRow(12)  // 8 base + 4 distance sensors
+            .AddHiddenRow(16, ActivationType.Tanh)
+            .AddHiddenRow(12, ActivationType.Tanh)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .InitializeDense(new Random(42))
+            .Build();
+
+        var obstacles = new List<GPUOBBCollider>
+        {
+            // Left angled wall
+            new GPUOBBCollider
+            {
+                CX = -8f, CY = 5f,
+                UX = MathF.Cos(30f * MathF.PI / 180f), UY = MathF.Sin(30f * MathF.PI / 180f),
+                HalfExtentX = 5f, HalfExtentY = 0.3f
+            },
+            // Right angled wall
+            new GPUOBBCollider
+            {
+                CX = 8f, CY = 5f,
+                UX = MathF.Cos(-30f * MathF.PI / 180f), UY = MathF.Sin(-30f * MathF.PI / 180f),
+                HalfExtentX = 5f, HalfExtentY = 0.3f
+            },
+            // Left platform
+            new GPUOBBCollider { CX = -6f, CY = 0f, UX = 1f, UY = 0f, HalfExtentX = 2f, HalfExtentY = 0.2f },
+            // Right platform
+            new GPUOBBCollider { CX = 6f, CY = 0f, UX = 1f, UY = 0f, HalfExtentX = 2f, HalfExtentY = 0.2f },
+        };
+
+        _output.WriteLine($"Time budget: {timeBudgetSeconds}s, Pop: {popSize}");
+        _output.WriteLine($"Obstacles: {obstacles.Count}, Sensors: 4");
+        _output.WriteLine($"MaxSteps: {maxSteps}, EvalRounds: {evalRounds}\n");
+
+        var trace = RunMegaGPUEvolutionWithObstacles(
+            topology, popSize, maxSteps, timeBudgetSeconds, evalRounds, obstacles, sensorCount: 4);
+
+        _output.WriteLine($"  {trace.Count} gens, {trace.Last().TotalEvals} evals");
+        _output.WriteLine($"  Best fitness: {trace.Last().BestFitness:F1}");
+        _output.WriteLine($"  Landings: {trace.Last().Landings}\n");
+
+        _output.WriteLine($"{"Time(s)",8} | {"Best",10} {"Landings",10} {"Land%",8} {"Evals",10}");
+        _output.WriteLine(new string('-', 55));
+
+        int gi = 0;
+        for (int t = 0; t <= timeBudgetSeconds; t += 5)
+        {
+            while (gi < trace.Count - 1 && trace[gi + 1].ElapsedSeconds <= t) gi++;
+            var g = gi < trace.Count ? trace[gi] : trace.Last();
+            float landRate = 100f * g.Landings / (popSize * evalRounds);
+            _output.WriteLine($"{t,8} | {g.BestFitness,10:F1} {g.Landings,10} {landRate,7:F1}% {g.TotalEvals,10}");
+        }
+    }
+
+    private List<TracePoint> RunMegaGPUEvolutionWithObstacles(
+        SpeciesSpec topology, int popSize, int maxSteps, int timeBudgetSeconds, int evalRounds,
+        List<GPUOBBCollider> obstacles, int sensorCount)
+    {
+        var trace = new List<TracePoint>();
+        var evolver = new Evolver(seed: 42);
+        var config = new EvolutionConfig { SpeciesCount = 1, IndividualsPerSpecies = popSize };
+        var population = evolver.InitializePopulation(config, topology);
+
+        using var megaEval = new GPURocketLandingMegaEvaluator(maxIndividuals: popSize + 100);
+        megaEval.SpawnXMin = 8f;
+        megaEval.SpawnXRange = 15f;
+        megaEval.SpawnAngleRange = 0.44f;
+        megaEval.InitialVelXRange = 4f;
+        megaEval.InitialVelYMax = 4f;
+        megaEval.MaxThrust = 130f;
+        megaEval.MaxLandingAngle = 8f * MathF.PI / 180f;
+        megaEval.Obstacles = obstacles;
+        megaEval.SensorCount = sensorCount;
+
+        var allIndividuals = population.AllSpecies.SelectMany(s => s.Individuals).ToList();
+        megaEval.EvaluatePopulation(topology, allIndividuals, seed: 99, maxSteps: maxSteps);
+
+        var overallSw = Stopwatch.StartNew();
+        int generation = 0;
+        long totalEvals = 0;
+
+        while (overallSw.Elapsed.TotalSeconds < timeBudgetSeconds)
+        {
+            allIndividuals = population.AllSpecies.SelectMany(s => s.Individuals).ToList();
+            int n = allIndividuals.Count;
+            var avgFitness = new float[n];
+            int totalLandings = 0;
+
+            for (int k = 0; k < evalRounds; k++)
+            {
+                var (fitness, landings, _) = megaEval.EvaluatePopulation(
+                    topology, allIndividuals, seed: generation * evalRounds + k, maxSteps: maxSteps);
+                for (int i = 0; i < n; i++)
+                    avgFitness[i] += fitness[i];
+                totalLandings += landings;
+            }
+            for (int i = 0; i < n; i++)
+                avgFitness[i] /= evalRounds;
+
+            int idx = 0;
+            foreach (var species in population.AllSpecies)
+            {
+                for (int i = 0; i < species.Individuals.Count; i++)
+                {
+                    var ind = species.Individuals[i];
+                    ind.Fitness = avgFitness[idx++];
+                    species.Individuals[i] = ind;
+                }
+            }
+
+            totalEvals += n * evalRounds;
+
+            trace.Add(new TracePoint
+            {
+                ElapsedSeconds = (float)overallSw.Elapsed.TotalSeconds,
+                Generation = generation,
+                BestFitness = avgFitness.Max(),
+                MeanFitness = avgFitness.Average(),
+                Landings = totalLandings,
+                TotalEvals = totalEvals
+            });
+
+            evolver.StepGeneration(population);
+            generation++;
+        }
+
+        return trace;
     }
 
     private List<TracePoint> RunGPUEvolution(
@@ -267,7 +410,6 @@ public class GPUvsCPUEvolutionRace
         var population = evolver.InitializePopulation(config, topology);
 
         using var megaEval = new GPURocketLandingMegaEvaluator(maxIndividuals: popSize + 100);
-        megaEval.SolverIterations = 8;
         megaEval.SpawnXMin = 8f;
         megaEval.SpawnXRange = 15f;
         megaEval.SpawnAngleRange = 0.44f;
@@ -293,7 +435,7 @@ public class GPUvsCPUEvolutionRace
 
             for (int k = 0; k < evalRounds; k++)
             {
-                var (fitness, landings) = megaEval.EvaluatePopulation(
+                var (fitness, landings, _) = megaEval.EvaluatePopulation(
                     topology, allIndividuals, seed: generation * evalRounds + k, maxSteps: maxSteps);
                 for (int i = 0; i < n; i++)
                     avgFitness[i] += fitness[i];

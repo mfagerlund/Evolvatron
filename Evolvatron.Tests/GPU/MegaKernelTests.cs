@@ -1,4 +1,5 @@
 using Evolvatron.Core;
+using Evolvatron.Core.GPU;
 using Evolvatron.Evolvion;
 using Evolvatron.Evolvion.GPU;
 using System.Diagnostics;
@@ -35,7 +36,7 @@ public class MegaKernelTests
 
         using var megaEval = new GPURocketLandingMegaEvaluator(maxIndividuals: 100);
 
-        var (fitness, landings) = megaEval.EvaluatePopulation(topology, individuals, seed: 42, maxSteps: 100);
+        var (fitness, landings, _) = megaEval.EvaluatePopulation(topology, individuals, seed: 42, maxSteps: 100);
 
         _output.WriteLine($"Population: {individuals.Count}");
         _output.WriteLine($"Fitness range: [{fitness.Min():F2}, {fitness.Max():F2}]");
@@ -84,7 +85,7 @@ public class MegaKernelTests
         int megaLandings;
         using (var mega = new GPURocketLandingMegaEvaluator(maxIndividuals: 300))
         {
-            (megaFitness, megaLandings) = mega.EvaluatePopulation(
+            (megaFitness, megaLandings, _) = mega.EvaluatePopulation(
                 topology, individuals, seed: seed, maxSteps: maxSteps);
         }
 
@@ -174,7 +175,7 @@ public class MegaKernelTests
         int megaLandings = 0;
         for (int k = 0; k < rounds; k++)
         {
-            var (_, landings) = mega.EvaluatePopulation(topology, individuals, seed: k + 1, maxSteps: maxSteps);
+            var (_, landings, _2) = mega.EvaluatePopulation(topology, individuals, seed: k + 1, maxSteps: maxSteps);
             megaLandings += landings;
         }
         sw.Stop();
@@ -186,5 +187,64 @@ public class MegaKernelTests
         _output.WriteLine($"Original: {originalTime.TotalMilliseconds:F0}ms ({origLandings} landings)");
         _output.WriteLine($"Mega:     {megaTime.TotalMilliseconds:F0}ms ({megaLandings} landings)");
         _output.WriteLine($"Speedup:  {speedup:F2}x");
+    }
+
+    /// <summary>
+    /// Smoke test with obstacles and distance sensors enabled.
+    /// Verifies the full obstacle+sensor pipeline compiles and runs on GPU.
+    /// </summary>
+    [Fact]
+    public void MegaEvaluator_ObstaclesAndSensors_SmokeTest()
+    {
+        var topology = new SpeciesBuilder()
+            .AddInputRow(12)  // 8 base + 4 sensor inputs
+            .AddHiddenRow(16, ActivationType.Tanh)
+            .AddHiddenRow(12, ActivationType.Tanh)
+            .AddOutputRow(2, ActivationType.Tanh)
+            .InitializeDense(new Random(42))
+            .Build();
+
+        var evolver = new Evolver(seed: 42);
+        var config = new EvolutionConfig { SpeciesCount = 1, IndividualsPerSpecies = 50 };
+        var population = evolver.InitializePopulation(config, topology);
+        var individuals = population.AllSpecies.SelectMany(s => s.Individuals).ToList();
+
+        using var megaEval = new GPURocketLandingMegaEvaluator(maxIndividuals: 100);
+        megaEval.SensorCount = 4;
+        megaEval.MaxSensorRange = 30f;
+
+        // Funnel-inspired obstacle layout
+        megaEval.Obstacles = new List<GPUOBBCollider>
+        {
+            // Left angled wall (rotated 30 degrees)
+            new GPUOBBCollider
+            {
+                CX = -8f, CY = 5f,
+                UX = MathF.Cos(30f * MathF.PI / 180f), UY = MathF.Sin(30f * MathF.PI / 180f),
+                HalfExtentX = 5f, HalfExtentY = 0.3f
+            },
+            // Right angled wall (rotated -30 degrees)
+            new GPUOBBCollider
+            {
+                CX = 8f, CY = 5f,
+                UX = MathF.Cos(-30f * MathF.PI / 180f), UY = MathF.Sin(-30f * MathF.PI / 180f),
+                HalfExtentX = 5f, HalfExtentY = 0.3f
+            },
+            // Left platform
+            new GPUOBBCollider { CX = -6f, CY = 0f, UX = 1f, UY = 0f, HalfExtentX = 2f, HalfExtentY = 0.2f },
+            // Right platform
+            new GPUOBBCollider { CX = 6f, CY = 0f, UX = 1f, UY = 0f, HalfExtentX = 2f, HalfExtentY = 0.2f },
+        };
+
+        var (fitness, landings, _) = megaEval.EvaluatePopulation(topology, individuals, seed: 42, maxSteps: 200);
+
+        _output.WriteLine($"Population: {individuals.Count}");
+        _output.WriteLine($"Obstacles: {megaEval.Obstacles.Count}");
+        _output.WriteLine($"Sensors: {megaEval.SensorCount}");
+        _output.WriteLine($"Fitness range: [{fitness.Min():F2}, {fitness.Max():F2}]");
+        _output.WriteLine($"Landings: {landings}");
+
+        Assert.Equal(individuals.Count, fitness.Length);
+        Assert.All(fitness, f => Assert.False(float.IsNaN(f)));
     }
 }
