@@ -166,272 +166,228 @@ public static class GPUBatchedJointKernels
 
     #endregion
 
-    #region Solve Joint Velocities
+    #region Solve Joint Velocities (Per-World Gauss-Seidel)
 
     /// <summary>
     /// Solve velocity constraints for all joints across all worlds.
-    /// Enforces joint constraints by applying impulses to keep anchors together.
-    /// Handles motors and angle limits.
-    /// One thread per joint.
+    /// One thread per WORLD — loops sequentially through joints within each world
+    /// for Gauss-Seidel convergence (each joint sees updated body state from previous joint).
+    /// Eliminates atomic race conditions when multiple joints share a body.
+    ///
+    /// Joints use GLOBAL body indices (set by non-batched init kernel).
     /// </summary>
-    public static void BatchedSolveJointVelocitiesKernel(
-        Index1D globalJointIdx,
+    public static void BatchedSolveJointVelocitiesPerWorldKernel(
+        Index1D worldIdx,
         ArrayView<GPUJointConstraint> constraints,
         ArrayView<GPURigidBody> bodies,
         int jointsPerWorld,
-        int bodiesPerWorld,
         float dt)
     {
-        var constraint = constraints[globalJointIdx];
+        int jointBase = worldIdx * jointsPerWorld;
 
-        // Skip invalid constraints (both bodies static)
-        if (constraint.Mass11 == 0f && constraint.Mass22 == 0f &&
-            constraint.MotorMass == 0f && constraint.AngleLimitMass == 0f)
+        for (int j = 0; j < jointsPerWorld; j++)
         {
-            return;
-        }
+            int globalJointIdx = jointBase + j;
+            var constraint = constraints[globalJointIdx];
 
-        int worldIdx = globalJointIdx / jointsPerWorld;
-        int bodyAGlobal = worldIdx * bodiesPerWorld + constraint.BodyAIndex;
-        int bodyBGlobal = worldIdx * bodiesPerWorld + constraint.BodyBIndex;
+            // Skip invalid constraints (both bodies static)
+            if (constraint.Mass11 == 0f && constraint.Mass22 == 0f &&
+                constraint.MotorMass == 0f && constraint.AngleLimitMass == 0f)
+                continue;
 
-        var bodyA = bodies[bodyAGlobal];
-        var bodyB = bodies[bodyBGlobal];
+            // Global body indices (stored by init kernel)
+            int bodyAGlobal = constraint.BodyAIndex;
+            int bodyBGlobal = constraint.BodyBIndex;
 
-        // Transform anchors to world space
-        float cosA = XMath.Cos(bodyA.Angle);
-        float sinA = XMath.Sin(bodyA.Angle);
-        float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
-        float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
+            var bodyA = bodies[bodyAGlobal];
+            var bodyB = bodies[bodyBGlobal];
 
-        float cosB = XMath.Cos(bodyB.Angle);
-        float sinB = XMath.Sin(bodyB.Angle);
-        float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
-        float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
+            // Transform anchors to world space
+            float cosA = XMath.Cos(bodyA.Angle);
+            float sinA = XMath.Sin(bodyA.Angle);
+            float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
+            float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
 
-        // === SOLVE MOTOR ===
-        if (constraint.EnableMotor != 0 && constraint.MotorMass > 0f)
-        {
-            // Motor constraint: enforce relative angular velocity
-            float angularVel = bodyB.AngularVel - bodyA.AngularVel;
-            float motorError = angularVel - constraint.MotorSpeed;
+            float cosB = XMath.Cos(bodyB.Angle);
+            float sinB = XMath.Sin(bodyB.Angle);
+            float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
+            float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
 
-            float motorImpulse = -constraint.MotorMass * motorError;
-
-            // Clamp to max torque
-            float oldMotorImpulse = constraint.MotorImpulse;
-            float maxImpulse = constraint.MaxMotorTorque * dt;
-            float newMotorImpulse = oldMotorImpulse + motorImpulse;
-            newMotorImpulse = XMath.Max(-maxImpulse, XMath.Min(newMotorImpulse, maxImpulse));
-            motorImpulse = newMotorImpulse - oldMotorImpulse;
-            constraint.MotorImpulse = newMotorImpulse;
-
-            // Apply motor impulse (using atomics for thread safety)
-            Atomic.Add(ref bodies[bodyAGlobal].AngularVel, -bodyA.InvInertia * motorImpulse);
-            Atomic.Add(ref bodies[bodyBGlobal].AngularVel, bodyB.InvInertia * motorImpulse);
-
-            // Update local copies for subsequent calculations
-            bodyA.AngularVel -= bodyA.InvInertia * motorImpulse;
-            bodyB.AngularVel += bodyB.InvInertia * motorImpulse;
-        }
-
-        // === SOLVE ANGLE LIMITS ===
-        if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
-        {
-            float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
-
-            // Normalize angle to [-pi, pi]
-            while (angle > XMath.PI) angle -= 2f * XMath.PI;
-            while (angle < -XMath.PI) angle += 2f * XMath.PI;
-
-            float limitImpulse = 0f;
-
-            if (angle < constraint.LowerAngle)
+            // === SOLVE MOTOR ===
+            if (constraint.EnableMotor != 0 && constraint.MotorMass > 0f)
             {
-                // Lower limit violated
-                float angularError = angle - constraint.LowerAngle;
-                limitImpulse = -constraint.AngleLimitMass * angularError;
+                float angularVel = bodyB.AngularVel - bodyA.AngularVel;
+                float motorError = angularVel - constraint.MotorSpeed;
+                float motorImpulse = -constraint.MotorMass * motorError;
 
-                // Limit must push angle upward (positive impulse)
-                float oldImpulse = constraint.AngleLimitImpulse;
-                float newImpulse = oldImpulse + limitImpulse;
-                newImpulse = XMath.Max(newImpulse, 0f);
-                limitImpulse = newImpulse - oldImpulse;
-                constraint.AngleLimitImpulse = newImpulse;
-            }
-            else if (angle > constraint.UpperAngle)
-            {
-                // Upper limit violated
-                float angularError = angle - constraint.UpperAngle;
-                limitImpulse = -constraint.AngleLimitMass * angularError;
+                float oldMotorImpulse = constraint.MotorImpulse;
+                float maxImpulse = constraint.MaxMotorTorque * dt;
+                float newMotorImpulse = oldMotorImpulse + motorImpulse;
+                newMotorImpulse = XMath.Max(-maxImpulse, XMath.Min(newMotorImpulse, maxImpulse));
+                motorImpulse = newMotorImpulse - oldMotorImpulse;
+                constraint.MotorImpulse = newMotorImpulse;
 
-                // Limit must push angle downward (negative impulse)
-                float oldImpulse = constraint.AngleLimitImpulse;
-                float newImpulse = oldImpulse + limitImpulse;
-                newImpulse = XMath.Min(newImpulse, 0f);
-                limitImpulse = newImpulse - oldImpulse;
-                constraint.AngleLimitImpulse = newImpulse;
+                bodyA.AngularVel -= bodyA.InvInertia * motorImpulse;
+                bodyB.AngularVel += bodyB.InvInertia * motorImpulse;
             }
 
-            if (XMath.Abs(limitImpulse) > Epsilon)
+            // === SOLVE ANGLE LIMITS ===
+            if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
             {
-                // Apply limit impulse (using atomics for thread safety)
-                Atomic.Add(ref bodies[bodyAGlobal].AngularVel, -bodyA.InvInertia * limitImpulse);
-                Atomic.Add(ref bodies[bodyBGlobal].AngularVel, bodyB.InvInertia * limitImpulse);
+                float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
+                angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
-                // Update local copies
+                float limitImpulse = 0f;
+
+                if (angle < constraint.LowerAngle)
+                {
+                    float angularError = angle - constraint.LowerAngle;
+                    limitImpulse = -constraint.AngleLimitMass * angularError;
+                    float oldImpulse = constraint.AngleLimitImpulse;
+                    float newImpulse = XMath.Max(oldImpulse + limitImpulse, 0f);
+                    limitImpulse = newImpulse - oldImpulse;
+                    constraint.AngleLimitImpulse = newImpulse;
+                }
+                else if (angle > constraint.UpperAngle)
+                {
+                    float angularError = angle - constraint.UpperAngle;
+                    limitImpulse = -constraint.AngleLimitMass * angularError;
+                    float oldImpulse = constraint.AngleLimitImpulse;
+                    float newImpulse = XMath.Min(oldImpulse + limitImpulse, 0f);
+                    limitImpulse = newImpulse - oldImpulse;
+                    constraint.AngleLimitImpulse = newImpulse;
+                }
+
                 bodyA.AngularVel -= bodyA.InvInertia * limitImpulse;
                 bodyB.AngularVel += bodyB.InvInertia * limitImpulse;
             }
+
+            // === SOLVE POSITION CONSTRAINT ===
+            // vA = velA + omegaA × rA, vB = velB + omegaB × rB
+            float vAX = bodyA.VelX - bodyA.AngularVel * rAY;
+            float vAY = bodyA.VelY + bodyA.AngularVel * rAX;
+            float vBX = bodyB.VelX - bodyB.AngularVel * rBY;
+            float vBY = bodyB.VelY + bodyB.AngularVel * rBX;
+
+            float relVelX = vBX - vAX;
+            float relVelY = vBY - vAY;
+
+            float lambdaX = -(constraint.Mass11 * relVelX + constraint.Mass12 * relVelY);
+            float lambdaY = -(constraint.Mass21 * relVelX + constraint.Mass22 * relVelY);
+
+            constraint.ImpulseX += lambdaX;
+            constraint.ImpulseY += lambdaY;
+
+            bodyA.VelX -= bodyA.InvMass * lambdaX;
+            bodyA.VelY -= bodyA.InvMass * lambdaY;
+            bodyA.AngularVel -= bodyA.InvInertia * (rAX * lambdaY - rAY * lambdaX);
+
+            bodyB.VelX += bodyB.InvMass * lambdaX;
+            bodyB.VelY += bodyB.InvMass * lambdaY;
+            bodyB.AngularVel += bodyB.InvInertia * (rBX * lambdaY - rBY * lambdaX);
+
+            // Write back (Gauss-Seidel: next joint sees updated body state)
+            bodies[bodyAGlobal] = bodyA;
+            bodies[bodyBGlobal] = bodyB;
+            constraints[globalJointIdx] = constraint;
         }
-
-        // === SOLVE POSITION CONSTRAINT ===
-        // Constraint: anchors must coincide in world space
-        // C = (posB + rB) - (posA + rA) = 0
-
-        // Compute relative velocity at anchor points
-        // vA = velA + omegaA x rA
-        // vB = velB + omegaB x rB
-        float vAX = bodyA.VelX - bodyA.AngularVel * rAY;
-        float vAY = bodyA.VelY + bodyA.AngularVel * rAX;
-        float vBX = bodyB.VelX - bodyB.AngularVel * rBY;
-        float vBY = bodyB.VelY + bodyB.AngularVel * rBX;
-
-        // Relative velocity
-        float relVelX = vBX - vAX;
-        float relVelY = vBY - vAY;
-
-        // Compute impulse to enforce constraint
-        // lambda = -Mass * relVel
-        float lambdaX = -(constraint.Mass11 * relVelX + constraint.Mass12 * relVelY);
-        float lambdaY = -(constraint.Mass21 * relVelX + constraint.Mass22 * relVelY);
-
-        // Accumulate impulse
-        constraint.ImpulseX += lambdaX;
-        constraint.ImpulseY += lambdaY;
-
-        // Apply impulse to bodies (using atomics for thread safety)
-        // Body A: subtract impulse
-        Atomic.Add(ref bodies[bodyAGlobal].VelX, -bodyA.InvMass * lambdaX);
-        Atomic.Add(ref bodies[bodyAGlobal].VelY, -bodyA.InvMass * lambdaY);
-        Atomic.Add(ref bodies[bodyAGlobal].AngularVel, -bodyA.InvInertia * (rAX * lambdaY - rAY * lambdaX));
-
-        // Body B: add impulse
-        Atomic.Add(ref bodies[bodyBGlobal].VelX, bodyB.InvMass * lambdaX);
-        Atomic.Add(ref bodies[bodyBGlobal].VelY, bodyB.InvMass * lambdaY);
-        Atomic.Add(ref bodies[bodyBGlobal].AngularVel, bodyB.InvInertia * (rBX * lambdaY - rBY * lambdaX));
-
-        // Write back updated constraint
-        constraints[globalJointIdx] = constraint;
     }
 
     #endregion
 
-    #region Solve Joint Positions
+    #region Solve Joint Positions (Per-World Gauss-Seidel)
 
     /// <summary>
     /// Solve position constraints to correct drift.
+    /// One thread per WORLD — loops sequentially through joints for Gauss-Seidel convergence.
     /// Directly adjusts positions/angles when anchors have separated.
-    /// One thread per joint.
     /// </summary>
-    public static void BatchedSolveJointPositionsKernel(
-        Index1D globalJointIdx,
+    public static void BatchedSolveJointPositionsPerWorldKernel(
+        Index1D worldIdx,
         ArrayView<GPUJointConstraint> constraints,
         ArrayView<GPURigidBody> bodies,
-        int jointsPerWorld,
-        int bodiesPerWorld)
+        int jointsPerWorld)
     {
-        var constraint = constraints[globalJointIdx];
+        int jointBase = worldIdx * jointsPerWorld;
 
-        // Skip invalid constraints
-        if (constraint.Mass11 == 0f && constraint.Mass22 == 0f && constraint.AngleLimitMass == 0f)
+        for (int j = 0; j < jointsPerWorld; j++)
         {
-            return;
-        }
+            int globalJointIdx = jointBase + j;
+            var constraint = constraints[globalJointIdx];
 
-        int worldIdx = globalJointIdx / jointsPerWorld;
-        int bodyAGlobal = worldIdx * bodiesPerWorld + constraint.BodyAIndex;
-        int bodyBGlobal = worldIdx * bodiesPerWorld + constraint.BodyBIndex;
+            // Skip invalid constraints
+            if (constraint.Mass11 == 0f && constraint.Mass22 == 0f && constraint.AngleLimitMass == 0f)
+                continue;
 
-        var bodyA = bodies[bodyAGlobal];
-        var bodyB = bodies[bodyBGlobal];
+            int bodyAGlobal = constraint.BodyAIndex;
+            int bodyBGlobal = constraint.BodyBIndex;
 
-        // Transform anchors to world space
-        float cosA = XMath.Cos(bodyA.Angle);
-        float sinA = XMath.Sin(bodyA.Angle);
-        float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
-        float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
+            var bodyA = bodies[bodyAGlobal];
+            var bodyB = bodies[bodyBGlobal];
 
-        float cosB = XMath.Cos(bodyB.Angle);
-        float sinB = XMath.Sin(bodyB.Angle);
-        float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
-        float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
+            // Transform anchors to world space
+            float cosA = XMath.Cos(bodyA.Angle);
+            float sinA = XMath.Sin(bodyA.Angle);
+            float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
+            float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
 
-        // Compute position error
-        float worldAX = bodyA.X + rAX;
-        float worldAY = bodyA.Y + rAY;
-        float worldBX = bodyB.X + rBX;
-        float worldBY = bodyB.Y + rBY;
+            float cosB = XMath.Cos(bodyB.Angle);
+            float sinB = XMath.Sin(bodyB.Angle);
+            float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
+            float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
 
-        float errorX = worldBX - worldAX;
-        float errorY = worldBY - worldAY;
-        float errorLength = XMath.Sqrt(errorX * errorX + errorY * errorY);
+            // Compute position error
+            float worldAX = bodyA.X + rAX;
+            float worldAY = bodyA.Y + rAY;
+            float worldBX = bodyB.X + rBX;
+            float worldBY = bodyB.Y + rBY;
 
-        if (errorLength > LinearSlop)
-        {
-            // Clamp correction
-            float correction = XMath.Min(errorLength, MaxLinearCorrection);
-            float scale = correction / errorLength;
-            errorX *= scale;
-            errorY *= scale;
+            float errorX = worldBX - worldAX;
+            float errorY = worldBY - worldAY;
+            float errorLength = XMath.Sqrt(errorX * errorX + errorY * errorY);
 
-            // Compute position impulse
-            float impulseX = -(constraint.Mass11 * errorX + constraint.Mass12 * errorY);
-            float impulseY = -(constraint.Mass21 * errorX + constraint.Mass22 * errorY);
-
-            // Apply position corrections (using atomics for thread safety)
-            // Body A: subtract correction
-            Atomic.Add(ref bodies[bodyAGlobal].X, -bodyA.InvMass * impulseX);
-            Atomic.Add(ref bodies[bodyAGlobal].Y, -bodyA.InvMass * impulseY);
-            Atomic.Add(ref bodies[bodyAGlobal].Angle, -bodyA.InvInertia * (rAX * impulseY - rAY * impulseX));
-
-            // Body B: add correction
-            Atomic.Add(ref bodies[bodyBGlobal].X, bodyB.InvMass * impulseX);
-            Atomic.Add(ref bodies[bodyBGlobal].Y, bodyB.InvMass * impulseY);
-            Atomic.Add(ref bodies[bodyBGlobal].Angle, bodyB.InvInertia * (rBX * impulseY - rBY * impulseX));
-        }
-
-        // Solve angle limit position errors
-        if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
-        {
-            // Re-read body angles in case they were modified by position correction above
-            float angleA = bodies[bodyAGlobal].Angle;
-            float angleB = bodies[bodyBGlobal].Angle;
-
-            float angle = angleB - angleA - constraint.ReferenceAngle;
-
-            // Normalize angle to [-pi, pi]
-            while (angle > XMath.PI) angle -= 2f * XMath.PI;
-            while (angle < -XMath.PI) angle += 2f * XMath.PI;
-
-            float angleError = 0f;
-            if (angle < constraint.LowerAngle - AngularSlop)
+            if (errorLength > LinearSlop)
             {
-                angleError = angle - constraint.LowerAngle;
-            }
-            else if (angle > constraint.UpperAngle + AngularSlop)
-            {
-                angleError = angle - constraint.UpperAngle;
+                float correction = XMath.Min(errorLength, MaxLinearCorrection);
+                float scale = correction / errorLength;
+                errorX *= scale;
+                errorY *= scale;
+
+                float impulseX = -(constraint.Mass11 * errorX + constraint.Mass12 * errorY);
+                float impulseY = -(constraint.Mass21 * errorX + constraint.Mass22 * errorY);
+
+                bodyA.X -= bodyA.InvMass * impulseX;
+                bodyA.Y -= bodyA.InvMass * impulseY;
+                bodyA.Angle -= bodyA.InvInertia * (rAX * impulseY - rAY * impulseX);
+
+                bodyB.X += bodyB.InvMass * impulseX;
+                bodyB.Y += bodyB.InvMass * impulseY;
+                bodyB.Angle += bodyB.InvInertia * (rBX * impulseY - rBY * impulseX);
             }
 
-            if (XMath.Abs(angleError) > Epsilon)
+            // Solve angle limit position errors
+            if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
             {
-                float angleImpulse = -constraint.AngleLimitMass * angleError;
+                float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
+                angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
-                // Apply angle corrections (using atomics for thread safety)
-                Atomic.Add(ref bodies[bodyAGlobal].Angle, -bodyA.InvInertia * angleImpulse);
-                Atomic.Add(ref bodies[bodyBGlobal].Angle, bodyB.InvInertia * angleImpulse);
+                float angleError = 0f;
+                if (angle < constraint.LowerAngle - AngularSlop)
+                    angleError = angle - constraint.LowerAngle;
+                else if (angle > constraint.UpperAngle + AngularSlop)
+                    angleError = angle - constraint.UpperAngle;
+
+                if (XMath.Abs(angleError) > Epsilon)
+                {
+                    float angleImpulse = -constraint.AngleLimitMass * angleError;
+                    bodyA.Angle -= bodyA.InvInertia * angleImpulse;
+                    bodyB.Angle += bodyB.InvInertia * angleImpulse;
+                }
             }
+
+            // Write back (Gauss-Seidel: next joint sees updated body state)
+            bodies[bodyAGlobal] = bodyA;
+            bodies[bodyBGlobal] = bodyB;
         }
     }
 

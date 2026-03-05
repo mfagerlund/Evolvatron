@@ -216,9 +216,8 @@ public static class GPURigidBodyJointKernels
         {
             float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
 
-            // Normalize angle to [-pi, pi]
-            while (angle > XMath.PI) angle -= 2f * XMath.PI;
-            while (angle < -XMath.PI) angle += 2f * XMath.PI;
+            // Normalize angle to [-pi, pi] (branchless to avoid GPU warp divergence)
+            angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
             float limitImpulse = 0f;
 
@@ -380,9 +379,8 @@ public static class GPURigidBodyJointKernels
 
             float angle = angleB - angleA - constraint.ReferenceAngle;
 
-            // Normalize angle to [-pi, pi]
-            while (angle > XMath.PI) angle -= 2f * XMath.PI;
-            while (angle < -XMath.PI) angle += 2f * XMath.PI;
+            // Normalize angle to [-pi, pi] (branchless to avoid GPU warp divergence)
+            angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
             float angleError = 0f;
             if (angle < constraint.LowerAngle - AngularSlop)

@@ -88,7 +88,7 @@ public sealed class CPUStepper : IStepper
         for (int iter = 0; iter < cfg.XpbdIterations; iter++)
         {
             ImpulseContactSolver.SolveVelocityConstraints(world, rigidBodyContacts);
-            RigidBodyJointSolver.SolveVelocityConstraints(world, jointConstraints);
+            RigidBodyJointSolver.SolveVelocityConstraints(world, jointConstraints, dt);
         }
 
         // Solve position constraints for stability

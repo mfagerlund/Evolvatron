@@ -72,42 +72,16 @@ public static class GPUBatchedContactKernels
         int geomGlobalIdx = worldIdx * geomsPerWorld + geomLocalIdx;
         var geom = geoms[geomGlobalIdx];
 
-        // Find which body this geom belongs to
-        // Scan through bodies in this world to find the owner
-        int bodyGlobalIdx = -1;
-        int geomLocalIdxInBody = -1;
-
-        for (int b = 0; b < bodiesPerWorld; b++)
-        {
-            int bIdx = worldIdx * bodiesPerWorld + b;
-            var body = bodies[bIdx];
-            if (body.InvMass <= 0f) continue; // Skip static bodies
-
-            // Check if this geom belongs to this body
-            // GeomStartIndex in batched mode is local to the world
-            int geomStart = body.GeomStartIndex;
-            int geomEnd = geomStart + body.GeomCount;
-
-            if (geomLocalIdx >= geomStart && geomLocalIdx < geomEnd)
-            {
-                bodyGlobalIdx = bIdx;
-                geomLocalIdxInBody = geomLocalIdx - geomStart;
-                break;
-            }
-        }
-
-        // If no body owns this geom (or body is static), skip
-        if (bodyGlobalIdx < 0)
-            return;
-
+        // O(1) body lookup using precomputed BodyIndex
+        int bodyGlobalIdx = worldIdx * bodiesPerWorld + geom.BodyIndex;
         var body2 = bodies[bodyGlobalIdx];
+        if (body2.InvMass <= 0f) return;
+
         var obb = sharedColliders[colliderIdx];
 
-        // Transform geom to world space
-        float cosA = XMath.Cos(body2.Angle);
-        float sinA = XMath.Sin(body2.Angle);
-        float geomWorldX = body2.X + geom.LocalX * cosA - geom.LocalY * sinA;
-        float geomWorldY = body2.Y + geom.LocalX * sinA + geom.LocalY * cosA;
+        // Use precomputed world-space position from UpdateGeomPositionsKernel
+        float geomWorldX = geom.WorldX;
+        float geomWorldY = geom.WorldY;
 
         // Circle vs OBB SDF
         float phi, nx, ny;
@@ -170,7 +144,7 @@ public static class GPUBatchedContactKernels
             TangentImpulse = 0f,
             Friction = friction,
             Restitution = restitution,
-            GeomIndex = geomLocalIdxInBody,
+            GeomIndex = geomLocalIdx - body2.GeomStartIndex,
             ColliderType = 2, // OBB
             ColliderIndex = colliderIdx,
             IsValid = 1
@@ -213,38 +187,16 @@ public static class GPUBatchedContactKernels
         int geomGlobalIdx = worldIdx * geomsPerWorld + geomLocalIdx;
         var geom = geoms[geomGlobalIdx];
 
-        // Find which body this geom belongs to
-        int bodyGlobalIdx = -1;
-        int geomLocalIdxInBody = -1;
-
-        for (int b = 0; b < bodiesPerWorld; b++)
-        {
-            int bIdx = worldIdx * bodiesPerWorld + b;
-            var body = bodies[bIdx];
-            if (body.InvMass <= 0f) continue;
-
-            int geomStart = body.GeomStartIndex;
-            int geomEnd = geomStart + body.GeomCount;
-
-            if (geomLocalIdx >= geomStart && geomLocalIdx < geomEnd)
-            {
-                bodyGlobalIdx = bIdx;
-                geomLocalIdxInBody = geomLocalIdx - geomStart;
-                break;
-            }
-        }
-
-        if (bodyGlobalIdx < 0)
-            return;
-
+        // O(1) body lookup using precomputed BodyIndex
+        int bodyGlobalIdx = worldIdx * bodiesPerWorld + geom.BodyIndex;
         var body2 = bodies[bodyGlobalIdx];
+        if (body2.InvMass <= 0f) return;
+
         var circle = sharedColliders[colliderIdx];
 
-        // Transform geom to world space
-        float cosA = XMath.Cos(body2.Angle);
-        float sinA = XMath.Sin(body2.Angle);
-        float geomWorldX = body2.X + geom.LocalX * cosA - geom.LocalY * sinA;
-        float geomWorldY = body2.Y + geom.LocalX * sinA + geom.LocalY * cosA;
+        // Use precomputed world-space position from UpdateGeomPositionsKernel
+        float geomWorldX = geom.WorldX;
+        float geomWorldY = geom.WorldY;
 
         // Circle-circle distance
         float dx = geomWorldX - circle.CX;
@@ -321,7 +273,7 @@ public static class GPUBatchedContactKernels
             TangentImpulse = 0f,
             Friction = friction,
             Restitution = restitution,
-            GeomIndex = geomLocalIdxInBody,
+            GeomIndex = geomLocalIdx - body2.GeomStartIndex,
             ColliderType = 0, // Circle
             ColliderIndex = colliderIdx,
             IsValid = 1
@@ -363,38 +315,16 @@ public static class GPUBatchedContactKernels
         int geomGlobalIdx = worldIdx * geomsPerWorld + geomLocalIdx;
         var geom = geoms[geomGlobalIdx];
 
-        // Find which body this geom belongs to
-        int bodyGlobalIdx = -1;
-        int geomLocalIdxInBody = -1;
-
-        for (int b = 0; b < bodiesPerWorld; b++)
-        {
-            int bIdx = worldIdx * bodiesPerWorld + b;
-            var body = bodies[bIdx];
-            if (body.InvMass <= 0f) continue;
-
-            int geomStart = body.GeomStartIndex;
-            int geomEnd = geomStart + body.GeomCount;
-
-            if (geomLocalIdx >= geomStart && geomLocalIdx < geomEnd)
-            {
-                bodyGlobalIdx = bIdx;
-                geomLocalIdxInBody = geomLocalIdx - geomStart;
-                break;
-            }
-        }
-
-        if (bodyGlobalIdx < 0)
-            return;
-
+        // O(1) body lookup using precomputed BodyIndex
+        int bodyGlobalIdx = worldIdx * bodiesPerWorld + geom.BodyIndex;
         var body2 = bodies[bodyGlobalIdx];
+        if (body2.InvMass <= 0f) return;
+
         var capsule = sharedColliders[colliderIdx];
 
-        // Transform geom to world space
-        float cosA = XMath.Cos(body2.Angle);
-        float sinA = XMath.Sin(body2.Angle);
-        float geomWorldX = body2.X + geom.LocalX * cosA - geom.LocalY * sinA;
-        float geomWorldY = body2.Y + geom.LocalX * sinA + geom.LocalY * cosA;
+        // Use precomputed world-space position from UpdateGeomPositionsKernel
+        float geomWorldX = geom.WorldX;
+        float geomWorldY = geom.WorldY;
 
         // Circle vs Capsule SDF
         float phi, nx, ny;
@@ -452,7 +382,7 @@ public static class GPUBatchedContactKernels
             TangentImpulse = 0f,
             Friction = friction,
             Restitution = restitution,
-            GeomIndex = geomLocalIdxInBody,
+            GeomIndex = geomLocalIdx - body2.GeomStartIndex,
             ColliderType = 1, // Capsule
             ColliderIndex = colliderIdx,
             IsValid = 1
@@ -466,12 +396,14 @@ public static class GPUBatchedContactKernels
     #region Contact Velocity Solving
 
     /// <summary>
-    /// Solve contact velocity constraints for all worlds.
-    /// Uses sequential impulse method with friction (Coulomb cone).
-    /// One thread per contact slot across all worlds.
+    /// Solve contact velocity constraints for all worlds using Gauss-Seidel ordering.
+    /// One thread per WORLD — loops through contacts sequentially within each world.
+    /// This matches CPU's ImpulseContactSolver exactly: each contact sees the updated
+    /// body state from the previous contact, giving much better convergence than
+    /// the Jacobi (parallel per-contact) approach.
     /// </summary>
     public static void BatchedSolveContactVelocitiesKernel(
-        Index1D globalContactIdx,
+        Index1D worldIdx,
         ArrayView<GPUContactConstraint> contacts,
         ArrayView<GPURigidBody> bodies,
         ArrayView<int> contactCounts,
@@ -479,91 +411,77 @@ public static class GPUBatchedContactKernels
         int bodiesPerWorld,
         int maxContactsPerWorld)
     {
-        // Compute world index and local contact index
-        int worldIdx = globalContactIdx / maxContactsPerWorld;
-        int localContactIdx = globalContactIdx % maxContactsPerWorld;
-
         if (worldIdx >= worldCount)
             return;
 
-        // Check if this contact slot is valid
         int validContactCount = contactCounts[worldIdx];
-        if (localContactIdx >= validContactCount)
+        if (validContactCount <= 0)
             return;
 
-        var contact = contacts[globalContactIdx];
-        if (contact.IsValid == 0)
-            return;
+        int contactBase = worldIdx * maxContactsPerWorld;
+        int bodyBase = worldIdx * bodiesPerWorld;
 
-        // Get the body (RigidBodyIndex is local to the world)
-        int bodyGlobalIdx = worldIdx * bodiesPerWorld + contact.RigidBodyIndex;
-        var body = bodies[bodyGlobalIdx];
+        // Sequential Gauss-Seidel: process each contact in order
+        for (int c = 0; c < validContactCount; c++)
+        {
+            int contactGlobalIdx = contactBase + c;
+            var contact = contacts[contactGlobalIdx];
+            if (contact.IsValid == 0)
+                continue;
 
-        if (body.InvMass <= 0f)
-            return;
+            int bodyGlobalIdx = bodyBase + contact.RigidBodyIndex;
+            var body = bodies[bodyGlobalIdx];
 
-        // === FRICTION (solve tangent constraint first) ===
+            if (body.InvMass <= 0f)
+                continue;
 
-        // Relative velocity at contact point
-        float vx = body.VelX - body.AngularVel * contact.RA_Y;
-        float vy = body.VelY + body.AngularVel * contact.RA_X;
+            // === FRICTION (solve tangent constraint first) ===
 
-        // Tangential velocity
-        float vt = vx * contact.TangentX + vy * contact.TangentY;
+            float vx = body.VelX - body.AngularVel * contact.RA_Y;
+            float vy = body.VelY + body.AngularVel * contact.RA_X;
 
-        // Compute tangent impulse
-        float lambda = -contact.TangentMass * vt;
+            float vt = vx * contact.TangentX + vy * contact.TangentY;
+            float lambda = -contact.TangentMass * vt;
 
-        // Coulomb friction cone clamp
-        float maxFriction = contact.Friction * contact.NormalImpulse;
-        float oldTangentImpulse = contact.TangentImpulse;
-        float newTangentImpulse = oldTangentImpulse + lambda;
-        newTangentImpulse = XMath.Max(-maxFriction, XMath.Min(newTangentImpulse, maxFriction));
-        lambda = newTangentImpulse - oldTangentImpulse;
-        contact.TangentImpulse = newTangentImpulse;
+            float maxFriction = contact.Friction * contact.NormalImpulse;
+            float oldTangentImpulse = contact.TangentImpulse;
+            float newTangentImpulse = oldTangentImpulse + lambda;
+            newTangentImpulse = XMath.Max(-maxFriction, XMath.Min(newTangentImpulse, maxFriction));
+            lambda = newTangentImpulse - oldTangentImpulse;
+            contact.TangentImpulse = newTangentImpulse;
 
-        // Apply tangent impulse
-        float px = contact.TangentX * lambda;
-        float py = contact.TangentY * lambda;
+            float px = contact.TangentX * lambda;
+            float py = contact.TangentY * lambda;
 
-        Atomic.Add(ref bodies[bodyGlobalIdx].VelX, body.InvMass * px);
-        Atomic.Add(ref bodies[bodyGlobalIdx].VelY, body.InvMass * py);
-        Atomic.Add(ref bodies[bodyGlobalIdx].AngularVel, body.InvInertia * (contact.RA_X * py - contact.RA_Y * px));
+            body.VelX += body.InvMass * px;
+            body.VelY += body.InvMass * py;
+            body.AngularVel += body.InvInertia * (contact.RA_X * py - contact.RA_Y * px);
 
-        // Update local velocity for normal solve
-        body.VelX += body.InvMass * px;
-        body.VelY += body.InvMass * py;
-        body.AngularVel += body.InvInertia * (contact.RA_X * py - contact.RA_Y * px);
+            // === NORMAL (solve normal constraint) ===
 
-        // === NORMAL (solve normal constraint) ===
+            vx = body.VelX - body.AngularVel * contact.RA_Y;
+            vy = body.VelY + body.AngularVel * contact.RA_X;
 
-        // Recompute relative velocity after friction
-        vx = body.VelX - body.AngularVel * contact.RA_Y;
-        vy = body.VelY + body.AngularVel * contact.RA_X;
+            float vn = vx * contact.NormalX + vy * contact.NormalY;
+            lambda = -contact.NormalMass * (vn - contact.VelocityBias);
 
-        // Normal velocity
-        float vn = vx * contact.NormalX + vy * contact.NormalY;
+            float oldNormalImpulse = contact.NormalImpulse;
+            float newNormalImpulse = oldNormalImpulse + lambda;
+            newNormalImpulse = XMath.Max(newNormalImpulse, 0f);
+            lambda = newNormalImpulse - oldNormalImpulse;
+            contact.NormalImpulse = newNormalImpulse;
 
-        // Compute normal impulse with velocity bias
-        lambda = -contact.NormalMass * (vn - contact.VelocityBias);
+            px = contact.NormalX * lambda;
+            py = contact.NormalY * lambda;
 
-        // Clamp (normal impulse must be non-negative)
-        float oldNormalImpulse = contact.NormalImpulse;
-        float newNormalImpulse = oldNormalImpulse + lambda;
-        newNormalImpulse = XMath.Max(newNormalImpulse, 0f);
-        lambda = newNormalImpulse - oldNormalImpulse;
-        contact.NormalImpulse = newNormalImpulse;
+            body.VelX += body.InvMass * px;
+            body.VelY += body.InvMass * py;
+            body.AngularVel += body.InvInertia * (contact.RA_X * py - contact.RA_Y * px);
 
-        // Apply normal impulse
-        px = contact.NormalX * lambda;
-        py = contact.NormalY * lambda;
-
-        Atomic.Add(ref bodies[bodyGlobalIdx].VelX, body.InvMass * px);
-        Atomic.Add(ref bodies[bodyGlobalIdx].VelY, body.InvMass * py);
-        Atomic.Add(ref bodies[bodyGlobalIdx].AngularVel, body.InvInertia * (contact.RA_X * py - contact.RA_Y * px));
-
-        // Write back updated contact (accumulated impulses)
-        contacts[globalContactIdx] = contact;
+            // Write back updated body and contact
+            bodies[bodyGlobalIdx] = body;
+            contacts[contactGlobalIdx] = contact;
+        }
     }
 
     #endregion

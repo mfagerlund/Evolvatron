@@ -129,7 +129,7 @@ public static class RigidBodyJointSolver
     /// Solve velocity constraints for all joints.
     /// This enforces the joint constraints by applying impulses.
     /// </summary>
-    public static void SolveVelocityConstraints(WorldState world, List<RevoluteJointConstraint> constraints)
+    public static void SolveVelocityConstraints(WorldState world, List<RevoluteJointConstraint> constraints, float dt)
     {
         for (int i = 0; i < constraints.Count; i++)
         {
@@ -159,7 +159,7 @@ public static class RigidBodyJointSolver
 
                 // Clamp to max torque
                 float oldMotorImpulse = constraint.MotorImpulse;
-                float maxImpulse = constraint.MaxMotorTorque * (1f / 240f); // Assuming dt = 1/240
+                float maxImpulse = constraint.MaxMotorTorque * dt;
                 constraint.MotorImpulse = MathF.Max(-maxImpulse, MathF.Min(oldMotorImpulse + motorImpulse, maxImpulse));
                 motorImpulse = constraint.MotorImpulse - oldMotorImpulse;
 

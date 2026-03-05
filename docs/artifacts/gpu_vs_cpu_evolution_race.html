@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>GPU vs CPU Evolution Race — Rocket Landing</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #1a1a2e; color: #e0e0e0; margin: 0; padding: 20px; }
+  h1 { color: #fff; text-align: center; margin-bottom: 5px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 20px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; }
+  .chart-box { background: #16213e; border-radius: 8px; padding: 15px; }
+  .chart-box canvas { max-height: 350px; }
+  .stats { display: flex; justify-content: center; gap: 40px; margin: 20px auto; max-width: 800px; flex-wrap: wrap; }
+  .stat-card { background: #16213e; border-radius: 8px; padding: 15px 25px; text-align: center; }
+  .stat-card .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .stat-card .value { font-size: 24px; font-weight: bold; margin-top: 4px; }
+  .gpu { color: #00d4aa; }
+  .cpu { color: #ff6b6b; }
+</style>
+</head><body>
+<h1>GPU vs CPU Evolution Race</h1>
+<p class="subtitle">Rocket Landing (Hard: 8-15m, &plusmn;25&deg;, 130N, 3-seed avg) &middot; 120s wall time &middot; GPU 10 000 pop vs CPU 2 000 pop</p>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="label">GPU Generations</div>
+    <div class="value gpu">27</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">CPU Generations</div>
+    <div class="value cpu">54</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">GPU Total Evals</div>
+    <div class="value gpu">840 000</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">CPU Total Evals</div>
+    <div class="value cpu">330 000</div>
+  </div>
+</div>
+
+<div class="charts">
+  <div class="chart-box"><canvas id="bestFitness"></canvas></div>
+  <div class="chart-box"><canvas id="landingRate"></canvas></div>
+  <div class="chart-box"><canvas id="meanFitness"></canvas></div>
+  <div class="chart-box"><canvas id="landings"></canvas></div>
+</div>
+
+<script>
+const gpuColor = '#00d4aa';
+const cpuColor = '#ff6b6b';
+const gridColor = 'rgba(255,255,255,0.08)';
+
+const gpuGenTimesArr = [4.54,9.17,13.80,18.36,22.88,27.40,31.90,36.35,40.78,45.21,49.68,54.08,58.68,63.02,67.35,71.76,76.09,80.43,84.70,88.93,93.22,97.43,101.65,105.89,110.09,114.30,118.54,122.76];
+const cpuGenTimesArr = [0.67,1.47,2.65,4.14,5.80,7.61,9.48,11.38,13.34,15.23,17.19,19.23,21.22,23.19,25.22,27.31,29.55,31.69,33.99,36.47,38.88,41.32,43.71,46.22,48.68,51.11,53.48,55.87,58.27,60.63,63.00,65.36,67.80,70.05,72.43,74.72,77.20,79.73,82.45,84.95,87.38,89.73,92.47,94.85,97.25,99.58,102.08,104.54,106.96,109.30,111.62,113.94,116.27,118.60,121.07];
+
+// Plugin: draw vertical generation stripes every 5 generations
+const genStripesPlugin = {
+  id: 'genStripes',
+  beforeDraw(chart) {
+    const ctx = chart.ctx;
+    const xScale = chart.scales.x;
+    const yTop = chart.chartArea.top;
+    const yBot = chart.chartArea.bottom;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 212, 170, 0.35)';
+    gpuGenTimesArr.forEach((t, i) => {
+      if (i % 5 !== 0) return;
+      const x = xScale.getPixelForValue(t);
+      if (x >= chart.chartArea.left && x <= chart.chartArea.right) {
+        ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      }
+    });
+    ctx.strokeStyle = 'rgba(255, 107, 107, 0.35)';
+    cpuGenTimesArr.forEach((t, i) => {
+      if (i % 5 !== 0) return;
+      const x = xScale.getPixelForValue(t);
+      if (x >= chart.chartArea.left && x <= chart.chartArea.right) {
+        ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+};
+
+Chart.register(genStripesPlugin);
+
+const defaultOpts = {
+  responsive: true,
+  plugins: { legend: { labels: { color: '#ccc' } } },
+  scales: {
+    x: { title: { display: true, text: 'Wall Time (s)', color: '#888' }, ticks: { color: '#888' }, grid: { color: gridColor } },
+    y: { ticks: { color: '#888' }, grid: { color: gridColor } }
+  }
+};
+
+function makeDataset(label, times, values, color) {
+  return {
+    label, borderColor: color, backgroundColor: color + '20',
+    data: times.map((t,i) => ({ x: t, y: values[i] })),
+    showLine: true, pointRadius: 0, borderWidth: 2, tension: 0.3
+  };
+}
+
+const gpuTimes = [4.54,9.17,13.80,18.36,22.88,27.40,31.90,36.35,40.78,45.21,49.68,54.08,58.68,63.02,67.35,71.76,76.09,80.43,84.70,88.93,93.22,97.43,101.65,105.89,110.09,114.30,118.54,122.76];
+const cpuTimes = [0.67,1.47,2.65,4.14,5.80,7.61,9.48,11.38,13.34,15.23,17.19,19.23,21.22,23.19,25.22,27.31,29.55,31.69,33.99,36.47,38.88,41.32,43.71,46.22,48.68,51.11,53.48,55.87,58.27,60.63,63.00,65.36,67.80,70.05,72.43,74.72,77.20,79.73,82.45,84.95,87.38,89.73,92.47,94.85,97.25,99.58,102.08,104.54,106.96,109.30,111.62,113.94,116.27,118.60,121.07];
+const gpuBest = [88.5,91.6,162.0,161.8,230.7,231.2,166.7,231.2,232.2,235.5,228.5,234.3,234.3,236.5,236.4,237.1,237.2,235.6,237.7,236.1,236.9,236.0,236.9,237.5,237.8,236.1,237.5,237.3];
+const cpuBest = [91.1,96.9,164.0,226.3,160.8,225.9,226.9,228.6,229.0,230.6,231.6,230.7,231.2,234.9,234.0,232.2,232.3,234.5,233.7,235.9,236.7,235.9,234.7,235.5,236.0,236.6,235.8,237.4,236.2,235.8,236.8,237.3,236.9,234.9,236.9,236.3,236.8,236.1,236.7,236.8,236.8,236.5,237.1,237.1,237.2,236.7,236.0,237.4,237.6,236.8,236.9,237.3,237.5,236.9,236.7];
+const gpuMean = [12.5,14.2,16.2,19.7,23.0,24.2,25.2,26.4,27.9,29.3,31.3,33.1,35.4,38.1,40.3,42.3,43.5,45.5,46.7,47.9,49.5,52.2,52.4,53.8,55.9,57.7,58.3,59.4];
+const cpuMean = [5.8,9.7,13.5,17.7,19.8,22.0,23.5,23.6,23.9,26.0,25.9,27.1,27.7,28.4,28.7,29.3,28.5,29.9,30.9,34.8,35.6,39.0,37.6,39.8,38.6,39.8,41.1,40.4,42.3,44.9,44.3,44.3,44.8,42.7,44.7,43.7,45.8,45.1,48.8,49.3,49.2,47.9,51.2,48.8,51.3,52.5,55.2,56.1,57.3,56.7,59.8,58.5,59.0,57.7,61.7];
+const gpuLandings = [5,15,70,239,454,511,610,741,882,1056,1263,1476,1735,2048,2324,2572,2744,2990,3160,3319,3533,3947,3978,4187,4474,4728,4861,5017];
+const cpuLandings = [3,8,31,70,93,120,146,151,158,214,208,236,247,260,267,269,236,283,293,387,402,478,447,504,482,517,555,528,578,657,637,643,650,602,659,633,689,660,756,785,768,754,824,761,836,874,944,980,1012,1001,1083,1060,1065,1023,1136];
+const gpuLandRate = [0.0,0.1,0.2,0.8,1.5,1.7,2.0,2.5,2.9,3.5,4.2,4.9,5.8,6.8,7.7,8.6,9.1,10.0,10.5,11.1,11.8,13.2,13.3,14.0,14.9,15.8,16.2,16.7];
+const cpuLandRate = [0.1,0.1,0.5,1.2,1.6,2.0,2.4,2.5,2.6,3.6,3.5,3.9,4.1,4.3,4.5,4.5,3.9,4.7,4.9,6.5,6.7,8.0,7.5,8.4,8.0,8.6,9.2,8.8,9.6,10.9,10.6,10.7,10.8,10.0,11.0,10.6,11.5,11.0,12.6,13.1,12.8,12.6,13.7,12.7,13.9,14.6,15.7,16.3,16.9,16.7,18.1,17.7,17.8,17.1,18.9];
+
+new Chart('bestFitness', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('GPU Best (10000 pop)', gpuTimes, gpuBest, gpuColor),
+    makeDataset('CPU Best (2000 pop)', cpuTimes, cpuBest, cpuColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Best Avg Fitness vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Best Fitness (3-seed avg)', color: '#888' } } }
+  }
+});
+
+new Chart('landingRate', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('GPU Landing %', gpuTimes, gpuLandRate, gpuColor),
+    makeDataset('CPU Landing %', cpuTimes, cpuLandRate, cpuColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Landing Rate % vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Landing Rate %', color: '#888' } } }
+  }
+});
+
+new Chart('meanFitness', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('GPU Mean', gpuTimes, gpuMean, gpuColor),
+    makeDataset('CPU Mean', cpuTimes, cpuMean, cpuColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Mean Fitness vs Wall Time', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Mean Fitness', color: '#888' } } }
+  }
+});
+
+new Chart('landings', {
+  type: 'scatter', data: { datasets: [
+    makeDataset('GPU Landings', gpuTimes, gpuLandings, gpuColor),
+    makeDataset('CPU Landings', cpuTimes, cpuLandings, cpuColor)
+  ]},
+  options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: true, text: 'Landings per Generation (raw count)', color: '#fff' } },
+    scales: { ...defaultOpts.scales, y: { ...defaultOpts.scales.y, title: { display: true, text: 'Landings', color: '#888' } } }
+  }
+});
+</script>
+</body></html>

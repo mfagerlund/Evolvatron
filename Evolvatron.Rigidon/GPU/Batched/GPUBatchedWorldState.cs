@@ -29,6 +29,9 @@ public class GPUBatchedWorldState : IDisposable
     public MemoryBuffer1D<GPUContactConstraint, Stride1D.Dense> ContactConstraints { get; private set; } = null!;
     public MemoryBuffer1D<int, Stride1D.Dense> ContactCounts { get; private set; } = null!; // per-world count
 
+    // Contact impulse cache for warm-starting (same size as ContactConstraints)
+    public MemoryBuffer1D<GPUCachedContactImpulse, Stride1D.Dense> ContactCache { get; private set; } = null!;
+
     // Shared static colliders (same for all worlds)
     public MemoryBuffer1D<GPUOBBCollider, Stride1D.Dense> SharedOBBColliders { get; private set; } = null!;
 
@@ -49,6 +52,7 @@ public class GPUBatchedWorldState : IDisposable
         JointConstraints = _accelerator.Allocate1D<GPUJointConstraint>(_config.TotalJoints);
         ContactConstraints = _accelerator.Allocate1D<GPUContactConstraint>(_config.TotalContacts);
         ContactCounts = _accelerator.Allocate1D<int>(_config.WorldCount);
+        ContactCache = _accelerator.Allocate1D<GPUCachedContactImpulse>(_config.TotalContacts);
         SharedOBBColliders = _accelerator.Allocate1D<GPUOBBCollider>(_config.SharedColliderCount);
     }
 
@@ -124,6 +128,15 @@ public class GPUBatchedWorldState : IDisposable
         ContactCounts.MemSetToZero();
     }
 
+    /// <summary>
+    /// Reset warm-start contact cache to zero for all worlds.
+    /// Call at the start of a new evaluation to avoid stale impulses.
+    /// </summary>
+    public void ClearContactCache()
+    {
+        ContactCache.MemSetToZero();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -135,6 +148,7 @@ public class GPUBatchedWorldState : IDisposable
         JointConstraints?.Dispose();
         ContactConstraints?.Dispose();
         ContactCounts?.Dispose();
+        ContactCache?.Dispose();
         SharedOBBColliders?.Dispose();
     }
 }

@@ -50,6 +50,13 @@ public class RocketEnvironment : IEnvironment
     public int OutputCount => 2; // throttle, gimbal
     public int MaxSteps { get; set; } = 500;
 
+    // Difficulty knobs (defaults match original easy settings)
+    public float SpawnXRange { get; set; } = 2f;         // max distance from pad center
+    public float SpawnXMin { get; set; } = 0f;           // min distance from pad (0 = any)
+    public float SpawnAngleRange { get; set; } = 0f;     // no initial tilt (radians)
+    public float InitialVelXRange { get; set; } = 1f;    // ±1 m/s horizontal
+    public float InitialVelYMax { get; set; } = 2f;      // 0 to -2 m/s (downward)
+
     // Rendering properties
     public float CurrentThrottle => _currentThrottle;
     public float CurrentGimbal => _currentGimbal;
@@ -113,13 +120,23 @@ public class RocketEnvironment : IEnvironment
         // Add ground collider
         _world.Obbs.Add(OBBCollider.AxisAligned(0f, _groundY, 30f, 0.5f));
 
-        // Random spawn position with some variation
-        float spawnX = (float)(random.NextDouble() * 4f - 2f); // -2 to 2
-        float spawnY = _spawnHeight + (float)(random.NextDouble() * 3f); // Random height variation
+        // Random spawn position
+        float spawnX;
+        if (SpawnXMin > 0f)
+        {
+            float side = random.NextDouble() < 0.5 ? -1f : 1f;
+            spawnX = side * (SpawnXMin + (float)(random.NextDouble() * (SpawnXRange - SpawnXMin)));
+        }
+        else
+        {
+            spawnX = (float)(random.NextDouble() * SpawnXRange * 2 - SpawnXRange);
+        }
+        float spawnY = _spawnHeight + (float)(random.NextDouble() * 3f);
+        float spawnAngle = (float)(random.NextDouble() * SpawnAngleRange * 2 - SpawnAngleRange);
 
-        // Small random initial velocity
-        float initialVelX = (float)(random.NextDouble() * 2f - 1f); // -1 to 1 m/s
-        float initialVelY = (float)(random.NextDouble() * -2f); // 0 to -2 m/s (falling)
+        // Random initial velocity
+        float initialVelX = (float)(random.NextDouble() * InitialVelXRange * 2 - InitialVelXRange);
+        float initialVelY = (float)(random.NextDouble() * -InitialVelYMax);
 
         if (_singleBody)
         {
@@ -132,7 +149,7 @@ public class RocketEnvironment : IEnvironment
 
             int bodyIdx = RigidBodyFactory.CreateCapsule(
                 _world, spawnX, centerY, halfLength, bodyRadius,
-                mass: 11f, angle: MathF.PI / 2f);
+                mass: 11f, angle: MathF.PI / 2f + spawnAngle);
             _rocketIndices = new[] { bodyIdx };
 
             var rb = _world.RigidBodies[bodyIdx];
@@ -154,9 +171,17 @@ public class RocketEnvironment : IEnvironment
                 bodyMass: 8f,
                 legMass: 1.5f);
 
+            // Apply initial tilt by rotating all bodies around spawn base point
+            float cosT = MathF.Cos(spawnAngle);
+            float sinT = MathF.Sin(spawnAngle);
             for (int i = 0; i < _rocketIndices.Length; i++)
             {
                 var rb = _world.RigidBodies[_rocketIndices[i]];
+                float dx = rb.X - spawnX;
+                float dy = rb.Y - spawnY;
+                rb.X = spawnX + dx * cosT - dy * sinT;
+                rb.Y = spawnY + dx * sinT + dy * cosT;
+                rb.Angle += spawnAngle;
                 rb.VelX = initialVelX;
                 rb.VelY = initialVelY;
                 _world.RigidBodies[_rocketIndices[i]] = rb;

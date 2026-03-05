@@ -48,13 +48,22 @@ public class GPUBatchedStepper : IDisposable
     private Action<Index1D, ArrayView<GPUContactConstraint>, ArrayView<GPURigidBody>,
         ArrayView<int>, int, int, int> _solveContactVelocitiesKernel = null!;
 
-    // Joint solving kernels (reuse non-batched kernels - they use global indices + atomics)
+    // Contact warm-starting kernels
+    private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUContactConstraint>,
+        ArrayView<GPUCachedContactImpulse>, ArrayView<int>,
+        int, int, int, int> _applyWarmStartKernel = null!;
+    private Action<Index1D, ArrayView<GPUContactConstraint>,
+        ArrayView<GPUCachedContactImpulse>, ArrayView<int>,
+        int, int> _storeToCacheKernel = null!;
+
+    // Joint solving kernels
     private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>,
         ArrayView<GPUJointConstraint>, float> _initializeJointConstraintsKernel = null!;
-    private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>,
-        float> _solveJointVelocitiesKernel = null!;
-    private Action<Index1D, ArrayView<GPURigidBody>,
-        ArrayView<GPUJointConstraint>> _solveJointPositionsKernel = null!;
+    // Per-world Gauss-Seidel joint solvers (no atomics, sequential within each world)
+    private Action<Index1D, ArrayView<GPUJointConstraint>, ArrayView<GPURigidBody>,
+        int, float> _solveJointVelocitiesKernel = null!;
+    private Action<Index1D, ArrayView<GPUJointConstraint>, ArrayView<GPURigidBody>,
+        int> _solveJointPositionsKernel = null!;
 
     /// <summary>
     /// Creates a new batched GPU stepper using the provided accelerator.
@@ -123,21 +132,36 @@ public class GPUBatchedStepper : IDisposable
             ArrayView<int>, int, int, int>(
             GPUBatchedContactKernels.BatchedSolveContactVelocitiesKernel);
 
-        // Load joint solver kernels (reuse non-batched kernels - they use global body indices + atomics)
+        // Load warm-starting kernels
+        _applyWarmStartKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURigidBody>, ArrayView<GPUContactConstraint>,
+            ArrayView<GPUCachedContactImpulse>, ArrayView<int>,
+            int, int, int, int>(
+            GPUBatchedContactKernels.BatchedApplyWarmStartKernel);
+
+        _storeToCacheKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPUContactConstraint>,
+            ArrayView<GPUCachedContactImpulse>, ArrayView<int>,
+            int, int>(
+            GPUBatchedContactKernels.BatchedStoreToCacheKernel);
+
+        // Load joint solver kernels
+        // Init uses non-batched kernel (joints have global body indices from evaluator)
         _initializeJointConstraintsKernel = _accelerator.LoadAutoGroupedStreamKernel<
             Index1D, ArrayView<GPURigidBody>, ArrayView<GPURevoluteJoint>,
             ArrayView<GPUJointConstraint>, float>(
             GPURigidBodyJointKernels.InitializeJointConstraintsKernel);
 
+        // Per-world Gauss-Seidel solvers (no atomics, sequential within each world)
         _solveJointVelocitiesKernel = _accelerator.LoadAutoGroupedStreamKernel<
-            Index1D, ArrayView<GPURigidBody>, ArrayView<GPUJointConstraint>,
-            float>(
-            GPURigidBodyJointKernels.SolveJointVelocitiesKernel);
+            Index1D, ArrayView<GPUJointConstraint>, ArrayView<GPURigidBody>,
+            int, float>(
+            GPUBatchedJointKernels.BatchedSolveJointVelocitiesPerWorldKernel);
 
         _solveJointPositionsKernel = _accelerator.LoadAutoGroupedStreamKernel<
-            Index1D, ArrayView<GPURigidBody>,
-            ArrayView<GPUJointConstraint>>(
-            GPURigidBodyJointKernels.SolveJointPositionsKernel);
+            Index1D, ArrayView<GPUJointConstraint>, ArrayView<GPURigidBody>,
+            int>(
+            GPUBatchedJointKernels.BatchedSolveJointPositionsPerWorldKernel);
     }
 
     /// <summary>
@@ -147,19 +171,26 @@ public class GPUBatchedStepper : IDisposable
     /// <param name="simConfig">The simulation configuration (timestep, iterations, physics parameters).</param>
     public void Step(GPUBatchedWorldState worldState, SimulationConfig simConfig)
     {
+        StepNoSync(worldState, simConfig);
+        _accelerator.Synchronize();
+    }
+
+    /// <summary>
+    /// Step all N worlds by one physics timestep without synchronizing.
+    /// Kernels are enqueued on the default stream which guarantees execution order.
+    /// Only sync when CPU needs to read GPU memory (e.g., downloading fitness values).
+    /// </summary>
+    public void StepNoSync(GPUBatchedWorldState worldState, SimulationConfig simConfig)
+    {
         var config = worldState.Config;
         float dt = simConfig.Dt;
         float invDt = 1f / dt;
         int iterations = simConfig.XpbdIterations;
 
-        // Run substeps if configured
         for (int substep = 0; substep < simConfig.Substeps; substep++)
         {
             SubStep(worldState, config, simConfig, dt, invDt, iterations);
         }
-
-        // Synchronize to ensure all GPU work is complete
-        _accelerator.Synchronize();
     }
 
     private void SubStep(
@@ -239,7 +270,22 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 7. Initialize joint constraints (precompute effective masses)
+        // 7. Apply warm-starting from previous frame's cached impulses
+        if (config.TotalContacts > 0)
+        {
+            _applyWarmStartKernel(
+                config.TotalContacts,
+                worldState.RigidBodies.View,
+                worldState.ContactConstraints.View,
+                worldState.ContactCache.View,
+                worldState.ContactCounts.View,
+                config.WorldCount,
+                config.RigidBodiesPerWorld,
+                config.MaxContactsPerWorld,
+                config.MaxContactsPerWorld); // cacheSize = maxContactsPerWorld
+        }
+
+        // 8. Initialize joint constraints (precompute effective masses)
         if (config.TotalJoints > 0)
         {
             _initializeJointConstraintsKernel(
@@ -250,14 +296,14 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 8. Solve constraints iteratively (sequential impulse method)
+        // 9. Solve constraints iteratively (sequential impulse method)
         for (int iter = 0; iter < iterations; iter++)
         {
-            // Solve contact velocity constraints
+            // Solve contact velocity constraints (one thread per world, Gauss-Seidel)
             if (config.TotalContacts > 0)
             {
                 _solveContactVelocitiesKernel(
-                    config.TotalContacts,
+                    config.WorldCount,
                     worldState.ContactConstraints.View,
                     worldState.RigidBodies.View,
                     worldState.ContactCounts.View,
@@ -266,38 +312,47 @@ public class GPUBatchedStepper : IDisposable
                     config.MaxContactsPerWorld);
             }
 
-            // Solve joint velocity constraints
+            // Solve joint velocity constraints (one thread per world, Gauss-Seidel)
             if (config.TotalJoints > 0)
             {
                 _solveJointVelocitiesKernel(
-                    config.TotalJoints,
-                    worldState.RigidBodies.View,
+                    config.WorldCount,
                     worldState.JointConstraints.View,
+                    worldState.RigidBodies.View,
+                    config.JointsPerWorld,
                     dt);
             }
         }
 
-        // 9. Solve joint position constraints (additional stability pass)
+        // 10. Solve joint position constraints (one thread per world, Gauss-Seidel)
         if (config.TotalJoints > 0)
         {
             _solveJointPositionsKernel(
-                config.TotalJoints,
+                config.WorldCount,
+                worldState.JointConstraints.View,
                 worldState.RigidBodies.View,
-                worldState.JointConstraints.View);
+                config.JointsPerWorld);
         }
 
-        // 8. Velocity stabilization: derive velocities from position changes
-        if (config.TotalRigidBodies > 0 && simConfig.VelocityStabilizationBeta > 0f)
+        // 11. Store contact impulses to cache for next frame's warm-starting
+        if (config.TotalContacts > 0)
         {
-            _velocityStabilizationKernel(
-                config.TotalRigidBodies,
-                worldState.RigidBodies.View,
-                invDt,
-                simConfig.VelocityStabilizationBeta,
-                simConfig.MaxVelocity);
+            _storeToCacheKernel(
+                config.TotalContacts,
+                worldState.ContactConstraints.View,
+                worldState.ContactCache.View,
+                worldState.ContactCounts.View,
+                config.WorldCount,
+                config.MaxContactsPerWorld);
         }
 
-        // 9. Apply velocity damping
+        // NOTE: No velocity stabilization for rigid bodies!
+        // Velocity stabilization (v = (pos-prevPos)/dt) is for XPBD particle systems where
+        // constraints modify positions. The impulse-based rigid body solver works directly
+        // on velocities, so stabilization would overwrite the solved velocities.
+        // CPU CPUStepper.cs line 105: "Rigid body velocity stabilization not needed with impulse solver"
+
+        // 12. Apply velocity damping
         if (config.TotalRigidBodies > 0 && (simConfig.GlobalDamping > 0f || simConfig.AngularDamping > 0f))
         {
             _dampVelocitiesKernel(
@@ -424,7 +479,22 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 7. Initialize joint constraints
+        // 7. Apply warm-starting from previous frame's cached impulses
+        if (config.TotalContacts > 0)
+        {
+            _applyWarmStartKernel(
+                config.TotalContacts,
+                worldState.RigidBodies.View,
+                worldState.ContactConstraints.View,
+                worldState.ContactCache.View,
+                worldState.ContactCounts.View,
+                config.WorldCount,
+                config.RigidBodiesPerWorld,
+                config.MaxContactsPerWorld,
+                config.MaxContactsPerWorld);
+        }
+
+        // 8. Initialize joint constraints
         if (config.TotalJoints > 0)
         {
             _initializeJointConstraintsKernel(
@@ -435,13 +505,14 @@ public class GPUBatchedStepper : IDisposable
                 dt);
         }
 
-        // 8. Solve constraints iteratively
+        // 9. Solve constraints iteratively
         for (int iter = 0; iter < iterations; iter++)
         {
+            // Solve contact velocity constraints (one thread per world, Gauss-Seidel)
             if (config.TotalContacts > 0)
             {
                 _solveContactVelocitiesKernel(
-                    config.TotalContacts,
+                    config.WorldCount,
                     worldState.ContactConstraints.View,
                     worldState.RigidBodies.View,
                     worldState.ContactCounts.View,
@@ -450,34 +521,41 @@ public class GPUBatchedStepper : IDisposable
                     config.MaxContactsPerWorld);
             }
 
+            // Solve joint velocity constraints (one thread per world, Gauss-Seidel)
             if (config.TotalJoints > 0)
             {
                 _solveJointVelocitiesKernel(
-                    config.TotalJoints,
-                    worldState.RigidBodies.View,
+                    config.WorldCount,
                     worldState.JointConstraints.View,
+                    worldState.RigidBodies.View,
+                    config.JointsPerWorld,
                     dt);
             }
         }
 
-        // 9. Solve joint position constraints
+        // 10. Solve joint position constraints (one thread per world, Gauss-Seidel)
         if (config.TotalJoints > 0)
         {
             _solveJointPositionsKernel(
-                config.TotalJoints,
+                config.WorldCount,
+                worldState.JointConstraints.View,
                 worldState.RigidBodies.View,
-                worldState.JointConstraints.View);
+                config.JointsPerWorld);
         }
 
-        if (config.TotalRigidBodies > 0 && simConfig.VelocityStabilizationBeta > 0f)
+        // 11. Store contact impulses to cache for next frame's warm-starting
+        if (config.TotalContacts > 0)
         {
-            _velocityStabilizationKernel(
-                config.TotalRigidBodies,
-                worldState.RigidBodies.View,
-                invDt,
-                simConfig.VelocityStabilizationBeta,
-                simConfig.MaxVelocity);
+            _storeToCacheKernel(
+                config.TotalContacts,
+                worldState.ContactConstraints.View,
+                worldState.ContactCache.View,
+                worldState.ContactCounts.View,
+                config.WorldCount,
+                config.MaxContactsPerWorld);
         }
+
+        // NOTE: No velocity stabilization for rigid bodies (see SubStep comment)
 
         if (config.TotalRigidBodies > 0 && (simConfig.GlobalDamping > 0f || simConfig.AngularDamping > 0f))
         {

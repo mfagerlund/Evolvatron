@@ -93,6 +93,16 @@ public class GPURocketLandingEvaluator : IDisposable
     public float MaxLandingAngle { get; set; } = 15f * MathF.PI / 180f;
     public float LandingBonus { get; set; } = 200f;
 
+    // Difficulty knobs (defaults match original easy settings)
+    public float SpawnXRange { get; set; } = 2f;         // max distance from pad center
+    public float SpawnXMin { get; set; } = 0f;           // min distance from pad (0 = any)
+    public float SpawnAngleRange { get; set; } = 0f;     // no initial tilt (radians)
+    public float InitialVelXRange { get; set; } = 1f;    // ±1 m/s horizontal
+    public float InitialVelYMax { get; set; } = 2f;      // 0 to -2 m/s (downward)
+
+    // Solver config (GPU Jacobi solver may need more iterations than CPU Gauss-Seidel)
+    public int SolverIterations { get; set; } = 8;
+
     public Accelerator Accelerator => _accelerator;
 
     public GPURocketLandingEvaluator(int maxIndividuals = 1500)
@@ -200,13 +210,14 @@ public class GPURocketLandingEvaluator : IDisposable
             _currentGimbal!.View,
             _fitnessValues!.View);
         _worldState.ClearContactCounts();
+        _worldState.ClearContactCache();
         _accelerator.Synchronize();
 
         // Physics config matching RocketEnvironment
         var simConfig = new SimulationConfig
         {
             Dt = 1f / 120f,
-            XpbdIterations = 8,
+            XpbdIterations = SolverIterations,
             Substeps = 1,
             GravityX = 0f,
             GravityY = -9.81f,
@@ -215,16 +226,18 @@ public class GPURocketLandingEvaluator : IDisposable
             GlobalDamping = 0.02f,
             AngularDamping = 0.1f,
             VelocityStabilizationBeta = 1f,
-            MaxVelocity = 50f
+            MaxVelocity = 10f
         };
 
         int bodiesPerWorld = 3;
 
-        // Main simulation loop
+        // Main simulation loop — all kernels enqueued without sync.
+        // ILGPU's default stream guarantees execution order.
+        // Only sync every 60 steps for early-exit check + one final sync before download.
         for (int step = 0; step < maxSteps; step++)
         {
-            // Early exit check every 20 steps
-            if (step > 0 && step % 20 == 0)
+            // Early exit check every 60 steps (requires sync to read GPU memory)
+            if (step > 0 && step % 60 == 0)
             {
                 _accelerator.Synchronize();
                 _isTerminal!.CopyToCPU(_terminalCache!);
@@ -236,7 +249,7 @@ public class GPURocketLandingEvaluator : IDisposable
                 if (allDone) break;
             }
 
-            // 1. Get observations
+            // 1. Get observations (no sync — stream ordering)
             _getLandingObservationsKernel(
                 worldCount,
                 _observations!.View,
@@ -246,16 +259,15 @@ public class GPURocketLandingEvaluator : IDisposable
                 _isTerminal!.View,
                 bodiesPerWorld,
                 PadX, PadY);
-            _accelerator.Synchronize();
 
-            // 2. Neural network forward pass
-            RunNeuralNetworkForwardPass(
+            // 2. Neural network forward pass (no sync — stream ordering)
+            RunNeuralNetworkForwardPassNoSync(
                 _observations!.View,
                 _actions!.View,
                 spec,
                 worldCount, 1, 8, 2);
 
-            // 3. Apply actions
+            // 3. Apply actions (no sync — stream ordering)
             _applyRocketActionsKernel(
                 worldCount,
                 _worldState.RigidBodies.View,
@@ -266,10 +278,10 @@ public class GPURocketLandingEvaluator : IDisposable
                 bodiesPerWorld,
                 MaxThrust, MaxGimbalTorque, simConfig.Dt);
 
-            // 4. Physics step (includes sync at end)
-            _stepper!.Step(_worldState, simConfig);
+            // 4. Physics step (no sync — stream ordering)
+            _stepper!.StepNoSync(_worldState, simConfig);
 
-            // 5. Check terminal conditions
+            // 5. Check terminal conditions (no sync — stream ordering)
             _checkLandingTerminalKernel(
                 worldCount,
                 _worldState.RigidBodies.View,
@@ -294,7 +306,7 @@ public class GPURocketLandingEvaluator : IDisposable
             maxSteps,
             PadX, PadY, LandingBonus);
 
-        // Download results
+        // Single final sync before downloading results to CPU
         _accelerator.Synchronize();
         _fitnessValues!.CopyToCPU(_fitnessCache!);
         _hasLanded!.CopyToCPU(_landedCache!);
@@ -429,52 +441,72 @@ public class GPURocketLandingEvaluator : IDisposable
         for (int w = 0; w < worldCount; w++)
         {
             // Randomized spawn matching RocketEnvironment.Reset()
-            float spawnX = (float)(rng.NextDouble() * 4.0 - 2.0);
+            float spawnX;
+            if (SpawnXMin > 0f)
+            {
+                float side = rng.NextDouble() < 0.5 ? -1f : 1f;
+                spawnX = side * (SpawnXMin + (float)(rng.NextDouble() * (SpawnXRange - SpawnXMin)));
+            }
+            else
+            {
+                spawnX = (float)(rng.NextDouble() * SpawnXRange * 2 - SpawnXRange);
+            }
             float spawnY = SpawnHeight + (float)(rng.NextDouble() * 3.0);
-            float velX = (float)(rng.NextDouble() * 2.0 - 1.0);
-            float velY = (float)(rng.NextDouble() * -2.0);
+            float spawnTilt = (float)(rng.NextDouble() * SpawnAngleRange * 2 - SpawnAngleRange);
+            float velX = (float)(rng.NextDouble() * InitialVelXRange * 2 - InitialVelXRange);
+            float velY = (float)(rng.NextDouble() * -InitialVelYMax);
 
             // centerY = spawnY (base of rocket body, bottom attachment point)
             float centerY = spawnY;
-            float bodyY = centerY + bodyHalfLength; // body center
+
+            // Rotate all body positions around (spawnX, centerY) by spawnTilt
+            float cosT = MathF.Cos(spawnTilt);
+            float sinT = MathF.Sin(spawnTilt);
+
+            // Body center (0, bodyHalfLength) rotated
+            float bodyX = spawnX + 0f * cosT - bodyHalfLength * sinT;
+            float bodyY = centerY + 0f * sinT + bodyHalfLength * cosT;
+            float bodyAngleFinal = bodyAngle + spawnTilt;
 
             // Body (local index 0)
             allBodies[config.GetRigidBodyIndex(w, 0)] = new GPURigidBody
             {
-                X = spawnX, Y = bodyY,
-                Angle = bodyAngle,
+                X = bodyX, Y = bodyY,
+                Angle = bodyAngleFinal,
                 VelX = velX, VelY = velY, AngularVel = 0f,
-                PrevX = spawnX, PrevY = bodyY, PrevAngle = bodyAngle,
+                PrevX = bodyX, PrevY = bodyY, PrevAngle = bodyAngleFinal,
                 InvMass = 1f / bodyMass,
                 InvInertia = 1f / bodyInertia,
                 GeomStartIndex = 0,
                 GeomCount = bodyGeomCount
             };
 
-            // Left leg (local index 1)
-            float leftLegX = spawnX + leftOffX;
-            float leftLegY = centerY + leftOffY;
+            // Left leg: rotate (leftOffX, leftOffY) around origin
+            float leftLegX = spawnX + leftOffX * cosT - leftOffY * sinT;
+            float leftLegY = centerY + leftOffX * sinT + leftOffY * cosT;
+            float leftAngleFinal = leftLegAngle + spawnTilt;
             allBodies[config.GetRigidBodyIndex(w, 1)] = new GPURigidBody
             {
                 X = leftLegX, Y = leftLegY,
-                Angle = leftLegAngle,
+                Angle = leftAngleFinal,
                 VelX = velX, VelY = velY, AngularVel = 0f,
-                PrevX = leftLegX, PrevY = leftLegY, PrevAngle = leftLegAngle,
+                PrevX = leftLegX, PrevY = leftLegY, PrevAngle = leftAngleFinal,
                 InvMass = 1f / legMass,
                 InvInertia = 1f / legInertia,
                 GeomStartIndex = bodyGeomCount,
                 GeomCount = legGeomCount
             };
 
-            // Right leg (local index 2)
-            float rightLegX = spawnX + rightOffX;
-            float rightLegY = centerY + rightOffY;
+            // Right leg: rotate (rightOffX, rightOffY) around origin
+            float rightLegX = spawnX + rightOffX * cosT - rightOffY * sinT;
+            float rightLegY = centerY + rightOffX * sinT + rightOffY * cosT;
+            float rightAngleFinal = rightLegAngle + spawnTilt;
             allBodies[config.GetRigidBodyIndex(w, 2)] = new GPURigidBody
             {
                 X = rightLegX, Y = rightLegY,
-                Angle = rightLegAngle,
+                Angle = rightAngleFinal,
                 VelX = velX, VelY = velY, AngularVel = 0f,
-                PrevX = rightLegX, PrevY = rightLegY, PrevAngle = rightLegAngle,
+                PrevX = rightLegX, PrevY = rightLegY, PrevAngle = rightAngleFinal,
                 InvMass = 1f / legMass,
                 InvInertia = 1f / legInertia,
                 GeomStartIndex = bodyGeomCount + legGeomCount,
@@ -576,10 +608,23 @@ public class GPURocketLandingEvaluator : IDisposable
         int observationSize,
         int actionSize)
     {
+        RunNeuralNetworkForwardPassNoSync(observations, actions, spec,
+            totalEpisodes, episodesPerIndividual, observationSize, actionSize);
+        _accelerator.Synchronize();
+    }
+
+    private void RunNeuralNetworkForwardPassNoSync(
+        ArrayView<float> observations,
+        ArrayView<float> actions,
+        SpeciesSpec spec,
+        int totalEpisodes,
+        int episodesPerIndividual,
+        int observationSize,
+        int actionSize)
+    {
         if (_neuralState == null || _currentSpec == null)
             throw new InvalidOperationException("Neural state not initialized");
 
-        // Copy observations to neural network input layer
         _setInputsForEpisodesKernel(
             totalEpisodes,
             _neuralState.NodeValues.View,
@@ -588,9 +633,7 @@ public class GPURocketLandingEvaluator : IDisposable
             episodesPerIndividual,
             spec.TotalNodes,
             observationSize);
-        _accelerator.Synchronize();
 
-        // Evaluate hidden layers row by row
         for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
         {
             _evaluateRowForEpisodesKernel(
@@ -607,10 +650,8 @@ public class GPURocketLandingEvaluator : IDisposable
                 episodesPerIndividual,
                 spec.TotalNodes,
                 spec.TotalEdges);
-            _accelerator.Synchronize();
         }
 
-        // Copy output layer values to actions buffer
         int outputRowIdx = spec.RowPlans.Length - 1;
         _getOutputsForEpisodesKernel(
             totalEpisodes,
@@ -621,7 +662,6 @@ public class GPURocketLandingEvaluator : IDisposable
             totalEpisodes,
             spec.TotalNodes,
             actionSize);
-        _accelerator.Synchronize();
     }
 
     public void Dispose()

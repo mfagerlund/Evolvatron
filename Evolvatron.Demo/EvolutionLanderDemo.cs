@@ -47,10 +47,10 @@ public static class EvolutionLanderDemo
         var evolutionConfig = new EvolutionConfig
         {
             SpeciesCount = 5,
-            IndividualsPerSpecies = 400,
+            IndividualsPerSpecies = 1600,
             MinSpeciesCount = 3,
-            Elites = 30,
-            TournamentSize = 6,
+            Elites = 100,
+            TournamentSize = 8,
             ParentPoolPercentage = 0.5f,
             GraceGenerations = 10000,
             StagnationThreshold = 10000,
