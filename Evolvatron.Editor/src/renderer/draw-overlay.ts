@@ -60,6 +60,7 @@ function drawModuleSelection(
     ctx.beginPath();
     ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
     ctx.stroke();
+    drawCircleHandles(ctx, s.x, s.y, r);
   } else if (mod.kind === 'obstacle') {
     const w = camera.worldToScreenScale(mod.halfExtentX * 2) + 6;
     const h = camera.worldToScreenScale(mod.halfExtentY * 2) + 6;
@@ -85,13 +86,37 @@ function drawHandles(
   const size = 5;
   ctx.setLineDash([]);
   ctx.fillStyle = COLORS.handle;
-  const corners = [
+  const points = [
+    // Corners
     [cx - w / 2, cy - h / 2],
     [cx + w / 2, cy - h / 2],
     [cx - w / 2, cy + h / 2],
     [cx + w / 2, cy + h / 2],
+    // Cardinals
+    [cx,         cy - h / 2],
+    [cx,         cy + h / 2],
+    [cx - w / 2, cy        ],
+    [cx + w / 2, cy        ],
   ];
-  for (const [x, y] of corners) {
+  for (const [x, y] of points) {
+    ctx.fillRect(x - size / 2, y - size / 2, size, size);
+  }
+  ctx.setLineDash([4, 4]);
+}
+
+function drawCircleHandles(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  r: number,
+): void {
+  const size = 5;
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLORS.handle;
+  // 8 handles evenly spaced at 0, 45, 90, ... 315 degrees
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI) / 4;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
     ctx.fillRect(x - size / 2, y - size / 2, size, size);
   }
   ctx.setLineDash([4, 4]);

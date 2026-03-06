@@ -38,6 +38,7 @@ canvas.addEventListener('mousemove', (e) => {
   const sx = e.clientX - rect.left;
   const sy = e.clientY - rect.top;
   editor.onMouseMove(sx, sy);
+  canvas.style.cursor = editor.cursor;
 });
 
 canvas.addEventListener('mouseup', (e) => {

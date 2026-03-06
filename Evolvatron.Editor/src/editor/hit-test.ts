@@ -1,4 +1,5 @@
-import type { World } from '../model/types';
+import type { World, SelectableId } from '../model/types';
+import type { Camera } from './camera';
 
 export function pointInRect(
   px: number, py: number,
@@ -107,6 +108,117 @@ export function hitTestPoint(world: World, wx: number, wy: number): HitResult | 
   }
 
   return best;
+}
+
+/** Which handle is being hit. Cardinals resize one axis, corners resize both. */
+export type HandleDirection =
+  | 'n' | 's' | 'e' | 'w'
+  | 'ne' | 'nw' | 'se' | 'sw';
+
+export interface HandleHitResult {
+  id: SelectableId;
+  direction: HandleDirection;
+}
+
+const HANDLE_RADIUS_PX = 7;
+
+/**
+ * Test if screen coords (sx, sy) hit a resize handle on any selected object.
+ * Returns the handle info or null.
+ */
+export function hitTestHandle(
+  world: World,
+  camera: Camera,
+  selectedIds: ReadonlySet<SelectableId>,
+  sx: number,
+  sy: number,
+): HandleHitResult | null {
+  for (const id of selectedIds) {
+    const handles = getHandleScreenPositions(world, camera, id);
+    if (!handles) continue;
+    for (const h of handles) {
+      const dx = sx - h.sx;
+      const dy = sy - h.sy;
+      if (dx * dx + dy * dy <= HANDLE_RADIUS_PX * HANDLE_RADIUS_PX) {
+        return { id, direction: h.dir };
+      }
+    }
+  }
+  return null;
+}
+
+interface HandlePos {
+  sx: number;
+  sy: number;
+  dir: HandleDirection;
+}
+
+const DIRS: { dir: HandleDirection; dx: number; dy: number }[] = [
+  { dir: 'n',  dx:  0, dy: -1 },
+  { dir: 's',  dx:  0, dy:  1 },
+  { dir: 'w',  dx: -1, dy:  0 },
+  { dir: 'e',  dx:  1, dy:  0 },
+  { dir: 'nw', dx: -1, dy: -1 },
+  { dir: 'ne', dx:  1, dy: -1 },
+  { dir: 'sw', dx: -1, dy:  1 },
+  { dir: 'se', dx:  1, dy:  1 },
+];
+
+function getHandleScreenPositions(
+  world: World,
+  camera: Camera,
+  id: SelectableId,
+): HandlePos[] | null {
+  if (id === 'landingPad') {
+    const pad = world.landingPad;
+    const s = camera.worldToScreen(pad.position.x, pad.position.y);
+    const hw = (camera.worldToScreenScale(pad.halfWidth * 2) + 6) / 2;
+    const hh = (camera.worldToScreenScale(pad.halfHeight * 2) + 6) / 2;
+    return DIRS.map(d => ({ sx: s.x + d.dx * hw, sy: s.y + d.dy * hh, dir: d.dir }));
+  }
+
+  if (id === 'spawnArea') {
+    const spawn = world.spawnArea;
+    const s = camera.worldToScreen(spawn.position.x, spawn.position.y);
+    const hw = (camera.worldToScreenScale(spawn.xRange) + 6) / 2;
+    const hh = (camera.worldToScreenScale(spawn.heightRange) + 6) / 2;
+    return DIRS.map(d => ({ sx: s.x + d.dx * hw, sy: s.y + d.dy * hh, dir: d.dir }));
+  }
+
+  const mod = world.modules.find(m => m.id === id);
+  if (!mod) return null;
+
+  const s = camera.worldToScreen(mod.position.x, mod.position.y);
+
+  if (mod.kind === 'checkpoint') {
+    const r = camera.worldToScreenScale(mod.radius) + 4;
+    return DIRS.map(d => {
+      const angle = Math.atan2(d.dy, d.dx);
+      return { sx: s.x + Math.cos(angle) * r, sy: s.y + Math.sin(angle) * r, dir: d.dir };
+    });
+  }
+
+  if (mod.kind === 'obstacle') {
+    const hw = (camera.worldToScreenScale(mod.halfExtentX * 2) + 6) / 2;
+    const hh = (camera.worldToScreenScale(mod.halfExtentY * 2) + 6) / 2;
+    const rad = (-mod.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    return DIRS.map(d => {
+      const lx = d.dx * hw;
+      const ly = d.dy * hh;
+      return {
+        sx: s.x + lx * cos - ly * sin,
+        sy: s.y + lx * sin + ly * cos,
+        dir: d.dir,
+      };
+    });
+  }
+
+  // speedZone, dangerZone
+  const hw = (camera.worldToScreenScale(mod.halfExtentX * 2) + 6) / 2;
+  const hh = (camera.worldToScreenScale(mod.halfExtentY * 2) + 6) / 2;
+  return DIRS.map(d => ({ sx: s.x + d.dx * hw, sy: s.y + d.dy * hh, dir: d.dir }));
 }
 
 export function boxSelectModules(

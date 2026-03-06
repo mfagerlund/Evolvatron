@@ -6,13 +6,18 @@ import { MoveModulesCommand } from '../commands/move-modules';
 import { DuplicateModulesCommand } from '../commands/duplicate-modules';
 import { Selection } from './selection';
 import { Camera } from './camera';
-import { hitTestPoint, boxSelectModules } from './hit-test';
+import { hitTestPoint, hitTestHandle, boxSelectModules } from './hit-test';
+import type { HandleDirection } from './hit-test';
 import {
   createObstacle, createCheckpoint, createSpeedZone, createDangerZone,
 } from '../model/defaults';
 import { findModule } from '../model/world';
+import {
+  ResizeModuleCommand, ResizeSingletonCommand,
+  type ResizeSnapshot,
+} from '../commands/resize-module';
 
-export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'panning';
+export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'panning' | 'resizing';
 
 export interface EditorState {
   mode: EditorMode;
@@ -21,6 +26,14 @@ export interface EditorState {
   boxStart?: Vec2;
   boxEnd?: Vec2;
 }
+
+/** Map from handle direction to CSS cursor name */
+const HANDLE_CURSORS: Record<HandleDirection, string> = {
+  n: 'ns-resize',    s: 'ns-resize',
+  e: 'ew-resize',    w: 'ew-resize',
+  ne: 'nesw-resize', sw: 'nesw-resize',
+  nw: 'nwse-resize', se: 'nwse-resize',
+};
 
 export class Editor {
   world: World;
@@ -34,6 +47,14 @@ export class Editor {
   private panStart: Vec2 | null = null;
   private isDirty = true;
   private onChange: (() => void) | null = null;
+
+  // Resize state
+  private resizeTargetId: SelectableId | null = null;
+  private resizeDirection: HandleDirection | null = null;
+  private resizeStartValues: ResizeSnapshot | null = null;
+
+  /** Current cursor to display. Updated on mouse move. */
+  cursor = 'default';
 
   constructor(world: World) {
     this.world = world;
@@ -82,6 +103,13 @@ export class Editor {
       return;
     }
 
+    // Check if clicking a resize handle on an already-selected object
+    const handleHit = hitTestHandle(this.world, this.camera, this.selection.ids, sx, sy);
+    if (handleHit) {
+      this.startResize(handleHit.id, handleHit.direction, sx, sy);
+      return;
+    }
+
     const wPos = this.camera.screenToWorld(sx, sy);
     const hit = hitTestPoint(this.world, wPos.x, wPos.y);
 
@@ -126,6 +154,12 @@ export class Editor {
       return;
     }
 
+    if (this.state.mode === 'resizing' && this.resizeTargetId !== null) {
+      this.applyResizeDelta(sx, sy);
+      this.markDirty();
+      return;
+    }
+
     if (this.state.mode === 'dragging' && this.dragStart && this.selection.size > 0) {
       const wCurrent = this.camera.screenToWorld(sx, sy);
       const dx = wCurrent.x - this.dragWorldStart!.x;
@@ -144,12 +178,22 @@ export class Editor {
       this.markDirty();
       return;
     }
+
+    // Idle — update cursor based on handle hover
+    this.updateCursor(sx, sy);
   }
 
   onMouseUp(_sx: number, _sy: number, shift: boolean): void {
     if (this.state.mode === 'panning') {
       this.state = { mode: 'idle' };
       this.panStart = null;
+      this.markDirty();
+      return;
+    }
+
+    if (this.state.mode === 'resizing') {
+      this.finalizeResize();
+      this.state = { mode: 'idle' };
       this.markDirty();
       return;
     }
@@ -303,6 +347,220 @@ export class Editor {
     this.history.redo(this.world);
     this.selection.clear();
     this.markDirty();
+  }
+
+  // --- Cursor ---
+
+  private updateCursor(sx: number, sy: number): void {
+    if (this.selection.size === 0) {
+      this.cursor = 'default';
+      return;
+    }
+    const handleHit = hitTestHandle(this.world, this.camera, this.selection.ids, sx, sy);
+    if (handleHit) {
+      this.cursor = HANDLE_CURSORS[handleHit.direction];
+    } else {
+      this.cursor = 'default';
+    }
+  }
+
+  // --- Resize helpers ---
+
+  private startResize(id: SelectableId, direction: HandleDirection, sx: number, sy: number): void {
+    this.resizeTargetId = id;
+    this.resizeDirection = direction;
+    this.dragStart = { x: sx, y: sy };
+    this.resizeStartValues = this.captureSize(id);
+    this.state = { mode: 'resizing' };
+    this.markDirty();
+  }
+
+  private captureSize(id: SelectableId): ResizeSnapshot {
+    if (id === 'landingPad') {
+      const p = this.world.landingPad;
+      return { posX: p.position.x, posY: p.position.y, halfWidth: p.halfWidth, halfHeight: p.halfHeight };
+    }
+    if (id === 'spawnArea') {
+      const s = this.world.spawnArea;
+      return { posX: s.position.x, posY: s.position.y, xRange: s.xRange, heightRange: s.heightRange };
+    }
+    const mod = findModule(this.world, id);
+    if (!mod) return {};
+    if (mod.kind === 'checkpoint') {
+      return { posX: mod.position.x, posY: mod.position.y, radius: mod.radius };
+    }
+    return { posX: mod.position.x, posY: mod.position.y, halfExtentX: mod.halfExtentX, halfExtentY: mod.halfExtentY };
+  }
+
+  private applyResizeDelta(sx: number, sy: number): void {
+    if (!this.dragStart || !this.resizeTargetId || !this.resizeDirection || !this.resizeStartValues) return;
+
+    // World-space delta from drag start
+    const wStart = this.camera.screenToWorld(this.dragStart.x, this.dragStart.y);
+    const wNow = this.camera.screenToWorld(sx, sy);
+    let dwx = wNow.x - wStart.x;
+    let dwy = wNow.y - wStart.y;
+
+    const id = this.resizeTargetId;
+    const dir = this.resizeDirection;
+    const start = this.resizeStartValues;
+
+    // For rotated obstacles, transform delta into local space
+    let isRotated = false;
+    let rotRad = 0;
+    if (typeof id === 'string' && id !== 'landingPad' && id !== 'spawnArea') {
+      const mod = findModule(this.world, id);
+      if (mod && mod.kind === 'obstacle' && mod.rotation !== 0) {
+        rotRad = (-mod.rotation * Math.PI) / 180;
+        const cos = Math.cos(rotRad);
+        const sin = Math.sin(rotRad);
+        const lx = dwx * cos + dwy * sin;
+        const ly = -dwx * sin + dwy * cos;
+        dwx = lx;
+        dwy = ly;
+        isRotated = true;
+      }
+    }
+
+    // Determine axis multipliers from direction
+    // e.g. dragging the east handle: xSign=+1, dragging west: xSign=-1
+    const xSign = dir.includes('e') ? 1 : dir.includes('w') ? -1 : 0;
+    const ySign = dir.includes('n') ? 1 : dir.includes('s') ? -1 : 0;
+
+    const MIN_SIZE = 0.1;
+
+    // The key idea: the opposite edge stays fixed.
+    // When dragging east by dwx, halfExtent grows by dwx/2 and center shifts right by dwx/2.
+    // When dragging west by dwx (dwx is negative since moving left), xSign=-1:
+    //   sizeChange = xSign * dwx (positive when dragging outward), center shifts by xSign * dwx / 2
+
+    // Position shifts toward the dragged handle (xSign/ySign direction),
+    // by half the world-space delta. The size grows by the same amount.
+    // posShiftX = dwx / 2 (always toward cursor, regardless of which side)
+    // sizeDelta = xSign * dwx / 2 (positive when dragging outward)
+
+    if (id === 'landingPad') {
+      const p = this.world.landingPad;
+      if (xSign !== 0) {
+        const sizeDelta = xSign * dwx / 2;
+        p.halfWidth = Math.max(MIN_SIZE, start.halfWidth + sizeDelta);
+        p.position.x = start.posX + dwx / 2;
+      }
+      if (ySign !== 0) {
+        const sizeDelta = ySign * dwy / 2;
+        p.halfHeight = Math.max(MIN_SIZE, start.halfHeight + sizeDelta);
+        p.position.y = start.posY + dwy / 2;
+      }
+      return;
+    }
+
+    if (id === 'spawnArea') {
+      const s = this.world.spawnArea;
+      if (xSign !== 0) {
+        const sizeDelta = xSign * dwx;
+        s.xRange = Math.max(MIN_SIZE, start.xRange + sizeDelta);
+        s.position.x = start.posX + dwx / 2;
+      }
+      if (ySign !== 0) {
+        const sizeDelta = ySign * dwy;
+        s.heightRange = Math.max(MIN_SIZE, start.heightRange + sizeDelta);
+        s.position.y = start.posY + dwy / 2;
+      }
+      return;
+    }
+
+    const mod = findModule(this.world, id);
+    if (!mod) return;
+
+    if (mod.kind === 'checkpoint') {
+      // Circle: anchor the opposite point, grow radius and shift center
+      const radialDelta = Math.sqrt(dwx * dwx + dwy * dwy) *
+        Math.sign(xSign * dwx + ySign * dwy || dwx + dwy);
+      const sizeDelta = radialDelta / 2;
+      mod.radius = Math.max(MIN_SIZE, start.radius + sizeDelta);
+      // Shift center by half the world-space delta (toward cursor)
+      mod.position.x = start.posX + dwx / 2;
+      mod.position.y = start.posY + dwy / 2;
+      return;
+    }
+
+    // Rectangles: compute local-space size and position deltas
+    let localDx = 0;
+    let localDy = 0;
+    if (xSign !== 0) {
+      const sizeDelta = xSign * dwx / 2;
+      mod.halfExtentX = Math.max(MIN_SIZE, start.halfExtentX + sizeDelta);
+      localDx = dwx / 2;
+    }
+    if (ySign !== 0) {
+      const sizeDelta = ySign * dwy / 2;
+      mod.halfExtentY = Math.max(MIN_SIZE, start.halfExtentY + sizeDelta);
+      localDy = dwy / 2;
+    }
+
+    // Convert position shift back to world space for rotated obstacles
+    if (isRotated) {
+      const cos = Math.cos(-rotRad);
+      const sin = Math.sin(-rotRad);
+      mod.position.x = start.posX + localDx * cos - localDy * sin;
+      mod.position.y = start.posY + localDx * sin + localDy * cos;
+    } else {
+      mod.position.x = start.posX + localDx;
+      mod.position.y = start.posY + localDy;
+    }
+  }
+
+  private finalizeResize(): void {
+    if (!this.resizeTargetId || !this.resizeStartValues) {
+      this.clearResizeState();
+      return;
+    }
+
+    const id = this.resizeTargetId;
+    const oldValues = this.resizeStartValues;
+    const newValues = this.captureSize(id);
+
+    // Check if anything actually changed
+    const changed = Object.keys(oldValues).some(k => oldValues[k] !== newValues[k]);
+    if (changed) {
+      // Undo the live edit first
+      this.applySize(id, oldValues);
+
+      // Execute as command for undo support
+      if (id === 'landingPad' || id === 'spawnArea') {
+        this.history.execute(new ResizeSingletonCommand(id, oldValues, newValues), this.world);
+      } else {
+        this.history.execute(new ResizeModuleCommand(id, oldValues, newValues), this.world);
+      }
+    }
+
+    this.clearResizeState();
+  }
+
+  private applySize(id: SelectableId, values: ResizeSnapshot): void {
+    let target: Record<string, unknown> | null = null;
+    let pos: Vec2 | null = null;
+
+    if (id === 'landingPad') { target = this.world.landingPad as unknown as Record<string, unknown>; pos = this.world.landingPad.position; }
+    else if (id === 'spawnArea') { target = this.world.spawnArea as unknown as Record<string, unknown>; pos = this.world.spawnArea.position; }
+    else {
+      const mod = findModule(this.world, id);
+      if (mod) { target = mod as unknown as Record<string, unknown>; pos = mod.position; }
+    }
+    if (!target || !pos) return;
+
+    if ('posX' in values) pos.x = values.posX;
+    if ('posY' in values) pos.y = values.posY;
+    for (const [key, val] of Object.entries(values)) {
+      if (key !== 'posX' && key !== 'posY') target[key] = val;
+    }
+  }
+
+  private clearResizeState(): void {
+    this.resizeTargetId = null;
+    this.resizeDirection = null;
+    this.resizeStartValues = null;
+    this.dragStart = null;
   }
 
   // --- Drag helpers ---
