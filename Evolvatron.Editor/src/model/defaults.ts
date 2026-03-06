@@ -64,11 +64,37 @@ export function createDefaultWorld(): World {
   return {
     landingPad: createLandingPad(),
     spawnArea: createSpawnArea(),
-    modules: [],
+    modules: createDemoModules(),
     groundY: -5,
     simulationConfig: createSimulationConfig(),
     rewardWeights: createRewardWeights(),
   };
+}
+
+function createDemoModules(): World['modules'] {
+  const obs = createObstacle(-9.517, 9.467);
+  obs.halfExtentX = 2.583;
+  obs.halfExtentY = 2.267;
+
+  const cp0 = createCheckpoint(-1.933, 9.583, 0);
+  cp0.radius = 1.792;
+
+  const cp1 = createCheckpoint(3.7, 10.6, 1);
+  cp1.radius = 1.447;
+
+  const sz = createSpeedZone(6.383, 7.783);
+  sz.halfExtentX = 1.25;
+  sz.halfExtentY = 1.783;
+
+  const dz = createDangerZone(-4.617, 3.517);
+  dz.halfExtentX = 0.75;
+  dz.halfExtentY = 1.083;
+
+  const att = createAttractor(2.683, 1.15);
+  att.halfExtentX = 1.883;
+  att.halfExtentY = 1.95;
+
+  return [obs, cp0, cp1, sz, dz, att];
 }
 
 export function createObstacle(x = 0, y = 0): ObstacleModule {
