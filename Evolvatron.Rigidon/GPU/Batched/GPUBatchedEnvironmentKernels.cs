@@ -619,15 +619,25 @@ public static class GPUBatchedEnvironmentKernels
             var zone = zones[z];
             int slotIdx = zoneBase + z;
 
-            // Signed distance to core zone (box SDF)
-            float dx = XMath.Abs(rx - zone.CenterX) - zone.HalfExtentX;
-            float dy = XMath.Abs(ry - zone.CenterY) - zone.HalfExtentY;
-            // Outside: max of positive components; inside: max (both negative)
+            // Signed distance to core zone
             float signedDist;
-            if (dx > 0f && dy > 0f)
-                signedDist = XMath.Sqrt(dx * dx + dy * dy); // corner region
+            if (zone.IsCircular != 0)
+            {
+                // Circle SDF: distance to center minus radius
+                float ddx = rx - zone.CenterX;
+                float ddy = ry - zone.CenterY;
+                signedDist = XMath.Sqrt(ddx * ddx + ddy * ddy) - zone.HalfExtentX;
+            }
             else
-                signedDist = XMath.Max(dx, dy); // edge or interior
+            {
+                // Box SDF
+                float dx = XMath.Abs(rx - zone.CenterX) - zone.HalfExtentX;
+                float dy = XMath.Abs(ry - zone.CenterY) - zone.HalfExtentY;
+                if (dx > 0f && dy > 0f)
+                    signedDist = XMath.Sqrt(dx * dx + dy * dy); // corner region
+                else
+                    signedDist = XMath.Max(dx, dy); // edge or interior
+            }
 
             float prevClosest = zoneClosestDistances[slotIdx];
             if (signedDist < prevClosest)
@@ -673,9 +683,17 @@ public static class GPUBatchedEnvironmentKernels
             }
 
             // Compute influence distance (edge of influence region)
-            float influenceDistX = zone.HalfExtentX * (zone.InfluenceFactor - 1f);
-            float influenceDistY = zone.HalfExtentY * (zone.InfluenceFactor - 1f);
-            float maxInfluenceDist = XMath.Max(influenceDistX, influenceDistY);
+            float maxInfluenceDist;
+            if (zone.IsCircular != 0)
+            {
+                maxInfluenceDist = zone.HalfExtentX * (zone.InfluenceFactor - 1f);
+            }
+            else
+            {
+                float influenceDistX = zone.HalfExtentX * (zone.InfluenceFactor - 1f);
+                float influenceDistY = zone.HalfExtentY * (zone.InfluenceFactor - 1f);
+                maxInfluenceDist = XMath.Max(influenceDistX, influenceDistY);
+            }
 
             if (maxInfluenceDist <= 0f || closest >= maxInfluenceDist)
                 continue; // Outside influence region

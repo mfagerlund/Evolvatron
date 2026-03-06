@@ -91,6 +91,7 @@ export function createCheckpoint(x = 0, y = 0, order = 0): CheckpointModule {
     radius: 1.5,
     order,
     rewardBonus: 20,
+    influenceFactor: 2,
   };
 }
 
@@ -113,9 +114,9 @@ export function createDangerZone(x = 0, y = 0): DangerZoneModule {
     position: { x, y },
     halfExtentX: 2,
     halfExtentY: 2,
-    penaltyPerStep: 0.5,
+    penaltyPerStep: 10,
     isLethal: false,
-    influenceFactor: 2,
+    influenceFactor: 3,
   };
 }
 

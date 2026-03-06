@@ -27,17 +27,58 @@
     }
 
     #toolbar button {
-      padding: 5px 12px;
+      padding: 2px 8px;
       background: #2a2a4a;
       color: #c0c0e0;
       border: 1px solid #3a3a5a;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 12px;
-      font-family: monospace;
+      font-size: 18px;
+      line-height: 24px;
+      min-width: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     #toolbar button:hover { background: #3a3a5a; }
     #toolbar button.active { background: #4466aa; border-color: #6688cc; color: #fff; }
+
+    #toolbar button { position: relative; }
+    #toolbar button::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-top: 6px;
+      padding: 3px 8px;
+      background: #111;
+      color: #ccc;
+      font-size: 11px;
+      font-family: monospace;
+      white-space: nowrap;
+      border-radius: 3px;
+      border: 1px solid #333;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 100;
+    }
+    #toolbar button:hover::after {
+      opacity: 1;
+    }
+
+    #toolbar .tool-obstacle { color: #ff6644; }
+    #toolbar .tool-checkpoint { color: #ffcc00; }
+    #toolbar .tool-speed { color: #00ccff; }
+    #toolbar .tool-danger { color: #ff3366; }
+    #toolbar .tool-attractor { color: #44ffaa; }
+    #toolbar .tool-reward { color: #88ddbb; }
+    #toolbar .tool-obstacle.active,
+    #toolbar .tool-checkpoint.active,
+    #toolbar .tool-speed.active,
+    #toolbar .tool-danger.active,
+    #toolbar .tool-attractor.active,
+    #toolbar .tool-reward.active { color: #fff; }
 
     .separator {
       width: 1px;
@@ -118,20 +159,20 @@
 </head>
 <body>
   <div id="toolbar">
-    <button id="btn-select" class="active" title="Select tool (V)">Select</button>
+    <button id="btn-select" class="active" data-tooltip="Select tool (V)">⬚</button>
     <div class="separator"></div>
-    <button id="btn-obstacle" title="Place obstacle">Obstacle</button>
-    <button id="btn-checkpoint" title="Place checkpoint">Checkpoint</button>
-    <button id="btn-speed-zone" title="Place speed zone">Speed Zone</button>
-    <button id="btn-danger-zone" title="Place danger zone">Danger Zone</button>
-    <button id="btn-attractor" title="Place attractor/repulsor">Attractor</button>
+    <button id="btn-obstacle" class="tool-obstacle" data-tooltip="Obstacle (1)">▭</button>
+    <button id="btn-checkpoint" class="tool-checkpoint" data-tooltip="Checkpoint (2)">◯</button>
+    <button id="btn-speed-zone" class="tool-speed" data-tooltip="Speed Zone (3)">◈</button>
+    <button id="btn-danger-zone" class="tool-danger" data-tooltip="Danger Zone (4)">⚠</button>
+    <button id="btn-attractor" class="tool-attractor" data-tooltip="Attractor (5)">◎</button>
     <div class="separator"></div>
-    <button id="btn-reward-overlay" title="Toggle reward landscape overlay (R)">Rewards</button>
+    <button id="btn-reward-overlay" class="tool-reward" data-tooltip="Toggle reward overlay (R)">♨</button>
     <div class="separator"></div>
-    <button id="btn-new" title="New world">New</button>
-    <button id="btn-load" title="Load .evo.json">Load</button>
-    <button id="btn-save" title="Save .evo.json">Save</button>
-    <button id="btn-export" title="Export .sim.json for C#">Export</button>
+    <button id="btn-new" data-tooltip="New world">✦</button>
+    <button id="btn-load" data-tooltip="Load .evo.json">📂</button>
+    <button id="btn-save" data-tooltip="Save .evo.json">💾</button>
+    <button id="btn-export" data-tooltip="Export .sim.json for C#">⤓</button>
   </div>
 
   <div id="main">

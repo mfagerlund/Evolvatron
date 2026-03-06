@@ -42,6 +42,8 @@ export interface CheckpointModule {
   radius: number;
   order: number;
   rewardBonus: number;
+  /** Multiplier on radius for influence falloff region (1 = no falloff beyond core) */
+  influenceFactor: number;
 }
 
 export interface SpeedZoneModule {

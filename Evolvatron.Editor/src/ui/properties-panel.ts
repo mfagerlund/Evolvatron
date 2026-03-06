@@ -115,6 +115,7 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
       appendNumberField(container, 'Radius', mod.radius, v => commitProp(editor, id, 'radius', mod.radius, v));
       appendNumberField(container, 'Order', mod.order, v => commitProp(editor, id, 'order', mod.order, v));
       appendNumberField(container, 'Reward Bonus', mod.rewardBonus, v => commitProp(editor, id, 'rewardBonus', mod.rewardBonus, v));
+      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
       break;
     case 'speedZone':
       appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));

@@ -148,6 +148,21 @@ function drawCheckpoint(
   const s = camera.worldToScreen(mod.position.x, mod.position.y);
   const r = camera.worldToScreenScale(mod.radius);
 
+  // Draw influence region if factor > 1
+  const cpInfluence = mod.influenceFactor ?? 1;
+  if (cpInfluence > 1) {
+    const ir = camera.worldToScreenScale(mod.radius * cpInfluence);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, ir, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 204, 0, 0.06)';
+    ctx.fill();
+    ctx.strokeStyle = COLORS.checkpoint;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([6, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   ctx.beginPath();
   ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
   ctx.fillStyle = COLORS.checkpointFill;
@@ -198,9 +213,10 @@ function drawDangerZone(
   const stroke = mod.isLethal ? COLORS.dangerZoneLethal : COLORS.dangerZone;
 
   // Draw influence region if factor > 1
-  if (mod.influenceFactor > 1) {
-    const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * mod.influenceFactor);
-    const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * mod.influenceFactor);
+  const dangerInfluence = mod.influenceFactor ?? 1;
+  if (dangerInfluence > 1) {
+    const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * dangerInfluence);
+    const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * dangerInfluence);
     const cornerRadius = Math.min(iw, ih) * 0.15;
 
     ctx.fillStyle = 'rgba(255, 51, 102, 0.06)';

@@ -45,4 +45,9 @@ public struct GPURewardZone
     /// Triggered when closestDistance transitions to &lt;= 0.
     /// </summary>
     public float ContactBonus;
+
+    /// <summary>
+    /// 1 = circular (radius = HalfExtentX), 0 = rectangular.
+    /// </summary>
+    public int IsCircular;
 }

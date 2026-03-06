@@ -16,6 +16,7 @@ export interface SimCheckpoint {
   Radius: number;
   Order: number;
   RewardBonus: number;
+  InfluenceFactor: number;
 }
 
 export interface SimSpeedZone {
@@ -126,6 +127,7 @@ export function exportSimWorld(world: World): SimWorld {
           Radius: mod.radius,
           Order: mod.order,
           RewardBonus: mod.rewardBonus,
+          InfluenceFactor: mod.influenceFactor,
         });
         break;
       case 'speedZone':
