@@ -341,6 +341,17 @@ RigidBodyRocketTemplate.ApplyThrust(world, rbRocket, throttle: 0.7f, maxThrust: 
 8. **Rigid Body Limitations**: Rigid bodies don't collide with particles or each other (only with static colliders)
 9. **GPU vs CPU**: GPU stepper is feature-complete but lacks warm-starting for contacts; use CPU for correctness validation
 
+## GPU Sync Policy
+
+**Never add `_accelerator.Synchronize()` between GPU kernel launches unless you are about to read results back to CPU.**
+
+ILGPU's default stream guarantees in-order execution — kernel B launched after kernel A will not start until kernel A completes. Explicit sync is only needed when:
+1. **Before CPU reads**: `GetAsArray1D()`, `CopyToCPU()`, or any method that downloads GPU memory to host
+2. **Before CPU-side branching on GPU state**: e.g., early-exit checks like `AllTerminal()` that read GPU flags
+3. **After CPU-side buffer operations**: e.g., `ClearContactCounts()` if it's a CPU method modifying GPU-visible state
+
+Unnecessary syncs force a full pipeline flush and CPU↔GPU round-trip. In a loop with many kernel launches per step (observe → forward pass → act → step), redundant syncs dominate wall-clock time. The rocket evaluators demonstrate the correct pattern: enqueue all kernels freely, sync only every N steps for early-exit checks, and one final sync before downloading results.
+
 ## Directory Conventions
 
 - **`docs/`** — Permanent documentation and plans (tracked by git)
