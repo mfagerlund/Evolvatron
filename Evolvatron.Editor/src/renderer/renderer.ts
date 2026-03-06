@@ -5,9 +5,11 @@ import type { EditorState } from '../editor/editor';
 import { COLORS } from './colors';
 import { drawGrid, drawGround, drawLandingPad, drawSpawnArea, drawModules } from './draw-modules';
 import { drawSelectionHighlights, drawBoxSelection, drawGhostModule } from './draw-overlay';
+import { drawRewardOverlay } from './draw-reward-overlay';
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  showRewardOverlay = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -22,6 +24,11 @@ export class Renderer {
     ctx.fillRect(0, 0, w, h);
 
     drawGrid(ctx, camera);
+
+    if (this.showRewardOverlay) {
+      drawRewardOverlay(ctx, camera, world);
+    }
+
     drawGround(ctx, camera, world.groundY);
     drawSpawnArea(ctx, camera, world);
     drawModules(ctx, camera, world);

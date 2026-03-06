@@ -1,3 +1,4 @@
+using System;
 using ILGPU;
 using ILGPU.Runtime;
 
@@ -17,6 +18,7 @@ public class GPUBatchedEnvironmentState : IDisposable
     private readonly int _targetsPerWorld;
     private readonly int _observationsPerWorld;
     private readonly int _actionsPerWorld;
+    private int _rewardZoneCount;
     private bool _disposed;
 
     // Target state: positions and active flags
@@ -39,10 +41,21 @@ public class GPUBatchedEnvironmentState : IDisposable
     // Final fitness values (computed at episode end)
     public MemoryBuffer1D<float, Stride1D.Dense> FitnessValues { get; private set; }
 
+    // Reward zones: static zone definitions (shared across all worlds)
+    public MemoryBuffer1D<GPURewardZone, Stride1D.Dense>? RewardZones { get; private set; }
+
+    // Per-world per-zone closest signed distance tracking
+    // Layout: [world0_zone0, world0_zone1, ..., world1_zone0, ...]
+    public MemoryBuffer1D<float, Stride1D.Dense>? ZoneClosestDistances { get; private set; }
+
+    // Per-world per-zone contact triggered flag (1 = triggered)
+    public MemoryBuffer1D<byte, Stride1D.Dense>? ZoneContactTriggered { get; private set; }
+
     public int WorldCount => _worldCount;
     public int TargetsPerWorld => _targetsPerWorld;
     public int ObservationsPerWorld => _observationsPerWorld;
     public int ActionsPerWorld => _actionsPerWorld;
+    public int RewardZoneCount => _rewardZoneCount;
 
     public GPUBatchedEnvironmentState(
         Accelerator accelerator,
@@ -92,6 +105,7 @@ public class GPUBatchedEnvironmentState : IDisposable
         FitnessValues.MemSetToZero();
         Observations.MemSetToZero();
         Actions.MemSetToZero();
+        ResetZoneTracking();
     }
 
     /// <summary>
@@ -101,6 +115,44 @@ public class GPUBatchedEnvironmentState : IDisposable
     {
         TargetPositions.CopyFromCPU(positions);
         TargetActive.CopyFromCPU(active);
+    }
+
+    /// <summary>
+    /// Upload reward zone definitions (shared across all worlds).
+    /// Allocates per-world closest-distance and contact-triggered buffers.
+    /// </summary>
+    public void UploadRewardZones(GPURewardZone[] zones)
+    {
+        _rewardZoneCount = zones.Length;
+        if (_rewardZoneCount == 0) return;
+
+        RewardZones?.Dispose();
+        ZoneClosestDistances?.Dispose();
+        ZoneContactTriggered?.Dispose();
+
+        RewardZones = _accelerator.Allocate1D(zones);
+
+        int totalSlots = _worldCount * _rewardZoneCount;
+        ZoneClosestDistances = _accelerator.Allocate1D<float>(totalSlots);
+        ZoneContactTriggered = _accelerator.Allocate1D<byte>(totalSlots);
+
+        ResetZoneTracking();
+    }
+
+    /// <summary>
+    /// Reset zone closest-distance tracking for all worlds.
+    /// Sets distances to large value (not yet approached) and clears contact flags.
+    /// </summary>
+    public void ResetZoneTracking()
+    {
+        if (ZoneClosestDistances == null || ZoneContactTriggered == null) return;
+
+        // Initialize to large distance (not yet approached)
+        int totalSlots = _worldCount * _rewardZoneCount;
+        var initDistances = new float[totalSlots];
+        Array.Fill(initDistances, 1e6f);
+        ZoneClosestDistances.CopyFromCPU(initDistances);
+        ZoneContactTriggered.MemSetToZero();
     }
 
     /// <summary>
@@ -179,5 +231,8 @@ public class GPUBatchedEnvironmentState : IDisposable
         FitnessValues?.Dispose();
         Observations?.Dispose();
         Actions?.Dispose();
+        RewardZones?.Dispose();
+        ZoneClosestDistances?.Dispose();
+        ZoneContactTriggered?.Dispose();
     }
 }

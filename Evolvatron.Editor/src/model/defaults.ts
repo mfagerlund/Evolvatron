@@ -1,6 +1,6 @@
 import type {
   World, LandingPad, SpawnArea, SimulationConfig, RewardWeights,
-  ObstacleModule, CheckpointModule, SpeedZoneModule, DangerZoneModule,
+  ObstacleModule, CheckpointModule, SpeedZoneModule, DangerZoneModule, AttractorModule,
 } from './types';
 
 let nextId = 1;
@@ -115,5 +115,19 @@ export function createDangerZone(x = 0, y = 0): DangerZoneModule {
     halfExtentY: 2,
     penaltyPerStep: 0.5,
     isLethal: false,
+    influenceFactor: 2,
+  };
+}
+
+export function createAttractor(x = 0, y = 0): AttractorModule {
+  return {
+    id: generateId(),
+    kind: 'attractor',
+    position: { x, y },
+    halfExtentX: 1.5,
+    halfExtentY: 1.5,
+    magnitude: 10,
+    influenceFactor: 3,
+    contactBonus: 50,
   };
 }

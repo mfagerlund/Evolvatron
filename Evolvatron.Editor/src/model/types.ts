@@ -23,7 +23,7 @@ export interface SpawnArea {
   velYMax: number;
 }
 
-export type ModuleKind = 'obstacle' | 'checkpoint' | 'speedZone' | 'dangerZone';
+export type ModuleKind = 'obstacle' | 'checkpoint' | 'speedZone' | 'dangerZone' | 'attractor';
 
 export interface ObstacleModule {
   id: string;
@@ -62,9 +62,25 @@ export interface DangerZoneModule {
   halfExtentY: number;
   penaltyPerStep: number;
   isLethal: boolean;
+  /** Multiplier on size for influence falloff region (1 = no falloff beyond core) */
+  influenceFactor: number;
 }
 
-export type Module = ObstacleModule | CheckpointModule | SpeedZoneModule | DangerZoneModule;
+export interface AttractorModule {
+  id: string;
+  kind: 'attractor';
+  position: Vec2;
+  halfExtentX: number;
+  halfExtentY: number;
+  /** Positive = reward (attractor), negative = penalty (repulsor) */
+  magnitude: number;
+  /** Multiplier on size for influence falloff region */
+  influenceFactor: number;
+  /** One-time bonus when entering the core zone (0 to disable) */
+  contactBonus: number;
+}
+
+export type Module = ObstacleModule | CheckpointModule | SpeedZoneModule | DangerZoneModule | AttractorModule;
 
 export interface SimulationConfig {
   dt: number;

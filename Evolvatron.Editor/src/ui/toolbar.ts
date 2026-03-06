@@ -4,6 +4,7 @@ export interface ToolbarCallbacks {
   onLoad: () => void;
   onSave: () => void;
   onExport: () => void;
+  onToggleRewardOverlay: () => void;
 }
 
 export function setupToolbar(callbacks: ToolbarCallbacks): void {
@@ -13,6 +14,7 @@ export function setupToolbar(callbacks: ToolbarCallbacks): void {
     'btn-checkpoint': 'checkpoint',
     'btn-speed-zone': 'speedZone',
     'btn-danger-zone': 'dangerZone',
+    'btn-attractor': 'attractor',
   };
 
   for (const [btnId, tool] of Object.entries(toolButtons)) {
@@ -32,4 +34,10 @@ export function setupToolbar(callbacks: ToolbarCallbacks): void {
   document.getElementById('btn-load')?.addEventListener('click', callbacks.onLoad);
   document.getElementById('btn-save')?.addEventListener('click', callbacks.onSave);
   document.getElementById('btn-export')?.addEventListener('click', callbacks.onExport);
+
+  const rewardBtn = document.getElementById('btn-reward-overlay');
+  rewardBtn?.addEventListener('click', () => {
+    rewardBtn.classList.toggle('active');
+    callbacks.onToggleRewardOverlay();
+  });
 }

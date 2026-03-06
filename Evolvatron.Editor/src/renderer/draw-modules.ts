@@ -103,6 +103,9 @@ export function drawModules(ctx: CanvasRenderingContext2D, camera: Camera, world
       case 'dangerZone':
         drawDangerZone(ctx, camera, mod);
         break;
+      case 'attractor':
+        drawAttractor(ctx, camera, mod);
+        break;
     }
   }
 }
@@ -194,6 +197,23 @@ function drawDangerZone(
   const fill = mod.isLethal ? 'rgba(255, 0, 51, 0.3)' : COLORS.dangerZoneFill;
   const stroke = mod.isLethal ? COLORS.dangerZoneLethal : COLORS.dangerZone;
 
+  // Draw influence region if factor > 1
+  if (mod.influenceFactor > 1) {
+    const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * mod.influenceFactor);
+    const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * mod.influenceFactor);
+    const cornerRadius = Math.min(iw, ih) * 0.15;
+
+    ctx.fillStyle = 'rgba(255, 51, 102, 0.06)';
+    ctx.beginPath();
+    roundedRect(ctx, s.x - iw / 2, s.y - ih / 2, iw, ih, cornerRadius);
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([6, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   ctx.fillStyle = fill;
   ctx.fillRect(s.x - w / 2, s.y - h / 2, w, h);
   ctx.strokeStyle = stroke;
@@ -204,4 +224,61 @@ function drawDangerZone(
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
   ctx.fillText(mod.isLethal ? 'LETHAL' : 'DANGER', s.x, s.y + 4);
+}
+
+function drawAttractor(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  mod: import('../model/types').AttractorModule,
+): void {
+  const s = camera.worldToScreen(mod.position.x, mod.position.y);
+  const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+  const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+  const isRepulsor = mod.magnitude < 0;
+
+  // Draw influence region (rounded box)
+  const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * mod.influenceFactor);
+  const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * mod.influenceFactor);
+  const cornerRadius = Math.min(iw, ih) * 0.15;
+
+  ctx.fillStyle = isRepulsor ? COLORS.influenceRegionRepulsor : COLORS.influenceRegion;
+  ctx.beginPath();
+  roundedRect(ctx, s.x - iw / 2, s.y - ih / 2, iw, ih, cornerRadius);
+  ctx.fill();
+  ctx.strokeStyle = isRepulsor ? COLORS.repulsor : COLORS.attractor;
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([6, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw core zone
+  ctx.fillStyle = isRepulsor ? COLORS.repulsorFill : COLORS.attractorFill;
+  ctx.fillRect(s.x - w / 2, s.y - h / 2, w, h);
+  ctx.strokeStyle = isRepulsor ? COLORS.repulsor : COLORS.attractor;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+
+  // Label
+  ctx.fillStyle = isRepulsor ? COLORS.repulsor : COLORS.attractor;
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  const label = isRepulsor ? `REP ${mod.magnitude}` : `ATT +${mod.magnitude}`;
+  ctx.fillText(label, s.x, s.y + 4);
+}
+
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number,
+): void {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }

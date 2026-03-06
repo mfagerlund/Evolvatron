@@ -126,7 +126,15 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
       appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));
       appendNumberField(container, 'Half Extent Y', mod.halfExtentY, v => commitProp(editor, id, 'halfExtentY', mod.halfExtentY, v));
       appendNumberField(container, 'Penalty/Step', mod.penaltyPerStep, v => commitProp(editor, id, 'penaltyPerStep', mod.penaltyPerStep, v));
+      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
       appendCheckbox(container, 'Lethal', mod.isLethal, v => commitProp(editor, id, 'isLethal', mod.isLethal, v));
+      break;
+    case 'attractor':
+      appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));
+      appendNumberField(container, 'Half Extent Y', mod.halfExtentY, v => commitProp(editor, id, 'halfExtentY', mod.halfExtentY, v));
+      appendNumberField(container, 'Magnitude', mod.magnitude, v => commitProp(editor, id, 'magnitude', mod.magnitude, v));
+      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
+      appendNumberField(container, 'Contact Bonus', mod.contactBonus, v => commitProp(editor, id, 'contactBonus', mod.contactBonus, v));
       break;
   }
 }
@@ -136,6 +144,9 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
   row.className = 'prop-row';
   const lbl = document.createElement('label');
   lbl.textContent = label;
+  lbl.style.cursor = 'ew-resize';
+  lbl.style.userSelect = 'none';
+
   const input = document.createElement('input');
   input.type = 'number';
   input.step = 'any';
@@ -144,6 +155,36 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
     const v = parseFloat(input.value);
     if (!isNaN(v)) onChange(v);
   });
+
+  // Drag-on-label to adjust value
+  let dragStartX = 0;
+  let dragStartValue = 0;
+
+  const onDragMove = (e: MouseEvent) => {
+    const dx = e.clientX - dragStartX;
+    // Scale: 1px = 0.01 for small values, 0.1 for larger
+    const scale = Math.abs(dragStartValue) > 10 ? 0.1 : 0.01;
+    const newVal = dragStartValue + dx * scale;
+    const rounded = Math.round(newVal * 1000) / 1000;
+    input.value = rounded.toString();
+    onChange(rounded);
+  };
+
+  const onDragEnd = () => {
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    document.body.style.cursor = '';
+  };
+
+  lbl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragStartX = e.clientX;
+    dragStartValue = parseFloat(input.value) || 0;
+    document.body.style.cursor = 'ew-resize';
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  });
+
   row.appendChild(lbl);
   row.appendChild(input);
   container.appendChild(row);

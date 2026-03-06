@@ -77,6 +77,8 @@ window.addEventListener('keydown', (e) => {
       case '2': setActiveTool('checkpoint'); break;
       case '3': setActiveTool('speedZone'); break;
       case '4': setActiveTool('dangerZone'); break;
+      case '5': setActiveTool('attractor'); break;
+      case 'r': toggleRewardOverlay(); break;
     }
   }
 });
@@ -142,6 +144,13 @@ function handleLoad(): void {
   input.click();
 }
 
+function toggleRewardOverlay(): void {
+  renderer.showRewardOverlay = !renderer.showRewardOverlay;
+  const btn = document.getElementById('btn-reward-overlay');
+  btn?.classList.toggle('active', renderer.showRewardOverlay);
+  editor.markDirty();
+}
+
 function handleExport(): void {
   const json = exportSim(editor.world);
   const blob = new Blob([json], { type: 'application/json' });
@@ -161,6 +170,7 @@ setupToolbar({
   onLoad: handleLoad,
   onSave: handleSave,
   onExport: handleExport,
+  onToggleRewardOverlay: toggleRewardOverlay,
 });
 
 const updateProps = setupPropertiesPanel(editor);

@@ -34,6 +34,17 @@ export interface SimDangerZone {
   HalfExtentY: number;
   PenaltyPerStep: number;
   IsLethal: boolean;
+  InfluenceFactor: number;
+}
+
+export interface SimAttractor {
+  X: number;
+  Y: number;
+  HalfExtentX: number;
+  HalfExtentY: number;
+  Magnitude: number;
+  InfluenceFactor: number;
+  ContactBonus: number;
 }
 
 export interface SimWorld {
@@ -60,6 +71,7 @@ export interface SimWorld {
   Checkpoints: SimCheckpoint[];
   SpeedZones: SimSpeedZone[];
   DangerZones: SimDangerZone[];
+  Attractors: SimAttractor[];
   SimulationConfig: {
     Dt: number;
     GravityY: number;
@@ -100,6 +112,7 @@ export function exportSimWorld(world: World): SimWorld {
   const checkpoints: SimCheckpoint[] = [];
   const speedZones: SimSpeedZone[] = [];
   const dangerZones: SimDangerZone[] = [];
+  const attractors: SimAttractor[] = [];
 
   for (const mod of world.modules) {
     switch (mod.kind) {
@@ -133,6 +146,18 @@ export function exportSimWorld(world: World): SimWorld {
           HalfExtentY: mod.halfExtentY,
           PenaltyPerStep: mod.penaltyPerStep,
           IsLethal: mod.isLethal,
+          InfluenceFactor: mod.influenceFactor,
+        });
+        break;
+      case 'attractor':
+        attractors.push({
+          X: mod.position.x,
+          Y: mod.position.y,
+          HalfExtentX: mod.halfExtentX,
+          HalfExtentY: mod.halfExtentY,
+          Magnitude: mod.magnitude,
+          InfluenceFactor: mod.influenceFactor,
+          ContactBonus: mod.contactBonus,
         });
         break;
     }
@@ -167,6 +192,7 @@ export function exportSimWorld(world: World): SimWorld {
     Checkpoints: checkpoints,
     SpeedZones: speedZones,
     DangerZones: dangerZones,
+    Attractors: attractors,
     SimulationConfig: {
       Dt: cfg.dt,
       GravityY: cfg.gravityY,

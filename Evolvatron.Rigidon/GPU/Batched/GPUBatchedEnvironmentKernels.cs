@@ -586,6 +586,129 @@ public static class GPUBatchedEnvironmentKernels
 
     #endregion
 
+    #region Reward Zone Tracking
+
+    /// <summary>
+    /// Update closest signed distance from rocket to each reward zone.
+    /// Signed distance: negative = inside core, 0 = at core edge, positive = outside.
+    /// One thread per world.
+    /// </summary>
+    public static void BatchedUpdateZoneDistancesKernel(
+        Index1D worldIdx,
+        ArrayView<GPURigidBody> bodies,
+        ArrayView<GPURewardZone> zones,
+        ArrayView<float> zoneClosestDistances,
+        ArrayView<byte> zoneContactTriggered,
+        ArrayView<float> cumulativeRewards,
+        ArrayView<byte> isTerminal,
+        int bodiesPerWorld,
+        int primaryBodyLocalIdx,
+        int zoneCount)
+    {
+        if (isTerminal[worldIdx] != 0) return;
+
+        int bodyGlobalIdx = worldIdx * bodiesPerWorld + primaryBodyLocalIdx;
+        var body = bodies[bodyGlobalIdx];
+        float rx = body.X;
+        float ry = body.Y;
+
+        int zoneBase = worldIdx * zoneCount;
+
+        for (int z = 0; z < zoneCount; z++)
+        {
+            var zone = zones[z];
+            int slotIdx = zoneBase + z;
+
+            // Signed distance to core zone (box SDF)
+            float dx = XMath.Abs(rx - zone.CenterX) - zone.HalfExtentX;
+            float dy = XMath.Abs(ry - zone.CenterY) - zone.HalfExtentY;
+            // Outside: max of positive components; inside: max (both negative)
+            float signedDist;
+            if (dx > 0f && dy > 0f)
+                signedDist = XMath.Sqrt(dx * dx + dy * dy); // corner region
+            else
+                signedDist = XMath.Max(dx, dy); // edge or interior
+
+            float prevClosest = zoneClosestDistances[slotIdx];
+            if (signedDist < prevClosest)
+            {
+                zoneClosestDistances[slotIdx] = signedDist;
+
+                // Check if this is the first time entering the core zone
+                if (signedDist <= 0f && prevClosest > 0f)
+                {
+                    zoneContactTriggered[slotIdx] = 1;
+                    cumulativeRewards[worldIdx] += zone.ContactBonus;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Aggregate zone rewards into fitness at episode end.
+    /// Reward per zone = magnitude * falloff(closestDistance).
+    /// Falloff: 1.0 inside core, quadratic decay in influence region, 0 outside.
+    /// One thread per world.
+    /// </summary>
+    public static void BatchedAggregateZoneRewardsKernel(
+        Index1D worldIdx,
+        ArrayView<GPURewardZone> zones,
+        ArrayView<float> zoneClosestDistances,
+        ArrayView<float> fitnessValues,
+        int zoneCount)
+    {
+        int zoneBase = worldIdx * zoneCount;
+        float totalZoneReward = 0f;
+
+        for (int z = 0; z < zoneCount; z++)
+        {
+            var zone = zones[z];
+            float closest = zoneClosestDistances[zoneBase + z];
+
+            // Inside core: full magnitude
+            if (closest <= 0f)
+            {
+                totalZoneReward += zone.Magnitude;
+                continue;
+            }
+
+            // Compute influence distance (edge of influence region)
+            float influenceDistX = zone.HalfExtentX * (zone.InfluenceFactor - 1f);
+            float influenceDistY = zone.HalfExtentY * (zone.InfluenceFactor - 1f);
+            float maxInfluenceDist = XMath.Max(influenceDistX, influenceDistY);
+
+            if (maxInfluenceDist <= 0f || closest >= maxInfluenceDist)
+                continue; // Outside influence region
+
+            // Normalized distance: 0 at core edge, 1 at influence edge
+            float t = closest / maxInfluenceDist;
+            float falloff = 1f - t * t; // quadratic
+            totalZoneReward += zone.Magnitude * falloff;
+        }
+
+        fitnessValues[worldIdx] += totalZoneReward;
+    }
+
+    /// <summary>
+    /// Reset zone tracking for specific worlds (used when resetting terminated worlds).
+    /// One thread per world-zone slot.
+    /// </summary>
+    public static void BatchedResetZoneTrackingKernel(
+        Index1D globalSlotIdx,
+        ArrayView<float> zoneClosestDistances,
+        ArrayView<byte> zoneContactTriggered,
+        ArrayView<int> resetFlags,
+        int zoneCount)
+    {
+        int worldIdx = globalSlotIdx / zoneCount;
+        if (resetFlags[worldIdx] == 0) return;
+
+        zoneClosestDistances[globalSlotIdx] = 1e6f;
+        zoneContactTriggered[globalSlotIdx] = 0;
+    }
+
+    #endregion
+
     #region Episode Reset
 
     /// <summary>

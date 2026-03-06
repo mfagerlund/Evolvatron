@@ -9,7 +9,7 @@ import { Camera } from './camera';
 import { hitTestPoint, hitTestHandle, boxSelectModules } from './hit-test';
 import type { HandleDirection } from './hit-test';
 import {
-  createObstacle, createCheckpoint, createSpeedZone, createDangerZone,
+  createObstacle, createCheckpoint, createSpeedZone, createDangerZone, createAttractor,
 } from '../model/defaults';
 import { findModule } from '../model/world';
 import {
@@ -329,6 +329,10 @@ export class Editor {
           mod.halfExtentY = hy;
         } else if (kind === 'speedZone') {
           mod = createSpeedZone(cx, cy);
+          mod.halfExtentX = hx;
+          mod.halfExtentY = hy;
+        } else if (kind === 'attractor') {
+          mod = createAttractor(cx, cy);
           mod.halfExtentX = hx;
           mod.halfExtentY = hy;
         } else {

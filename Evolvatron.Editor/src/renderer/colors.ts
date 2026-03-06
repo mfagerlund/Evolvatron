@@ -24,6 +24,13 @@ export const COLORS = {
   dangerZoneFill: 'rgba(255, 51, 102, 0.2)',
   dangerZoneLethal: '#ff0033',
 
+  attractor: '#44ffaa',
+  attractorFill: 'rgba(68, 255, 170, 0.25)',
+  repulsor: '#ff6644',
+  repulsorFill: 'rgba(255, 102, 68, 0.2)',
+  influenceRegion: 'rgba(68, 255, 170, 0.08)',
+  influenceRegionRepulsor: 'rgba(255, 102, 68, 0.06)',
+
   selection: '#ffffff',
   selectionFill: 'rgba(255, 255, 255, 0.1)',
   boxSelect: 'rgba(100, 150, 255, 0.3)',

@@ -83,6 +83,19 @@ public class GPUBatchedEnvironment : IDisposable
         ArrayView<int>, ArrayView<float>, ArrayView<byte>, int, int, int, float, float>
         _checkTargetCollisionsKernel = null!;
 
+    // Reward zone kernels
+    private Action<Index1D, ArrayView<GPURigidBody>, ArrayView<GPURewardZone>,
+        ArrayView<float>, ArrayView<byte>, ArrayView<float>, ArrayView<byte>,
+        int, int, int>
+        _updateZoneDistancesKernel = null!;
+
+    private Action<Index1D, ArrayView<GPURewardZone>, ArrayView<float>,
+        ArrayView<float>, int>
+        _aggregateZoneRewardsKernel = null!;
+
+    private Action<Index1D, ArrayView<float>, ArrayView<byte>, ArrayView<int>, int>
+        _resetZoneTrackingKernel = null!;
+
     // Cached host arrays for download
     private float[]? _observationsCache;
     private float[]? _fitnessCache;
@@ -189,6 +202,22 @@ public class GPUBatchedEnvironment : IDisposable
             Index1D, ArrayView<GPURigidBody>, ArrayView<float>, ArrayView<byte>,
             ArrayView<int>, ArrayView<float>, ArrayView<byte>, int, int, int, float, float>(
             GPUBatchedEnvironmentKernels.BatchedCheckTargetCollisionsFromBodiesKernel);
+
+        // Reward zone kernels
+        _updateZoneDistancesKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURigidBody>, ArrayView<GPURewardZone>,
+            ArrayView<float>, ArrayView<byte>, ArrayView<float>, ArrayView<byte>,
+            int, int, int>(
+            GPUBatchedEnvironmentKernels.BatchedUpdateZoneDistancesKernel);
+
+        _aggregateZoneRewardsKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<GPURewardZone>, ArrayView<float>,
+            ArrayView<float>, int>(
+            GPUBatchedEnvironmentKernels.BatchedAggregateZoneRewardsKernel);
+
+        _resetZoneTrackingKernel = _accelerator.LoadAutoGroupedStreamKernel<
+            Index1D, ArrayView<float>, ArrayView<byte>, ArrayView<int>, int>(
+            GPUBatchedEnvironmentKernels.BatchedResetZoneTrackingKernel);
     }
 
     #region Setup Methods
@@ -210,6 +239,15 @@ public class GPUBatchedEnvironment : IDisposable
     public void UploadSharedColliders(GPUOBBCollider[] colliders)
     {
         WorldState.UploadSharedColliders(colliders);
+    }
+
+    /// <summary>
+    /// Upload reward zone definitions (attractors and danger zones).
+    /// These are shared across all worlds; per-world tracking buffers are allocated automatically.
+    /// </summary>
+    public void UploadRewardZones(GPURewardZone[] zones)
+    {
+        EnvironmentState.UploadRewardZones(zones);
     }
 
     #endregion
@@ -300,6 +338,19 @@ public class GPUBatchedEnvironment : IDisposable
             _envConfig.ArenaMinY,
             _envConfig.ArenaMaxY,
             margin);
+
+        // Reset zone tracking for reset worlds
+        int zoneCount = EnvironmentState.RewardZoneCount;
+        if (zoneCount > 0 && EnvironmentState.ZoneClosestDistances != null)
+        {
+            int totalSlots = worldCount * zoneCount;
+            _resetZoneTrackingKernel(
+                totalSlots,
+                EnvironmentState.ZoneClosestDistances.View,
+                EnvironmentState.ZoneContactTriggered!.View,
+                resetFlagsBuffer.View,
+                zoneCount);
+        }
 
         _accelerator.Synchronize();
     }
@@ -479,6 +530,23 @@ public class GPUBatchedEnvironment : IDisposable
             distanceRewardScale,
             orientationRewardScale,
             _envConfig.TimeStepPenalty);
+
+        // Update closest distances for reward zones (if any configured)
+        int zoneCount = EnvironmentState.RewardZoneCount;
+        if (zoneCount > 0 && EnvironmentState.RewardZones != null)
+        {
+            _updateZoneDistancesKernel(
+                worldCount,
+                WorldState.RigidBodies.View,
+                EnvironmentState.RewardZones.View,
+                EnvironmentState.ZoneClosestDistances!.View,
+                EnvironmentState.ZoneContactTriggered!.View,
+                EnvironmentState.CumulativeRewards.View,
+                EnvironmentState.IsTerminal.View,
+                bodiesPerWorld,
+                primaryBodyLocalIdx,
+                zoneCount);
+        }
     }
 
     /// <summary>
@@ -528,6 +596,18 @@ public class GPUBatchedEnvironment : IDisposable
             EnvironmentState.CumulativeRewards.View,
             EnvironmentState.TargetsCollected.View,
             targetBonusMultiplier);
+
+        // Aggregate reward zone contributions into fitness
+        int zoneCount = EnvironmentState.RewardZoneCount;
+        if (zoneCount > 0 && EnvironmentState.RewardZones != null)
+        {
+            _aggregateZoneRewardsKernel(
+                _worldConfig.WorldCount,
+                EnvironmentState.RewardZones.View,
+                EnvironmentState.ZoneClosestDistances!.View,
+                EnvironmentState.FitnessValues.View,
+                zoneCount);
+        }
     }
 
     /// <summary>

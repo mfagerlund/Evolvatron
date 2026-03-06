@@ -170,6 +170,7 @@ export function drawGhostModule(
       const h = Math.abs(s1.y - s0.y);
       const color = kind === 'obstacle' ? COLORS.obstacle
         : kind === 'speedZone' ? COLORS.speedZone
+        : kind === 'attractor' ? COLORS.attractor
         : COLORS.dangerZone;
       ctx.strokeStyle = color;
       ctx.strokeRect(x, y, w, h);
