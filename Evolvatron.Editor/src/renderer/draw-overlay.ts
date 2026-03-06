@@ -1,6 +1,7 @@
 import type { World, Module, SelectableId } from '../model/types';
 import type { Camera } from '../editor/camera';
 import type { Selection } from '../editor/selection';
+import { getInfluenceHandleScreenPositions } from '../editor/hit-test';
 import { findModule } from '../model/world';
 import { COLORS } from './colors';
 
@@ -46,6 +47,12 @@ function drawSelectionForId(
   }
 
   ctx.setLineDash([]);
+
+  // Draw influence handles if applicable
+  const infHandles = getInfluenceHandleScreenPositions(world, camera, id);
+  if (infHandles) {
+    drawInfluenceHandles(ctx, infHandles);
+  }
 }
 
 function drawModuleSelection(
@@ -118,6 +125,22 @@ function drawCircleHandles(
     const x = cx + Math.cos(angle) * r;
     const y = cy + Math.sin(angle) * r;
     ctx.fillRect(x - size / 2, y - size / 2, size, size);
+  }
+  ctx.setLineDash([4, 4]);
+}
+
+function drawInfluenceHandles(
+  ctx: CanvasRenderingContext2D,
+  handles: import('../editor/hit-test').HandlePos[],
+): void {
+  const r = 4;
+  ctx.strokeStyle = COLORS.influenceHandle;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  for (const h of handles) {
+    ctx.beginPath();
+    ctx.arc(h.sx, h.sy, r, 0, Math.PI * 2);
+    ctx.stroke();
   }
   ctx.setLineDash([4, 4]);
 }

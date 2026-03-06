@@ -7,7 +7,7 @@ import { DuplicateModulesCommand } from '../commands/duplicate-modules';
 import { Selection } from './selection';
 import { Camera } from './camera';
 import { hitTestPoint, hitTestHandle, boxSelectModules } from './hit-test';
-import type { HandleDirection } from './hit-test';
+import type { HandleDirection, HandleKind } from './hit-test';
 import {
   createObstacle, createCheckpoint, createSpeedZone, createDangerZone, createAttractor,
 } from '../model/defaults';
@@ -53,6 +53,7 @@ export class Editor {
   // Resize state
   private resizeTargetId: SelectableId | null = null;
   private resizeDirection: HandleDirection | null = null;
+  private resizeKind: HandleKind = 'size';
   private resizeStartValues: ResizeSnapshot | null = null;
 
   /** Current cursor to display. Updated on mouse move. */
@@ -117,7 +118,7 @@ export class Editor {
     // Check if clicking a resize handle on an already-selected object
     const handleHit = hitTestHandle(this.world, this.camera, this.selection.ids, sx, sy);
     if (handleHit) {
-      this.startResize(handleHit.id, handleHit.direction, sx, sy);
+      this.startResize(handleHit.id, handleHit.direction, sx, sy, handleHit.kind);
       return;
     }
 
@@ -428,11 +429,12 @@ export class Editor {
 
   // --- Resize helpers ---
 
-  private startResize(id: SelectableId, direction: HandleDirection, sx: number, sy: number): void {
+  private startResize(id: SelectableId, direction: HandleDirection, sx: number, sy: number, kind: HandleKind = 'size'): void {
     this.resizeTargetId = id;
     this.resizeDirection = direction;
+    this.resizeKind = kind;
     this.dragStart = { x: sx, y: sy };
-    this.resizeStartValues = this.captureSize(id);
+    this.resizeStartValues = kind === 'influence' ? this.captureInfluence(id) : this.captureSize(id);
     this.state = { mode: 'resizing' };
     this.markDirty();
   }
@@ -456,6 +458,11 @@ export class Editor {
 
   private applyResizeDelta(sx: number, sy: number): void {
     if (!this.dragStart || !this.resizeTargetId || !this.resizeDirection || !this.resizeStartValues) return;
+
+    if (this.resizeKind === 'influence') {
+      this.applyInfluenceResizeDelta(sx, sy);
+      return;
+    }
 
     // World-space delta from drag start
     const wStart = this.camera.screenToWorld(this.dragStart.x, this.dragStart.y);
@@ -580,7 +587,7 @@ export class Editor {
 
     const id = this.resizeTargetId;
     const oldValues = this.resizeStartValues;
-    const newValues = this.captureSize(id);
+    const newValues = this.resizeKind === 'influence' ? this.captureInfluence(id) : this.captureSize(id);
 
     // Check if anything actually changed
     const changed = Object.keys(oldValues).some(k => oldValues[k] !== newValues[k]);
@@ -618,9 +625,60 @@ export class Editor {
     }
   }
 
+  private captureInfluence(id: SelectableId): ResizeSnapshot {
+    const mod = findModule(this.world, id);
+    if (!mod) return {};
+    if (mod.kind === 'checkpoint') return { influenceFactor: mod.influenceFactor ?? 1 };
+    if (mod.kind === 'attractor') return { influenceFactor: mod.influenceFactor };
+    if (mod.kind === 'dangerZone') return { influenceFactor: mod.influenceFactor ?? 1 };
+    return {};
+  }
+
+  private applyInfluenceResizeDelta(sx: number, sy: number): void {
+    if (!this.dragStart || !this.resizeTargetId || !this.resizeDirection || !this.resizeStartValues) return;
+
+    const id = this.resizeTargetId;
+    const dir = this.resizeDirection;
+    const start = this.resizeStartValues;
+    const mod = findModule(this.world, id);
+    if (!mod || !('influenceFactor' in mod)) return;
+
+    const wStart = this.camera.screenToWorld(this.dragStart.x, this.dragStart.y);
+    const wNow = this.camera.screenToWorld(sx, sy);
+    const dwx = wNow.x - wStart.x;
+    const dwy = wNow.y - wStart.y;
+
+    // Determine which axis the drag is along from the handle direction
+    const xSign = dir.includes('e') ? 1 : dir.includes('w') ? -1 : 0;
+    const ySign = dir.includes('n') ? 1 : dir.includes('s') ? -1 : 0;
+
+    if (mod.kind === 'checkpoint') {
+      // For circles, influence is based on radius
+      const baseRadius = mod.radius;
+      if (baseRadius <= 0) return;
+      const startInfluenceR = baseRadius * start.influenceFactor;
+      // Radial delta: project cursor movement onto the handle direction
+      const radialDelta = xSign * dwx + ySign * dwy;
+      const newInfluenceR = startInfluenceR + radialDelta;
+      mod.influenceFactor = Math.max(1, newInfluenceR / baseRadius);
+    } else if (mod.kind === 'attractor' || mod.kind === 'dangerZone') {
+      // For rectangles, compute influence factor from the axis being dragged
+      if (xSign !== 0 && mod.halfExtentX > 0) {
+        const startInfluenceX = mod.halfExtentX * start.influenceFactor;
+        const newInfluenceX = startInfluenceX + xSign * dwx;
+        mod.influenceFactor = Math.max(1, newInfluenceX / mod.halfExtentX);
+      } else if (ySign !== 0 && mod.halfExtentY > 0) {
+        const startInfluenceY = mod.halfExtentY * start.influenceFactor;
+        const newInfluenceY = startInfluenceY + ySign * dwy;
+        mod.influenceFactor = Math.max(1, newInfluenceY / mod.halfExtentY);
+      }
+    }
+  }
+
   private clearResizeState(): void {
     this.resizeTargetId = null;
     this.resizeDirection = null;
+    this.resizeKind = 'size';
     this.resizeStartValues = null;
     this.dragStart = null;
   }

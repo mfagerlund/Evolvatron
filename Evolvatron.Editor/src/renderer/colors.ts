@@ -38,6 +38,7 @@ export const COLORS = {
 
   ghost: 'rgba(255, 255, 255, 0.4)',
   handle: '#ffffff',
+  influenceHandle: '#88aaff',
 
   textPrimary: '#ffffff',
   textSecondary: '#aaaacc',

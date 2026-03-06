@@ -115,9 +115,12 @@ export type HandleDirection =
   | 'n' | 's' | 'e' | 'w'
   | 'ne' | 'nw' | 'se' | 'sw';
 
+export type HandleKind = 'size' | 'influence';
+
 export interface HandleHitResult {
   id: SelectableId;
   direction: HandleDirection;
+  kind: HandleKind;
 }
 
 const HANDLE_RADIUS_PX = 7;
@@ -133,6 +136,18 @@ export function hitTestHandle(
   sx: number,
   sy: number,
 ): HandleHitResult | null {
+  // Test influence handles first (they're further out, so test them before size handles)
+  for (const id of selectedIds) {
+    const infHandles = getInfluenceHandleScreenPositions(world, camera, id);
+    if (!infHandles) continue;
+    for (const h of infHandles) {
+      const dx = sx - h.sx;
+      const dy = sy - h.sy;
+      if (dx * dx + dy * dy <= HANDLE_RADIUS_PX * HANDLE_RADIUS_PX) {
+        return { id, direction: h.dir, kind: 'influence' };
+      }
+    }
+  }
   for (const id of selectedIds) {
     const handles = getHandleScreenPositions(world, camera, id);
     if (!handles) continue;
@@ -140,14 +155,14 @@ export function hitTestHandle(
       const dx = sx - h.sx;
       const dy = sy - h.sy;
       if (dx * dx + dy * dy <= HANDLE_RADIUS_PX * HANDLE_RADIUS_PX) {
-        return { id, direction: h.dir };
+        return { id, direction: h.dir, kind: 'size' };
       }
     }
   }
   return null;
 }
 
-interface HandlePos {
+export interface HandlePos {
   sx: number;
   sy: number;
   dir: HandleDirection;
@@ -164,7 +179,9 @@ const DIRS: { dir: HandleDirection; dx: number; dy: number }[] = [
   { dir: 'se', dx:  1, dy:  1 },
 ];
 
-function getHandleScreenPositions(
+const CARDINAL_DIRS = DIRS.filter(d => d.dir === 'n' || d.dir === 's' || d.dir === 'e' || d.dir === 'w');
+
+export function getHandleScreenPositions(
   world: World,
   camera: Camera,
   id: SelectableId,
@@ -219,6 +236,51 @@ function getHandleScreenPositions(
   const hw = (camera.worldToScreenScale(mod.halfExtentX * 2) + 6) / 2;
   const hh = (camera.worldToScreenScale(mod.halfExtentY * 2) + 6) / 2;
   return DIRS.map(d => ({ sx: s.x + d.dx * hw, sy: s.y + d.dy * hh, dir: d.dir }));
+}
+
+/**
+ * Get screen positions for influence-factor handles.
+ * Only returns handles for modules with an influenceFactor > 1.
+ * Uses 4 cardinal handles on the influence region boundary.
+ */
+export function getInfluenceHandleScreenPositions(
+  world: World,
+  camera: Camera,
+  id: SelectableId,
+): HandlePos[] | null {
+  if (id === 'landingPad' || id === 'spawnArea') return null;
+
+  const mod = world.modules.find(m => m.id === id);
+  if (!mod) return null;
+
+  const s = camera.worldToScreen(mod.position.x, mod.position.y);
+
+  if (mod.kind === 'checkpoint') {
+    const inf = mod.influenceFactor ?? 1;
+    if (inf <= 1) return null;
+    const ir = camera.worldToScreenScale(mod.radius * inf);
+    return CARDINAL_DIRS.map(d => {
+      const angle = Math.atan2(d.dy, d.dx);
+      return { sx: s.x + Math.cos(angle) * ir, sy: s.y + Math.sin(angle) * ir, dir: d.dir };
+    });
+  }
+
+  if (mod.kind === 'attractor') {
+    if (mod.influenceFactor <= 1) return null;
+    const ihw = camera.worldToScreenScale(mod.halfExtentX * mod.influenceFactor);
+    const ihh = camera.worldToScreenScale(mod.halfExtentY * mod.influenceFactor);
+    return CARDINAL_DIRS.map(d => ({ sx: s.x + d.dx * ihw, sy: s.y + d.dy * ihh, dir: d.dir }));
+  }
+
+  if (mod.kind === 'dangerZone') {
+    const inf = mod.influenceFactor ?? 1;
+    if (inf <= 1) return null;
+    const ihw = camera.worldToScreenScale(mod.halfExtentX * inf);
+    const ihh = camera.worldToScreenScale(mod.halfExtentY * inf);
+    return CARDINAL_DIRS.map(d => ({ sx: s.x + d.dx * ihw, sy: s.y + d.dy * ihh, dir: d.dir }));
+  }
+
+  return null;
 }
 
 export function boxSelectModules(

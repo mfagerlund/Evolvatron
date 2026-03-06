@@ -9,7 +9,7 @@ import { drawRewardOverlay, sampleReward } from './draw-reward-overlay';
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
-  showRewardOverlay = false;
+  showRewardOverlay = true;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;

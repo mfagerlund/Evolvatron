@@ -175,6 +175,9 @@ setupToolbar({
   onToggleRewardOverlay: toggleRewardOverlay,
 });
 
+// Sync reward overlay button with default state
+document.getElementById('btn-reward-overlay')?.classList.toggle('active', renderer.showRewardOverlay);
+
 const updateProps = setupPropertiesPanel(editor);
 
 // --- Render loop ---
