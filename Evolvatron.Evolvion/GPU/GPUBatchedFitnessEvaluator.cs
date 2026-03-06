@@ -170,9 +170,8 @@ public class GPUBatchedFitnessEvaluator : IDisposable
             if (_physicsEnv.AllTerminal())
                 break;
 
-            // 1. Get observations from physics state
+            // 1. Get observations from physics state (returns GPU view, no CPU read)
             var observationsView = _physicsEnv.GetObservationsView();
-            _accelerator.Synchronize();
 
             // 2. Run neural network forward pass
             RunNeuralNetworkForwardPass(
@@ -331,9 +330,9 @@ public class GPUBatchedFitnessEvaluator : IDisposable
             episodesPerIndividual,
             spec.TotalNodes,
             observationSize);
-        _accelerator.Synchronize();
 
         // 2. Evaluate hidden layers row by row
+        // No sync needed between rows — same-stream kernels execute in order
         for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
         {
             _evaluateRowForEpisodesKernel(
@@ -350,10 +349,10 @@ public class GPUBatchedFitnessEvaluator : IDisposable
                 episodesPerIndividual,
                 spec.TotalNodes,
                 spec.TotalEdges);
-            _accelerator.Synchronize();
         }
 
         // 3. Copy output layer values to actions buffer
+        // No sync needed — next consumer is GPU physics step, not CPU
         int outputRowIdx = spec.RowPlans.Length - 1;
         _getOutputsForEpisodesKernel(
             totalEpisodes,
@@ -364,7 +363,6 @@ public class GPUBatchedFitnessEvaluator : IDisposable
             totalEpisodes,
             spec.TotalNodes,
             actionSize);
-        _accelerator.Synchronize();
     }
 
     /// <summary>

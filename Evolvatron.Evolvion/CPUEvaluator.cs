@@ -21,6 +21,14 @@ public class CPUEvaluator
     /// </summary>
     public ReadOnlySpan<float> Evaluate(Individual individual, ReadOnlySpan<float> inputs)
     {
+        // Validate individual arrays match topology (zero-cost in Release builds)
+        System.Diagnostics.Debug.Assert(
+            individual.Weights.Length == _spec.Edges.Count,
+            $"Weight array length {individual.Weights.Length} != edge count {_spec.Edges.Count}");
+        System.Diagnostics.Debug.Assert(
+            individual.Activations.Length == _spec.TotalNodes,
+            $"Activation array length {individual.Activations.Length} != node count {_spec.TotalNodes}");
+
         // Validate inputs
         int inputRowSize = _spec.RowCounts[0]; // Row 0 is input layer
         if (inputs.Length != inputRowSize)

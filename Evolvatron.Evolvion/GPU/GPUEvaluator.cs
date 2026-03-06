@@ -294,7 +294,6 @@ public class GPUEvaluator : IDisposable
             individualCount,
             _currentSpec.TotalNodes,
             inputSize);
-        _accelerator.Synchronize();
 
         for (int rowIdx = 1; rowIdx < _currentSpec.RowPlans.Length; rowIdx++)
         {
@@ -311,7 +310,6 @@ public class GPUEvaluator : IDisposable
                 individualCount,
                 _currentSpec.TotalNodes,
                 _currentSpec.TotalEdges);
-            _accelerator.Synchronize();
         }
 
         using var outputBuffer = _accelerator.Allocate1D<float>(individualCount * outputSize);
@@ -324,7 +322,7 @@ public class GPUEvaluator : IDisposable
             individualCount,
             _currentSpec.TotalNodes,
             outputSize);
-        _accelerator.Synchronize();
+        _accelerator.Synchronize(); // Sync before CPU read
 
         var flatOutputs = outputBuffer.GetAsArray1D();
         var outputs = new float[individualCount, outputSize];
@@ -397,7 +395,6 @@ public class GPUEvaluator : IDisposable
             landscapeConfig,
             totalEpisodes,
             seed);
-        _accelerator.Synchronize();
 
         int outputRowIdx = spec.RowPlans.Length - 1;
 
@@ -409,7 +406,6 @@ public class GPUEvaluator : IDisposable
                 _gpuState.Environments.Positions.View,
                 landscapeConfig,
                 totalEpisodes);
-            _accelerator.Synchronize();
 
             _setInputsForEpisodesKernel(
                 totalEpisodes,
@@ -419,7 +415,6 @@ public class GPUEvaluator : IDisposable
                 episodesPerIndividual,
                 spec.TotalNodes,
                 observationSize);
-            _accelerator.Synchronize();
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
@@ -437,7 +432,6 @@ public class GPUEvaluator : IDisposable
                     episodesPerIndividual,
                     spec.TotalNodes,
                     spec.TotalEdges);
-                _accelerator.Synchronize();
             }
 
             _getOutputsForEpisodesKernel(
@@ -449,7 +443,6 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
-            _accelerator.Synchronize();
 
             _stepEnvironmentKernel(
                 totalEpisodes,
@@ -459,7 +452,6 @@ public class GPUEvaluator : IDisposable
                 _gpuState.Environments.IsTerminal.View,
                 landscapeConfig,
                 totalEpisodes);
-            _accelerator.Synchronize();
         }
 
         _finalizeFitnessKernel(
@@ -470,7 +462,7 @@ public class GPUEvaluator : IDisposable
             landscapeConfig,
             individualCount,
             episodesPerIndividual);
-        _accelerator.Synchronize();
+        _accelerator.Synchronize(); // Sync before CPU read
 
         return _gpuState.FitnessValues.GetAsArray1D().Take(individualCount).ToArray();
     }
@@ -497,7 +489,6 @@ public class GPUEvaluator : IDisposable
             xorEnv.TotalErrors.View,
             xorEnv.IsTerminal.View,
             totalEpisodes);
-        _accelerator.Synchronize();
 
         int outputRowIdx = spec.RowPlans.Length - 1;
 
@@ -508,7 +499,6 @@ public class GPUEvaluator : IDisposable
                 xorEnv.Observations.View,
                 xorEnv.CurrentCases.View,
                 totalEpisodes);
-            _accelerator.Synchronize();
 
             _setInputsForEpisodesKernel(
                 totalEpisodes,
@@ -518,7 +508,6 @@ public class GPUEvaluator : IDisposable
                 episodesPerIndividual,
                 spec.TotalNodes,
                 observationSize);
-            _accelerator.Synchronize();
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
@@ -536,7 +525,6 @@ public class GPUEvaluator : IDisposable
                     episodesPerIndividual,
                     spec.TotalNodes,
                     spec.TotalEdges);
-                _accelerator.Synchronize();
             }
 
             _getOutputsForEpisodesKernel(
@@ -548,7 +536,6 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
-            _accelerator.Synchronize();
 
             _stepXORKernel(
                 totalEpisodes,
@@ -557,7 +544,6 @@ public class GPUEvaluator : IDisposable
                 xorEnv.TotalErrors.View,
                 xorEnv.IsTerminal.View,
                 totalEpisodes);
-            _accelerator.Synchronize();
         }
 
         _finalizeXORFitnessKernel(
@@ -566,7 +552,7 @@ public class GPUEvaluator : IDisposable
             xorEnv.TotalErrors.View,
             individualCount,
             episodesPerIndividual);
-        _accelerator.Synchronize();
+        _accelerator.Synchronize(); // Sync before CPU read
 
         return _gpuState.FitnessValues.GetAsArray1D().Take(individualCount).ToArray();
     }
@@ -595,7 +581,6 @@ public class GPUEvaluator : IDisposable
             spiralEnv.SpiralPoints.View,
             pointsPerSpiral,
             noise);
-        _accelerator.Synchronize();
 
         _initializeSpiralEpisodesKernel(
             totalEpisodes,
@@ -603,7 +588,6 @@ public class GPUEvaluator : IDisposable
             spiralEnv.TotalErrors.View,
             spiralEnv.IsTerminal.View,
             totalEpisodes);
-        _accelerator.Synchronize();
 
         int outputRowIdx = spec.RowPlans.Length - 1;
 
@@ -616,7 +600,6 @@ public class GPUEvaluator : IDisposable
                 spiralEnv.CurrentCases.View,
                 totalEpisodes,
                 totalPoints);
-            _accelerator.Synchronize();
 
             _setInputsForEpisodesKernel(
                 totalEpisodes,
@@ -626,7 +609,6 @@ public class GPUEvaluator : IDisposable
                 episodesPerIndividual,
                 spec.TotalNodes,
                 observationSize);
-            _accelerator.Synchronize();
 
             for (int rowIdx = 1; rowIdx < spec.RowPlans.Length; rowIdx++)
             {
@@ -644,7 +626,6 @@ public class GPUEvaluator : IDisposable
                     episodesPerIndividual,
                     spec.TotalNodes,
                     spec.TotalEdges);
-                _accelerator.Synchronize();
             }
 
             _getOutputsForEpisodesKernel(
@@ -656,7 +637,6 @@ public class GPUEvaluator : IDisposable
                 totalEpisodes,
                 spec.TotalNodes,
                 actionSize);
-            _accelerator.Synchronize();
 
             _stepSpiralKernel(
                 totalEpisodes,
@@ -667,7 +647,6 @@ public class GPUEvaluator : IDisposable
                 spiralEnv.IsTerminal.View,
                 totalEpisodes,
                 totalPoints);
-            _accelerator.Synchronize();
         }
 
         _finalizeSpiralFitnessKernel(
@@ -677,7 +656,7 @@ public class GPUEvaluator : IDisposable
             individualCount,
             episodesPerIndividual,
             totalPoints);
-        _accelerator.Synchronize();
+        _accelerator.Synchronize(); // Sync before CPU read
 
         return _gpuState.FitnessValues.GetAsArray1D().Take(individualCount).ToArray();
     }

@@ -201,6 +201,8 @@ public static class MutationOperators
     private static float SampleGaussian(Random random)
     {
         float u1 = random.NextSingle();
+        // Clamp u1 away from 0 to avoid MathF.Log(0) = -Infinity → NaN
+        if (u1 < float.Epsilon) u1 = float.Epsilon;
         float u2 = random.NextSingle();
         return MathF.Sqrt(-2.0f * MathF.Log(u1)) * MathF.Cos(2.0f * MathF.PI * u2);
     }

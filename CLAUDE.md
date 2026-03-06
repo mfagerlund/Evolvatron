@@ -341,6 +341,11 @@ RigidBodyRocketTemplate.ApplyThrust(world, rbRocket, throttle: 0.7f, maxThrust: 
 8. **Rigid Body Limitations**: Rigid bodies don't collide with particles or each other (only with static colliders)
 9. **GPU vs CPU**: GPU stepper is feature-complete but lacks warm-starting for contacts; use CPU for correctness validation
 
+## Directory Conventions
+
+- **`docs/`** — Permanent documentation and plans (tracked by git)
+- **`scratch/`** — Temporary working files, logs, experiment output (gitignored)
+
 ## Development History
 
 The project started with a pure XPBD particle system for soft contraptions. Rigid bodies with impulse-based solver were added later to improve stability for multi-body systems and provide proper joint constraints with revolute joints. This dual-system architecture allows both soft particle structures and stable rigid body mechanisms to coexist in the same simulation.

@@ -41,8 +41,9 @@ public static class SpeciesDiversification
         // Step 3: Apply diversification mutations
         ApplyDiversificationMutations(newTopology, config, random);
 
-        // Step 3.5: Rebuild RowPlans after mutations changed RowCounts/Edges
+        // Step 3.5: Rebuild RowPlans and validate after mutations
         newTopology.BuildRowPlans();
+        newTopology.Validate();
 
         // Step 4: Weak edge pruning is SKIPPED during diversification
         // The topology has been structurally changed (RowCounts mutated),
@@ -80,35 +81,36 @@ public static class SpeciesDiversification
         var parentTopology = parentSpecies.Topology;
         var individuals = new List<Individual>(targetPopSize);
 
-        // If topologies are identical (no size changes), just deep copy individuals
-        if (TopologiesCompatible(parentTopology, newTopology))
+        // Rank parents by fitness (best first) so we bias toward top performers
+        var rankedParents = parentSpecies.Individuals
+            .OrderByDescending(ind => ind.Fitness)
+            .ToList();
+
+        bool compatible = TopologiesCompatible(parentTopology, newTopology);
+
+        for (int i = 0; i < targetPopSize; i++)
         {
-            // Simple case: clone parents and mutate
-            int parentCount = parentSpecies.Individuals.Count;
-            for (int i = 0; i < targetPopSize; i++)
-            {
-                var parent = parentSpecies.Individuals[i % parentCount];
-                var child = new Individual(parent); // Deep copy
-                individuals.Add(child);
-            }
+            // Bias toward top performers: pick from top half more often
+            var parent = SelectWeightedParent(rankedParents, random);
+
+            Individual child = compatible
+                ? new Individual(parent)
+                : AdaptIndividualToTopology(parent, parentTopology, newTopology, random);
+
+            individuals.Add(child);
         }
-        else
+
+        // Reconcile: inherited activations may violate new allowed masks
+        foreach (var individual in individuals)
         {
-            // Complex case: topology changed (nodes added/removed)
-            // Create new individuals and try to preserve matching weights
-            for (int i = 0; i < targetPopSize; i++)
-            {
-                var parent = parentSpecies.Individuals[i % parentSpecies.Individuals.Count];
-                var child = AdaptIndividualToTopology(parent, parentTopology, newTopology, random);
-                individuals.Add(child);
-            }
+            ReconcileActivations(individual, newTopology, random);
         }
 
         return individuals;
     }
 
     /// <summary>
-    /// Check if two topologies are structurally compatible (same node/edge counts).
+    /// Check if two topologies are structurally identical (same rows and same edges).
     /// </summary>
     private static bool TopologiesCompatible(SpeciesSpec oldTopo, SpeciesSpec newTopo)
     {
@@ -121,12 +123,24 @@ public static class SpeciesDiversification
                 return false;
         }
 
-        return oldTopo.Edges.Count == newTopo.Edges.Count;
+        if (oldTopo.Edges.Count != newTopo.Edges.Count)
+            return false;
+
+        // Check actual edge identity (after BuildRowPlans both are sorted)
+        for (int i = 0; i < oldTopo.Edges.Count; i++)
+        {
+            if (oldTopo.Edges[i].Source != newTopo.Edges[i].Source ||
+                oldTopo.Edges[i].Dest != newTopo.Edges[i].Dest)
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
     /// Adapt an individual from old topology to new topology.
-    /// Preserves weights for matching edges, initializes new edges with Glorot.
+    /// Preserves weights for matching edges using semantic node remapping
+    /// (accounts for node index shifts when row sizes change).
     /// </summary>
     private static Individual AdaptIndividualToTopology(
         Individual parent,
@@ -147,17 +161,49 @@ public static class SpeciesDiversification
             Age = 0
         };
 
-        // Try to match edges between old and new topology
+        // Build node-index remapping: old global index → new global index
+        // When rows change size, nodes in later rows shift. We match nodes
+        // by (row, position-within-row) to preserve semantic identity.
+        int numRows = Math.Min(oldTopology.RowCounts.Length, newTopology.RowCounts.Length);
+        var oldToNewNode = new Dictionary<int, int>();
+        int oldOffset = 0;
+        int newOffset = 0;
+
+        for (int row = 0; row < numRows; row++)
+        {
+            int oldRowSize = oldTopology.RowCounts[row];
+            int newRowSize = newTopology.RowCounts[row];
+            int commonNodes = Math.Min(oldRowSize, newRowSize);
+
+            for (int j = 0; j < commonNodes; j++)
+            {
+                oldToNewNode[oldOffset + j] = newOffset + j;
+            }
+
+            oldOffset += oldRowSize;
+            newOffset += newRowSize;
+        }
+
+        // Build remapped old edge lookup: (remappedSrc, remappedDst) → old weight index
+        var oldEdgeLookup = new Dictionary<(int, int), int>();
+        for (int i = 0; i < oldTopology.Edges.Count; i++)
+        {
+            var (oldSrc, oldDst) = oldTopology.Edges[i];
+            if (oldToNewNode.TryGetValue(oldSrc, out int newSrc) &&
+                oldToNewNode.TryGetValue(oldDst, out int newDst))
+            {
+                oldEdgeLookup[(newSrc, newDst)] = i;
+            }
+        }
+
+        // Match new edges against remapped old edges
         for (int newEdgeIdx = 0; newEdgeIdx < newTopology.Edges.Count; newEdgeIdx++)
         {
             var (newSrc, newDst) = newTopology.Edges[newEdgeIdx];
 
-            // Look for matching edge in old topology
-            int oldEdgeIdx = oldTopology.Edges.FindIndex(e => e.Source == newSrc && e.Dest == newDst);
-
-            if (oldEdgeIdx >= 0 && oldEdgeIdx < parent.Weights.Length)
+            if (oldEdgeLookup.TryGetValue((newSrc, newDst), out int oldEdgeIdx) &&
+                oldEdgeIdx < parent.Weights.Length)
             {
-                // Edge exists in parent - inherit weight
                 child.Weights[newEdgeIdx] = parent.Weights[oldEdgeIdx];
             }
             else
@@ -170,40 +216,56 @@ public static class SpeciesDiversification
             }
         }
 
-        // Copy activations and biases for matching nodes
-        int minNodes = Math.Min(newNodeCount, parent.Activations.Length);
-        for (int i = 0; i < minNodes; i++)
+        // Copy activations, biases, and node params using per-row semantic mapping
+        oldOffset = 0;
+        newOffset = 0;
+
+        for (int row = 0; row < numRows; row++)
         {
-            child.Activations[i] = parent.Activations[i];
-            for (int p = 0; p < 4; p++)
+            int oldRowSize = oldTopology.RowCounts[row];
+            int newRowSize = newTopology.RowCounts[row];
+            int commonNodes = Math.Min(oldRowSize, newRowSize);
+
+            // Copy matching nodes within this row
+            for (int j = 0; j < commonNodes; j++)
             {
-                child.NodeParams[i * 4 + p] = parent.NodeParams[i * 4 + p];
+                int oldIdx = oldOffset + j;
+                int newIdx = newOffset + j;
+
+                child.Activations[newIdx] = parent.Activations[oldIdx];
+
+                for (int p = 0; p < 4; p++)
+                    child.NodeParams[newIdx * 4 + p] = parent.NodeParams[oldIdx * 4 + p];
+
+                if (parent.Biases != null && oldIdx < parent.Biases.Length)
+                    child.Biases[newIdx] = parent.Biases[oldIdx];
+                else
+                    child.Biases[newIdx] = (random.NextSingle() * 2f - 1f) * 0.1f;
             }
 
-            // Copy bias from parent if available
-            if (parent.Biases != null && i < parent.Biases.Length)
+            // Initialize new nodes in this row (if row grew)
+            for (int j = commonNodes; j < newRowSize; j++)
             {
-                child.Biases[i] = parent.Biases[i];
+                int newIdx = newOffset + j;
+                uint allowedMask = newTopology.AllowedActivationsPerRow[row];
+                child.Activations[newIdx] = SelectRandomActivation(allowedMask, random);
+                child.NodeParams[newIdx * 4 + 0] = 0.01f;
+                child.NodeParams[newIdx * 4 + 1] = 1.0f;
+                child.Biases[newIdx] = (random.NextSingle() * 2f - 1f) * 0.1f;
             }
-            else
-            {
-                // Initialize with small random bias
-                child.Biases[i] = (random.NextSingle() * 2f - 1f) * 0.1f;
-            }
+
+            oldOffset += oldRowSize;
+            newOffset += newRowSize;
         }
 
-        // Initialize new nodes (if topology grew)
-        for (int i = minNodes; i < newNodeCount; i++)
+        // Initialize nodes from entirely new rows (if new topology has more rows)
+        for (int i = newOffset; i < newNodeCount; i++)
         {
             int row = newTopology.GetRowForNode(i);
             uint allowedMask = newTopology.AllowedActivationsPerRow[row];
             child.Activations[i] = SelectRandomActivation(allowedMask, random);
-
-            // Default params
-            child.NodeParams[i * 4 + 0] = 0.01f; // alpha
-            child.NodeParams[i * 4 + 1] = 1.0f;  // beta
-
-            // Initialize bias with small random value
+            child.NodeParams[i * 4 + 0] = 0.01f;
+            child.NodeParams[i * 4 + 1] = 1.0f;
             child.Biases[i] = (random.NextSingle() * 2f - 1f) * 0.1f;
         }
 
@@ -262,8 +324,11 @@ public static class SpeciesDiversification
     /// </summary>
     private static void MutateHiddenLayerSizes(SpeciesSpec topology, Random random)
     {
-        // Skip bias (row 0), input (row 1), and output (last row)
-        for (int row = 2; row < topology.RowCounts.Length - 1; row++)
+        // Save old row counts for node-index remapping
+        int[] oldRowCounts = (int[])topology.RowCounts.Clone();
+
+        // Skip input (row 0) and output (last row) — only mutate hidden rows
+        for (int row = 1; row < topology.RowCounts.Length - 1; row++)
         {
             int delta = random.Next(-2, 3); // -2, -1, 0, 1, 2
             int newSize = topology.RowCounts[row] + delta;
@@ -274,9 +339,70 @@ public static class SpeciesDiversification
             topology.RowCounts[row] = newSize;
         }
 
-        // Remove edges that now reference invalid node indices
-        int totalNodes = topology.TotalNodes;
-        topology.Edges.RemoveAll(e => e.Source >= totalNodes || e.Dest >= totalNodes);
+        // Remap edge indices to account for shifted node boundaries,
+        // then remove edges that are now invalid (out-of-bounds, same-row, or backward)
+        RemapAndPruneEdges(topology, oldRowCounts);
+    }
+
+    /// <summary>
+    /// After row sizes change, remap edge (source, dest) indices to the new node
+    /// index space and remove any edges that become invalid (out of bounds,
+    /// same-row, or backward — violating acyclic constraint).
+    /// </summary>
+    private static void RemapAndPruneEdges(SpeciesSpec topology, int[] oldRowCounts)
+    {
+        int numRows = topology.RowCounts.Length;
+
+        // Build old-node-index → (row, localIndex) mapping
+        // Then (row, localIndex) → new-node-index mapping
+        int[] oldRowStarts = new int[numRows];
+        int[] newRowStarts = new int[numRows];
+        for (int r = 1; r < numRows; r++)
+        {
+            oldRowStarts[r] = oldRowStarts[r - 1] + oldRowCounts[r - 1];
+            newRowStarts[r] = newRowStarts[r - 1] + topology.RowCounts[r - 1];
+        }
+
+        int oldTotal = oldRowStarts[numRows - 1] + oldRowCounts[numRows - 1];
+        int newTotal = topology.TotalNodes;
+
+        // For each old node, compute its new index (or -1 if it was trimmed)
+        var oldToNew = new int[oldTotal];
+        Array.Fill(oldToNew, -1);
+
+        for (int r = 0; r < numRows; r++)
+        {
+            int commonNodes = Math.Min(oldRowCounts[r], topology.RowCounts[r]);
+            for (int j = 0; j < commonNodes; j++)
+            {
+                oldToNew[oldRowStarts[r] + j] = newRowStarts[r] + j;
+            }
+        }
+
+        // Remap edges and filter out invalid ones
+        var newEdges = new List<(int Source, int Dest)>(topology.Edges.Count);
+        foreach (var (oldSrc, oldDst) in topology.Edges)
+        {
+            if (oldSrc >= oldTotal || oldDst >= oldTotal)
+                continue;
+
+            int newSrc = oldToNew[oldSrc];
+            int newDst = oldToNew[oldDst];
+
+            // Skip if either node was trimmed
+            if (newSrc < 0 || newDst < 0)
+                continue;
+
+            // Verify acyclic constraint still holds (source row < dest row)
+            int srcRow = topology.GetRowForNode(newSrc);
+            int dstRow = topology.GetRowForNode(newDst);
+            if (srcRow >= dstRow)
+                continue;
+
+            newEdges.Add((newSrc, newDst));
+        }
+
+        topology.Edges = newEdges;
     }
 
     /// <summary>
@@ -287,10 +413,18 @@ public static class SpeciesDiversification
     {
         int toggleCount = random.Next(1, 4); // 1, 2, or 3 toggles
 
+        int activationCount = Enum.GetValues<ActivationType>().Length;
+
+        // Only mutate hidden rows: skip input (row 0) and output (last row)
+        int firstMutableRow = 1;
+        int mutableRowCount = topology.AllowedActivationsPerRow.Length - 2; // exclude input + output
+        if (mutableRowCount <= 0)
+            return; // No hidden rows to mutate
+
         for (int i = 0; i < toggleCount; i++)
         {
-            int row = random.Next(topology.AllowedActivationsPerRow.Length);
-            int activation = random.Next(11); // 11 activation types
+            int row = firstMutableRow + random.Next(mutableRowCount);
+            int activation = random.Next(activationCount);
 
             uint mask = 1u << activation;
             uint currentMask = topology.AllowedActivationsPerRow[row];
@@ -315,6 +449,51 @@ public static class SpeciesDiversification
         int newMaxInDegree = topology.MaxInDegree + delta;
 
         topology.MaxInDegree = Math.Clamp(newMaxInDegree, 4, 12);
+
+        // If MaxInDegree decreased, prune excess edges from saturated nodes
+        PruneExcessInDegree(topology, random);
+    }
+
+    /// <summary>
+    /// Remove random edges from nodes that exceed MaxInDegree.
+    /// </summary>
+    private static void PruneExcessInDegree(SpeciesSpec topology, Random random)
+    {
+        // Count in-degree per node
+        var inDegree = new Dictionary<int, List<int>>(); // dest → list of edge indices
+        for (int i = 0; i < topology.Edges.Count; i++)
+        {
+            int dest = topology.Edges[i].Dest;
+            if (!inDegree.ContainsKey(dest))
+                inDegree[dest] = new List<int>();
+            inDegree[dest].Add(i);
+        }
+
+        var edgesToRemove = new HashSet<int>();
+        foreach (var (dest, edgeIndices) in inDegree)
+        {
+            if (edgeIndices.Count > topology.MaxInDegree)
+            {
+                // Shuffle and remove excess
+                for (int i = edgeIndices.Count - 1; i > 0; i--)
+                {
+                    int j = random.Next(i + 1);
+                    (edgeIndices[i], edgeIndices[j]) = (edgeIndices[j], edgeIndices[i]);
+                }
+                int excess = edgeIndices.Count - topology.MaxInDegree;
+                for (int i = 0; i < excess; i++)
+                {
+                    edgesToRemove.Add(edgeIndices[i]);
+                }
+            }
+        }
+
+        if (edgesToRemove.Count > 0)
+        {
+            topology.Edges = topology.Edges
+                .Where((_, idx) => !edgesToRemove.Contains(idx))
+                .ToList();
+        }
     }
 
     /// <summary>
@@ -410,13 +589,66 @@ public static class SpeciesDiversification
     }
 
     /// <summary>
+    /// Select a parent from a fitness-ranked list, biased toward top performers.
+    /// Uses linear rank weighting: rank 0 (best) gets weight N, rank N-1 gets weight 1.
+    /// </summary>
+    private static Individual SelectWeightedParent(List<Individual> rankedParents, Random random)
+    {
+        int n = rankedParents.Count;
+        // Total weight = n + (n-1) + ... + 1 = n*(n+1)/2
+        int totalWeight = n * (n + 1) / 2;
+        int roll = random.Next(totalWeight);
+
+        int cumulative = 0;
+        for (int i = 0; i < n; i++)
+        {
+            cumulative += (n - i); // weight for rank i
+            if (roll < cumulative)
+                return rankedParents[i];
+        }
+
+        return rankedParents[0]; // fallback
+    }
+
+    /// <summary>
+    /// Ensure all node activations comply with the species' allowed activation masks.
+    /// Replaces any disallowed activation with a random allowed one.
+    /// </summary>
+    private static void ReconcileActivations(Individual individual, SpeciesSpec topology, Random random)
+    {
+        int nodeIdx = 0;
+        for (int row = 0; row < topology.RowCounts.Length; row++)
+        {
+            uint allowedMask = topology.AllowedActivationsPerRow[row];
+            for (int i = 0; i < topology.RowCounts[row]; i++)
+            {
+                var current = individual.Activations[nodeIdx];
+                if ((allowedMask & (1u << (int)current)) == 0)
+                {
+                    var newActivation = SelectRandomActivation(allowedMask, random);
+                    individual.Activations[nodeIdx] = newActivation;
+
+                    // Reset node params to defaults for the new activation type
+                    var defaults = newActivation.GetDefaultParameters();
+                    individual.NodeParams[nodeIdx * 4 + 0] = defaults.Length > 0 ? defaults[0] : 0.01f;
+                    individual.NodeParams[nodeIdx * 4 + 1] = defaults.Length > 1 ? defaults[1] : 1.0f;
+                    individual.NodeParams[nodeIdx * 4 + 2] = 0f;
+                    individual.NodeParams[nodeIdx * 4 + 3] = 0f;
+                }
+                nodeIdx++;
+            }
+        }
+    }
+
+    /// <summary>
     /// Select a random activation from the allowed bitmask.
     /// </summary>
     private static ActivationType SelectRandomActivation(uint allowedMask, Random random)
     {
         // Count enabled bits
         var allowed = new List<ActivationType>();
-        for (int i = 0; i < 11; i++)
+        int activationCount = Enum.GetValues<ActivationType>().Length;
+        for (int i = 0; i < activationCount; i++)
         {
             if ((allowedMask & (1u << i)) != 0)
             {

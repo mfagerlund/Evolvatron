@@ -109,12 +109,18 @@ public static class Selection
 
         // Rank-based: P(i) = (n - rank(i)) / sum(1..n)
         // Higher fitness = lower rank number = higher probability
-        var ranked = RankByFitness(individuals);
+        // Build rank map: for each original index, what is its rank?
+        var indexedByFitness = individuals
+            .Select((ind, idx) => (Index: idx, Fitness: ind.Fitness))
+            .OrderByDescending(x => x.Fitness)
+            .ToList();
+
         float sum = n * (n + 1) / 2f;
 
-        for (int i = 0; i < n; i++)
+        for (int rank = 0; rank < n; rank++)
         {
-            probabilities[i] = (n - i) / sum;
+            int originalIndex = indexedByFitness[rank].Index;
+            probabilities[originalIndex] = (n - rank) / sum;
         }
 
         return probabilities;
