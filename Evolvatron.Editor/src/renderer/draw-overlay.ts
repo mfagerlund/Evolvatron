@@ -1,0 +1,148 @@
+import type { World, Module, SelectableId } from '../model/types';
+import type { Camera } from '../editor/camera';
+import type { Selection } from '../editor/selection';
+import { findModule } from '../model/world';
+import { COLORS } from './colors';
+
+export function drawSelectionHighlights(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  world: World,
+  selection: Selection,
+): void {
+  for (const id of selection.ids) {
+    drawSelectionForId(ctx, camera, world, id);
+  }
+}
+
+function drawSelectionForId(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  world: World,
+  id: SelectableId,
+): void {
+  ctx.strokeStyle = COLORS.selection;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+
+  if (id === 'landingPad') {
+    const pad = world.landingPad;
+    const s = camera.worldToScreen(pad.position.x, pad.position.y);
+    const w = camera.worldToScreenScale(pad.halfWidth * 2) + 6;
+    const h = camera.worldToScreenScale(pad.halfHeight * 2) + 6;
+    ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+    drawHandles(ctx, s.x, s.y, w, h);
+  } else if (id === 'spawnArea') {
+    const spawn = world.spawnArea;
+    const s = camera.worldToScreen(spawn.position.x, spawn.position.y);
+    const w = camera.worldToScreenScale(spawn.xRange) + 6;
+    const h = camera.worldToScreenScale(spawn.heightRange) + 6;
+    ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+    drawHandles(ctx, s.x, s.y, w, h);
+  } else {
+    const mod = findModule(world, id);
+    if (!mod) return;
+    drawModuleSelection(ctx, camera, mod);
+  }
+
+  ctx.setLineDash([]);
+}
+
+function drawModuleSelection(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  mod: Module,
+): void {
+  const s = camera.worldToScreen(mod.position.x, mod.position.y);
+
+  if (mod.kind === 'checkpoint') {
+    const r = camera.worldToScreenScale(mod.radius) + 4;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (mod.kind === 'obstacle') {
+    const w = camera.worldToScreenScale(mod.halfExtentX * 2) + 6;
+    const h = camera.worldToScreenScale(mod.halfExtentY * 2) + 6;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate((-mod.rotation * Math.PI) / 180);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    drawHandles(ctx, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    const w = camera.worldToScreenScale(mod.halfExtentX * 2) + 6;
+    const h = camera.worldToScreenScale(mod.halfExtentY * 2) + 6;
+    ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+    drawHandles(ctx, s.x, s.y, w, h);
+  }
+}
+
+function drawHandles(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  w: number, h: number,
+): void {
+  const size = 5;
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLORS.handle;
+  const corners = [
+    [cx - w / 2, cy - h / 2],
+    [cx + w / 2, cy - h / 2],
+    [cx - w / 2, cy + h / 2],
+    [cx + w / 2, cy + h / 2],
+  ];
+  for (const [x, y] of corners) {
+    ctx.fillRect(x - size / 2, y - size / 2, size, size);
+  }
+  ctx.setLineDash([4, 4]);
+}
+
+export function drawBoxSelection(
+  ctx: CanvasRenderingContext2D,
+  x0: number, y0: number,
+  x1: number, y1: number,
+): void {
+  const x = Math.min(x0, x1);
+  const y = Math.min(y0, y1);
+  const w = Math.abs(x1 - x0);
+  const h = Math.abs(y1 - y0);
+
+  ctx.fillStyle = COLORS.boxSelect;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COLORS.boxSelectBorder;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, y, w, h);
+}
+
+export function drawGhostModule(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  kind: string,
+  wx: number, wy: number,
+): void {
+  const s = camera.worldToScreen(wx, wy);
+  ctx.globalAlpha = 0.5;
+
+  if (kind === 'checkpoint') {
+    const r = camera.worldToScreenScale(1.5);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = COLORS.checkpoint;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  } else {
+    const hx = kind === 'obstacle' ? 1 : 2;
+    const hy = kind === 'obstacle' ? 0.25 : 2;
+    const w = camera.worldToScreenScale(hx * 2);
+    const h = camera.worldToScreenScale(hy * 2);
+    const color = kind === 'obstacle' ? COLORS.obstacle
+      : kind === 'speedZone' ? COLORS.speedZone
+      : COLORS.dangerZone;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+  }
+
+  ctx.globalAlpha = 1.0;
+}

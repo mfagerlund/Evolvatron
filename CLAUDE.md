@@ -329,6 +329,31 @@ var rbRocket = RigidBodyRocketTemplate.CreateRocket(world, centerX: 0f, centerY:
 RigidBodyRocketTemplate.ApplyThrust(world, rbRocket, throttle: 0.7f, maxThrust: 100f);
 ```
 
+## CRITICAL: GPU/CPU Physics Parity
+
+**Any physics change MUST be made in BOTH the CPU and GPU code paths simultaneously.**
+
+The codebase has two independent physics implementations:
+- **CPU**: `CPUStepper.cs` + supporting solvers in `Physics/`
+- **GPU**: `InlinePhysics.cs` (mega-kernel), `GPUKernels.cs`, `GPUBatchedStepper.cs`, etc.
+
+These are completely separate code — they don't share a single line of physics logic. If you change gravity, friction, contact solving, integration, damping, or any other physics behavior in one, you **must** mirror it in the other.
+
+**Why this matters:**
+- Rocket evolution/training runs exclusively on GPU (via `GPURocketLandingMegaEvaluator` + `InlinePhysics.cs`)
+- Trajectory optimization (`TrajectoryOptimizer`) runs on CPU (needs per-step Jacobian access)
+- `RocketEnvironment` was deleted because maintaining two divergent physics paths caused hours of bugs — controllers trained on GPU failed on CPU due to float math differences
+- GPU is the **single source of truth** for rocket evolution. There is no CPU rocket environment.
+
+**What uses what:**
+| Component | Physics Path | Purpose |
+|-----------|-------------|---------|
+| `GPURocketLandingMegaEvaluator` | GPU `InlinePhysics.cs` | Rocket evolution/training |
+| `ObstacleLanderDemo` | GPU mega-kernel | GPU replay visualization |
+| `TrajectoryOptimizer` | CPU `CPUStepper` | Levenberg-Marquardt optimization |
+| `LunarLanderDemo` | CPU `CPUStepper` | Trajectory optimization visualization |
+| XPBD particle tests | CPU `CPUStepper` | Physics engine unit tests |
+
 ## Notes and Gotchas
 
 1. **Lambda Reset**: XPBD lambdas must be reset at the start of each step (done in `XPBDSolver.ResetLambdas`)
@@ -339,7 +364,7 @@ RigidBodyRocketTemplate.ApplyThrust(world, rbRocket, throttle: 0.7f, maxThrust: 
 6. **SoA Layout**: Particles use Structure-of-Arrays for cache efficiency; avoid per-particle structs in hot paths
 7. **No Particle-Particle Collisions**: Only particle-vs-static and rigid-body-vs-static supported
 8. **Rigid Body Limitations**: Rigid bodies don't collide with particles or each other (only with static colliders)
-9. **GPU vs CPU**: GPU stepper is feature-complete but lacks warm-starting for contacts; use CPU for correctness validation
+9. **GPU/CPU Parity**: Any physics change must be mirrored in both implementations (see section above)
 
 ## GPU Sync Policy
 

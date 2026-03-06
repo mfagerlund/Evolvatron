@@ -63,11 +63,6 @@ class Program
             // Launch LM trajectory optimization lander demo
             LunarLanderDemo.Run();
         }
-        else if (args.Length > 0 && args[0] == "evolander")
-        {
-            // Launch neuroevolution lander demo
-            EvolutionLanderDemo.Run();
-        }
         else if (args.Length > 0 && args[0] == "obstacles")
         {
             // Launch obstacle lander demo (evolution + sensors)

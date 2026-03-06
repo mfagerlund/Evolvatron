@@ -1,7 +1,6 @@
 using Evolvatron.Core;
 using Evolvatron.Core.GPU;
 using Evolvatron.Evolvion;
-using Evolvatron.Evolvion.Environments;
 using Evolvatron.Evolvion.GPU;
 using Evolvatron.Evolvion.TrajectoryOptimization;
 using System.Diagnostics;
@@ -45,29 +44,22 @@ public class ThreeWayBenchmark
     };
 
     [Fact]
-    public void ThreeWayRace_ObstacleScene()
+    public void TwoWayRace_ObstacleScene()
     {
         const int timeBudgetSeconds = 60;
         const int gpuPopSize = 10000;
-        const int cpuPopSize = 2000;
         const int maxSteps = 900;
         const int evalRounds = 3;
 
-        _output.WriteLine("=== 3-Way Benchmark: GPU Mega vs CPU Evolution vs LS Trajectory Optimization ===");
+        _output.WriteLine("=== 2-Way Benchmark: GPU Mega Evolution vs LS Trajectory Optimization ===");
         _output.WriteLine($"Time budget: {timeBudgetSeconds}s each, Obstacles: {ObstacleOBBs.Length}");
-        _output.WriteLine($"GPU pop: {gpuPopSize}, CPU pop: {cpuPopSize}, MaxSteps: {maxSteps}\n");
+        _output.WriteLine($"GPU pop: {gpuPopSize}, MaxSteps: {maxSteps}\n");
 
         // --- GPU Mega Evolution ---
         _output.WriteLine("--- GPU Mega Evolution (12 inputs, 4 sensors) ---");
         var gpuTrace = RunMegaGPUEvolution(gpuPopSize, maxSteps, timeBudgetSeconds, evalRounds);
         _output.WriteLine($"  {gpuTrace.Count} gens, {gpuTrace.Last().TotalEvals} evals, " +
                           $"best={gpuTrace.Last().BestFitness:F1}, landings={gpuTrace.Last().Landings}\n");
-
-        // --- CPU Evolution ---
-        _output.WriteLine("--- CPU Evolution (8 inputs, obstacles in physics) ---");
-        var cpuTrace = RunCPUEvolution(cpuPopSize, maxSteps, timeBudgetSeconds, evalRounds);
-        _output.WriteLine($"  {cpuTrace.Count} gens, {cpuTrace.Last().TotalEvals} evals, " +
-                          $"best={cpuTrace.Last().BestFitness:F1}, landings={cpuTrace.Last().Landings}\n");
 
         // --- LS Trajectory Optimization ---
         _output.WriteLine("--- LS Trajectory Optimization (Levenberg-Marquardt) ---");
@@ -80,10 +72,9 @@ public class ThreeWayBenchmark
         _output.WriteLine($"{"Method",-25} | {"Gens/Attempts",14} | {"Landings",10} | {"Best Score",12} | {"Total Evals",12}");
         _output.WriteLine(new string('-', 82));
         _output.WriteLine($"{"GPU Mega (10K, sensors)",-25} | {gpuTrace.Count,14} | {gpuTrace.Last().Landings,10} | {gpuTrace.Last().BestFitness,12:F1} | {gpuTrace.Last().TotalEvals,12}");
-        _output.WriteLine($"{"CPU Evo (2K, no sensors)",-25} | {cpuTrace.Count,14} | {cpuTrace.Last().Landings,10} | {cpuTrace.Last().BestFitness,12:F1} | {cpuTrace.Last().TotalEvals,12}");
         _output.WriteLine($"{"LS Trajectory Opt",-25} | {lsTrace.Attempts,14} | {lsTrace.Landings,10} | {lsTrace.BestCost,12:F2} | {lsTrace.Attempts,12}");
 
-        // --- Time series tables ---
+        // --- Time series table ---
         _output.WriteLine($"\n--- GPU Mega over time ---");
         _output.WriteLine($"{"Time(s)",8} | {"Best",10} {"Landings",10} {"Land%",8} {"Evals",10}");
         _output.WriteLine(new string('-', 55));
@@ -96,26 +87,13 @@ public class ThreeWayBenchmark
             _output.WriteLine($"{t,8} | {g.BestFitness,10:F1} {g.Landings,10} {landRate,7:F1}% {g.TotalEvals,10}");
         }
 
-        _output.WriteLine($"\n--- CPU Evolution over time ---");
-        _output.WriteLine($"{"Time(s)",8} | {"Best",10} {"Landings",10} {"Land%",8} {"Evals",10}");
-        _output.WriteLine(new string('-', 55));
-        int ci = 0;
-        for (int t = 0; t <= timeBudgetSeconds; t += 5)
-        {
-            while (ci < cpuTrace.Count - 1 && cpuTrace[ci + 1].ElapsedSeconds <= t) ci++;
-            var c = ci < cpuTrace.Count ? cpuTrace[ci] : cpuTrace.Last();
-            float landRate = 100f * c.Landings / (cpuPopSize * evalRounds);
-            _output.WriteLine($"{t,8} | {c.BestFitness,10:F1} {c.Landings,10} {landRate,7:F1}% {c.TotalEvals,10}");
-        }
-
         // --- HTML chart ---
         var htmlPath = Path.Combine(
             Path.GetDirectoryName(typeof(ThreeWayBenchmark).Assembly.Location)!,
             "..", "..", "..", "..", "docs", "artifacts");
         Directory.CreateDirectory(htmlPath);
-        var chartFile = Path.Combine(htmlPath, "three_way_race.html");
-        GenerateChart(chartFile, gpuTrace, cpuTrace, lsTrace,
-            gpuPopSize, cpuPopSize, timeBudgetSeconds, evalRounds);
+        var chartFile = Path.Combine(htmlPath, "gpu_vs_ls_race.html");
+        GenerateChart(chartFile, gpuTrace, lsTrace, gpuPopSize, timeBudgetSeconds, evalRounds);
         _output.WriteLine($"\nChart written to: {chartFile}");
     }
 
@@ -196,103 +174,6 @@ public class ThreeWayBenchmark
 
             if (generation % 10 == 0)
                 _output.WriteLine($"  GPU gen {generation}: best={avgFitness.Max():F1}, land={totalLandings}");
-
-            evolver.StepGeneration(population);
-            generation++;
-        }
-
-        return trace;
-    }
-
-    private List<TracePoint> RunCPUEvolution(int popSize, int maxSteps, int timeBudgetSeconds, int evalRounds)
-    {
-        var topology = new SpeciesBuilder()
-            .AddInputRow(8)
-            .AddHiddenRow(16, ActivationType.Tanh)
-            .AddHiddenRow(12, ActivationType.Tanh)
-            .AddOutputRow(2, ActivationType.Tanh)
-            .InitializeDense(new Random(42))
-            .Build();
-
-        var trace = new List<TracePoint>();
-        var evolver = new Evolver(seed: 42);
-        var config = new EvolutionConfig { SpeciesCount = 1, IndividualsPerSpecies = popSize };
-        var population = evolver.InitializePopulation(config, topology);
-
-        var overallSw = Stopwatch.StartNew();
-        int generation = 0;
-        long totalEvals = 0;
-
-        while (overallSw.Elapsed.TotalSeconds < timeBudgetSeconds)
-        {
-            var allIndividuals = population.AllSpecies.SelectMany(s => s.Individuals).ToList();
-            int n = allIndividuals.Count;
-            var avgFitness = new float[n];
-            int totalLandings = 0;
-
-            Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
-                i =>
-                {
-                    var evaluator = new CPUEvaluator(topology);
-                    var obs = new float[8];
-                    float fitSum = 0f;
-                    int landCount = 0;
-
-                    for (int k = 0; k < evalRounds; k++)
-                    {
-                        var env = new RocketEnvironment(maxThrust: 130f);
-                        env.MaxSteps = maxSteps;
-                        env.SpawnXMin = 8f;
-                        env.SpawnXRange = 15f;
-                        env.SpawnAngleRange = 0.44f;
-                        env.InitialVelXRange = 4f;
-                        env.InitialVelYMax = 4f;
-                        env.Obstacles = new List<OBBCollider>(ObstacleOBBs);
-                        var rp = RewardParams.Default();
-                        rp.PadY = -5f + 0.5f;
-                        rp.MaxLandingAngle = 8f * MathF.PI / 180f;
-                        env.SetRewardParams(rp);
-
-                        env.Reset(i + (generation * evalRounds + k) * n);
-                        while (!env.IsTerminal())
-                        {
-                            env.GetObservations(obs);
-                            var acts = evaluator.Evaluate(allIndividuals[i], obs);
-                            env.Step(acts);
-                        }
-                        fitSum += env.GetFinalFitness();
-                        if (env.Landed) landCount++;
-                    }
-
-                    avgFitness[i] = fitSum / evalRounds;
-                    Interlocked.Add(ref totalLandings, landCount);
-                });
-
-            int idx = 0;
-            foreach (var species in population.AllSpecies)
-            {
-                for (int i = 0; i < species.Individuals.Count; i++)
-                {
-                    var ind = species.Individuals[i];
-                    ind.Fitness = avgFitness[idx++];
-                    species.Individuals[i] = ind;
-                }
-            }
-
-            totalEvals += n * evalRounds;
-
-            trace.Add(new TracePoint
-            {
-                ElapsedSeconds = (float)overallSw.Elapsed.TotalSeconds,
-                Generation = generation,
-                BestFitness = avgFitness.Max(),
-                MeanFitness = avgFitness.Average(),
-                Landings = totalLandings,
-                TotalEvals = totalEvals
-            });
-
-            if (generation % 10 == 0)
-                _output.WriteLine($"  CPU gen {generation}: best={avgFitness.Max():F1}, land={totalLandings}");
 
             evolver.StepGeneration(population);
             generation++;
@@ -399,8 +280,8 @@ public class ThreeWayBenchmark
     }
 
     private void GenerateChart(string path,
-        List<TracePoint> gpuTrace, List<TracePoint> cpuTrace, LSTrace lsTrace,
-        int gpuPop, int cpuPop, int timeBudget, int evalRounds)
+        List<TracePoint> gpuTrace, LSTrace lsTrace,
+        int gpuPop, int timeBudget, int evalRounds)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
 
@@ -410,12 +291,6 @@ public class ThreeWayBenchmark
         var gpuLandRate = string.Join(",", gpuTrace.Select(t =>
             (100.0 * t.Landings / (gpuPop * evalRounds)).ToString("F1", ic)));
 
-        var cpuTimes = string.Join(",", cpuTrace.Select(t => t.ElapsedSeconds.ToString("F2", ic)));
-        var cpuBest = string.Join(",", cpuTrace.Select(t => t.BestFitness.ToString("F1", ic)));
-        var cpuLandings = string.Join(",", cpuTrace.Select(t => t.Landings));
-        var cpuLandRate = string.Join(",", cpuTrace.Select(t =>
-            (100.0 * t.Landings / (cpuPop * evalRounds)).ToString("F1", ic)));
-
         var lsTimes = string.Join(",", lsTrace.TracePoints.Select(t => t.ElapsedSeconds.ToString("F2", ic)));
         var lsCosts = string.Join(",", lsTrace.TracePoints.Select(t => t.BestCost.ToString("F2", ic)));
         var lsLandings = string.Join(",", lsTrace.TracePoints.Select(t => t.Landings));
@@ -423,12 +298,11 @@ public class ThreeWayBenchmark
             (100.0 * t.Landings / Math.Max(1, t.Attempt)).ToString("F1", ic)));
 
         var gpuLastGen = gpuTrace.Last().Generation;
-        var cpuLastGen = cpuTrace.Last().Generation;
 
         var html = $@"<!DOCTYPE html>
 <html><head>
 <meta charset=""utf-8"">
-<title>3-Way Race: GPU Mega vs CPU Evolution vs LS Trajectory Optimization</title>
+<title>GPU Evolution vs LS Trajectory Optimization</title>
 <script src=""https://cdn.jsdelivr.net/npm/chart.js""></script>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -443,12 +317,11 @@ public class ThreeWayBenchmark
   .stat-card .label {{ color: #888; font-size: 11px; text-transform: uppercase; }}
   .stat-card .value {{ font-size: 22px; font-weight: bold; margin-top: 4px; }}
   .gpu {{ color: #00d4aa; }}
-  .cpu {{ color: #ff6b6b; }}
   .ls {{ color: #ffd700; }}
 </style>
 </head><body>
-<h1>3-Way Race: GPU vs CPU vs Trajectory Optimization</h1>
-<p class=""subtitle"">Obstacle Scene (4 OBBs, funnel) &middot; {timeBudget}s wall time each &middot; GPU {gpuPop:N0} + CPU {cpuPop:N0} + LS single-trajectory</p>
+<h1>GPU Evolution vs Trajectory Optimization</h1>
+<p class=""subtitle"">Obstacle Scene (4 OBBs, funnel) &middot; {timeBudget}s wall time each &middot; GPU {gpuPop:N0} + LS single-trajectory</p>
 
 <div class=""stats"">
   <div class=""stat-card"">
@@ -458,14 +331,6 @@ public class ThreeWayBenchmark
   <div class=""stat-card"">
     <div class=""label"">GPU Landings</div>
     <div class=""value gpu"">{gpuTrace.Last().Landings}</div>
-  </div>
-  <div class=""stat-card"">
-    <div class=""label"">CPU Gens</div>
-    <div class=""value cpu"">{cpuLastGen}</div>
-  </div>
-  <div class=""stat-card"">
-    <div class=""label"">CPU Landings</div>
-    <div class=""value cpu"">{cpuTrace.Last().Landings}</div>
   </div>
   <div class=""stat-card"">
     <div class=""label"">LS Attempts</div>
@@ -482,15 +347,14 @@ public class ThreeWayBenchmark
 </div>
 
 <div class=""charts"">
-  <div class=""chart-box""><canvas id=""bestFitness""></canvas></div>
   <div class=""chart-box""><canvas id=""landingRate""></canvas></div>
   <div class=""chart-box""><canvas id=""cumulativeLandings""></canvas></div>
+  <div class=""chart-box""><canvas id=""gpuFitness""></canvas></div>
   <div class=""chart-box""><canvas id=""lsCost""></canvas></div>
 </div>
 
 <script>
 const gpuColor = '#00d4aa';
-const cpuColor = '#ff6b6b';
 const lsColor = '#ffd700';
 const gridColor = 'rgba(255,255,255,0.08)';
 
@@ -512,36 +376,17 @@ function makeDataset(label, times, values, color) {{
 }}
 
 const gpuTimes = [{gpuTimes}];
-const cpuTimes = [{cpuTimes}];
 const lsTimes = [{lsTimes}];
-
 const gpuBest = [{gpuBest}];
-const cpuBest = [{cpuBest}];
-
 const gpuLandings = [{gpuLandings}];
-const cpuLandings = [{cpuLandings}];
 const lsLandings = [{lsLandings}];
-
 const gpuLandRate = [{gpuLandRate}];
-const cpuLandRate = [{cpuLandRate}];
 const lsLandRate = [{lsLandRate}];
-
 const lsCosts = [{lsCosts}];
-
-new Chart('bestFitness', {{
-  type: 'scatter', data: {{ datasets: [
-    makeDataset('GPU Best Fitness ({gpuPop})', gpuTimes, gpuBest, gpuColor),
-    makeDataset('CPU Best Fitness ({cpuPop})', cpuTimes, cpuBest, cpuColor)
-  ]}},
-  options: {{ ...defaultOpts, plugins: {{ ...defaultOpts.plugins, title: {{ display: true, text: 'Best Fitness vs Wall Time (Evolution)', color: '#fff' }} }},
-    scales: {{ ...defaultOpts.scales, y: {{ ...defaultOpts.scales.y, title: {{ display: true, text: 'Best Fitness (3-seed avg)', color: '#888' }} }} }}
-  }}
-}});
 
 new Chart('landingRate', {{
   type: 'scatter', data: {{ datasets: [
     makeDataset('GPU Landing %', gpuTimes, gpuLandRate, gpuColor),
-    makeDataset('CPU Landing %', cpuTimes, cpuLandRate, cpuColor),
     makeDataset('LS Landing %', lsTimes, lsLandRate, lsColor)
   ]}},
   options: {{ ...defaultOpts, plugins: {{ ...defaultOpts.plugins, title: {{ display: true, text: 'Landing Rate % vs Wall Time', color: '#fff' }} }},
@@ -552,11 +397,19 @@ new Chart('landingRate', {{
 new Chart('cumulativeLandings', {{
   type: 'scatter', data: {{ datasets: [
     makeDataset('GPU Landings', gpuTimes, gpuLandings, gpuColor),
-    makeDataset('CPU Landings', cpuTimes, cpuLandings, cpuColor),
     makeDataset('LS Landings', lsTimes, lsLandings, lsColor)
   ]}},
   options: {{ ...defaultOpts, plugins: {{ ...defaultOpts.plugins, title: {{ display: true, text: 'Landings per Generation/Attempt', color: '#fff' }} }},
     scales: {{ ...defaultOpts.scales, y: {{ ...defaultOpts.scales.y, title: {{ display: true, text: 'Landings', color: '#888' }} }} }}
+  }}
+}});
+
+new Chart('gpuFitness', {{
+  type: 'scatter', data: {{ datasets: [
+    makeDataset('GPU Best Fitness', gpuTimes, gpuBest, gpuColor)
+  ]}},
+  options: {{ ...defaultOpts, plugins: {{ ...defaultOpts.plugins, title: {{ display: true, text: 'GPU Best Fitness vs Wall Time', color: '#fff' }} }},
+    scales: {{ ...defaultOpts.scales, y: {{ ...defaultOpts.scales.y, title: {{ display: true, text: 'Best Fitness (3-seed avg)', color: '#888' }} }} }}
   }}
 }});
 
