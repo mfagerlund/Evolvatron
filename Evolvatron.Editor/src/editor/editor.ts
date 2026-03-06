@@ -58,6 +58,9 @@ export class Editor {
   /** Current cursor to display. Updated on mouse move. */
   cursor = 'default';
 
+  /** Current mouse position in world space (for status bar). */
+  mouseWorld: Vec2 = { x: 0, y: 0 };
+
   constructor(world: World) {
     this.world = world;
   }
@@ -146,6 +149,8 @@ export class Editor {
   }
 
   onMouseMove(sx: number, sy: number): void {
+    this.mouseWorld = this.camera.screenToWorld(sx, sy);
+
     if (this.state.mode === 'panning' && this.panStart) {
       const dx = sx - this.panStart.x;
       const dy = sy - this.panStart.y;

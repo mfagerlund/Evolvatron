@@ -39,6 +39,8 @@ canvas.addEventListener('mousemove', (e) => {
   const sy = e.clientY - rect.top;
   editor.onMouseMove(sx, sy);
   canvas.style.cursor = editor.cursor;
+  // Always re-render so status bar shows current reward at cursor
+  editor.markDirty();
 });
 
 canvas.addEventListener('mouseup', (e) => {
@@ -183,7 +185,7 @@ editor.setOnChange(() => {
 
 function renderLoop(): void {
   if (editor.consumeDirty()) {
-    renderer.render(editor.world, editor.camera, editor.selection, editor.state);
+    renderer.render(editor.world, editor.camera, editor.selection, editor.state, editor.mouseWorld.x, editor.mouseWorld.y);
   }
   requestAnimationFrame(renderLoop);
 }

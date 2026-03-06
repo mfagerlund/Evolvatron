@@ -148,8 +148,8 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
   lbl.style.userSelect = 'none';
 
   const input = document.createElement('input');
-  input.type = 'number';
-  input.step = 'any';
+  input.type = 'text';
+  input.inputMode = 'decimal';
   input.value = Number.isInteger(value) ? value.toString() : value.toFixed(3);
   input.addEventListener('change', () => {
     const v = parseFloat(input.value);

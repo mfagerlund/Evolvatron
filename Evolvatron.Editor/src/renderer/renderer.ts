@@ -5,7 +5,7 @@ import type { EditorState } from '../editor/editor';
 import { COLORS } from './colors';
 import { drawGrid, drawGround, drawLandingPad, drawSpawnArea, drawModules } from './draw-modules';
 import { drawSelectionHighlights, drawBoxSelection, drawGhostModule } from './draw-overlay';
-import { drawRewardOverlay } from './draw-reward-overlay';
+import { drawRewardOverlay, sampleReward } from './draw-reward-overlay';
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -15,7 +15,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d')!;
   }
 
-  render(world: World, camera: Camera, selection: Selection, editorState: EditorState): void {
+  render(world: World, camera: Camera, selection: Selection, editorState: EditorState, mouseWorldX?: number, mouseWorldY?: number): void {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
@@ -55,7 +55,7 @@ export class Renderer {
       );
     }
 
-    this.drawStatusBar(ctx, camera, editorState, selection, w, h);
+    this.drawStatusBar(ctx, camera, editorState, selection, w, h, world, mouseWorldX, mouseWorldY);
   }
 
   private drawStatusBar(
@@ -64,6 +64,9 @@ export class Renderer {
     editorState: EditorState,
     selection: Selection,
     w: number, h: number,
+    world: World,
+    mouseWorldX?: number,
+    mouseWorldY?: number,
   ): void {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, h - 24, w, 24);
@@ -81,6 +84,14 @@ export class Renderer {
     const selText = selection.size > 0 ? `  |  ${selection.size} selected` : '';
     const zoomText = `  |  zoom: ${camera.zoom.toFixed(0)}px/m`;
 
-    ctx.fillText(`Mode: ${modeText}${selText}${zoomText}`, 8, h - 7);
+    let rewardText = '';
+    if (mouseWorldX !== undefined && mouseWorldY !== undefined) {
+      const reward = sampleReward(world, mouseWorldX, mouseWorldY);
+      if (Math.abs(reward) > 0.001) {
+        rewardText = `  |  reward: ${reward >= 0 ? '+' : ''}${reward.toFixed(2)}`;
+      }
+    }
+
+    ctx.fillText(`Mode: ${modeText}${selText}${zoomText}${rewardText}`, 8, h - 7);
   }
 }
