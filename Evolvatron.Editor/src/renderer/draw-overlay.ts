@@ -145,28 +145,47 @@ export function drawGhostModule(
   camera: Camera,
   kind: string,
   wx: number, wy: number,
+  anchorWx?: number, anchorWy?: number,
 ): void {
-  const s = camera.worldToScreen(wx, wy);
   ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 2;
 
-  if (kind === 'checkpoint') {
-    const r = camera.worldToScreenScale(1.5);
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = COLORS.checkpoint;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+  if (anchorWx !== undefined && anchorWy !== undefined) {
+    // Two-point preview: show actual shape between anchor and cursor
+    if (kind === 'checkpoint') {
+      const dx = wx - anchorWx;
+      const dy = wy - anchorWy;
+      const r = camera.worldToScreenScale(Math.sqrt(dx * dx + dy * dy) / 2);
+      const center = camera.worldToScreen((anchorWx + wx) / 2, (anchorWy + wy) / 2);
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, Math.max(1, r), 0, Math.PI * 2);
+      ctx.strokeStyle = COLORS.checkpoint;
+      ctx.stroke();
+    } else {
+      const s0 = camera.worldToScreen(anchorWx, anchorWy);
+      const s1 = camera.worldToScreen(wx, wy);
+      const x = Math.min(s0.x, s1.x);
+      const y = Math.min(s0.y, s1.y);
+      const w = Math.abs(s1.x - s0.x);
+      const h = Math.abs(s1.y - s0.y);
+      const color = kind === 'obstacle' ? COLORS.obstacle
+        : kind === 'speedZone' ? COLORS.speedZone
+        : COLORS.dangerZone;
+      ctx.strokeStyle = color;
+      ctx.strokeRect(x, y, w, h);
+    }
   } else {
-    const hx = kind === 'obstacle' ? 1 : 2;
-    const hy = kind === 'obstacle' ? 0.25 : 2;
-    const w = camera.worldToScreenScale(hx * 2);
-    const h = camera.worldToScreenScale(hy * 2);
-    const color = kind === 'obstacle' ? COLORS.obstacle
-      : kind === 'speedZone' ? COLORS.speedZone
-      : COLORS.dangerZone;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+    // Single-point preview: show crosshair at cursor position
+    const s = camera.worldToScreen(wx, wy);
+    ctx.strokeStyle = COLORS.selection;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(s.x - 10, s.y);
+    ctx.lineTo(s.x + 10, s.y);
+    ctx.moveTo(s.x, s.y - 10);
+    ctx.lineTo(s.x, s.y + 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   ctx.globalAlpha = 1.0;

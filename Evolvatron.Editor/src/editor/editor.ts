@@ -17,12 +17,14 @@ import {
   type ResizeSnapshot,
 } from '../commands/resize-module';
 
-export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'panning' | 'resizing';
+export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'placingDrag' | 'panning' | 'resizing';
 
 export interface EditorState {
   mode: EditorMode;
   placingKind?: ModuleKind;
   ghostPosition?: Vec2;
+  /** First corner/edge point for two-point placement */
+  placingAnchor?: Vec2;
   boxStart?: Vec2;
   boxEnd?: Vec2;
 }
@@ -99,7 +101,13 @@ export class Editor {
 
     if (this.state.mode === 'placing') {
       const wPos = this.camera.screenToWorld(sx, sy);
-      this.placeModule(wPos);
+      this.state = {
+        mode: 'placingDrag',
+        placingKind: this.state.placingKind,
+        placingAnchor: wPos,
+        ghostPosition: wPos,
+      };
+      this.markDirty();
       return;
     }
 
@@ -154,6 +162,13 @@ export class Editor {
       return;
     }
 
+    if (this.state.mode === 'placingDrag') {
+      const wPos = this.camera.screenToWorld(sx, sy);
+      this.state.ghostPosition = wPos;
+      this.markDirty();
+      return;
+    }
+
     if (this.state.mode === 'resizing' && this.resizeTargetId !== null) {
       this.applyResizeDelta(sx, sy);
       this.markDirty();
@@ -187,6 +202,15 @@ export class Editor {
     if (this.state.mode === 'panning') {
       this.state = { mode: 'idle' };
       this.panStart = null;
+      this.markDirty();
+      return;
+    }
+
+    if (this.state.mode === 'placingDrag') {
+      const wPos = this.camera.screenToWorld(_sx, _sy);
+      this.placeModuleTwoPoint(this.state.placingAnchor!, wPos);
+      // Stay in placing mode so user can place more
+      this.state = { mode: 'placing', placingKind: this.state.placingKind };
       this.markDirty();
       return;
     }
@@ -261,6 +285,12 @@ export class Editor {
   // --- Actions ---
 
   private handleEscape(): boolean {
+    if (this.state.mode === 'placingDrag') {
+      // Cancel current drag, go back to placing mode
+      this.state = { mode: 'placing', placingKind: this.state.placingKind };
+      this.markDirty();
+      return true;
+    }
     if (this.state.mode === 'placing') {
       this.cancelPlacing();
       return true;
@@ -273,18 +303,41 @@ export class Editor {
     return false;
   }
 
-  private placeModule(pos: Vec2): void {
+  private placeModuleTwoPoint(anchor: Vec2, end: Vec2): void {
     const kind = this.state.placingKind!;
+    const cx = (anchor.x + end.x) / 2;
+    const cy = (anchor.y + end.y) / 2;
+    const MIN_SIZE = 0.1;
+
     let mod: Module;
     switch (kind) {
-      case 'obstacle': mod = createObstacle(pos.x, pos.y); break;
       case 'checkpoint': {
+        const dx = end.x - anchor.x;
+        const dy = end.y - anchor.y;
+        const radius = Math.max(MIN_SIZE, Math.sqrt(dx * dx + dy * dy) / 2);
         const existing = this.world.modules.filter(m => m.kind === 'checkpoint');
-        mod = createCheckpoint(pos.x, pos.y, existing.length);
+        mod = createCheckpoint(cx, cy, existing.length);
+        mod.radius = radius;
         break;
       }
-      case 'speedZone': mod = createSpeedZone(pos.x, pos.y); break;
-      case 'dangerZone': mod = createDangerZone(pos.x, pos.y); break;
+      default: {
+        const hx = Math.max(MIN_SIZE, Math.abs(end.x - anchor.x) / 2);
+        const hy = Math.max(MIN_SIZE, Math.abs(end.y - anchor.y) / 2);
+        if (kind === 'obstacle') {
+          mod = createObstacle(cx, cy);
+          mod.halfExtentX = hx;
+          mod.halfExtentY = hy;
+        } else if (kind === 'speedZone') {
+          mod = createSpeedZone(cx, cy);
+          mod.halfExtentX = hx;
+          mod.halfExtentY = hy;
+        } else {
+          mod = createDangerZone(cx, cy);
+          mod.halfExtentX = hx;
+          mod.halfExtentY = hy;
+        }
+        break;
+      }
     }
     this.history.execute(new AddModuleCommand(mod), this.world);
     this.selection.set(mod.id);

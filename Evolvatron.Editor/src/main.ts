@@ -62,8 +62,12 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('keydown', (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
+  const wasPlacing = editor.state.mode === 'placing' || editor.state.mode === 'placingDrag';
   if (editor.onKeyDown(e.key, ctrl, e.shiftKey)) {
     e.preventDefault();
+    if (wasPlacing && editor.state.mode !== 'placing' && editor.state.mode !== 'placingDrag') {
+      updateToolbarActive('select');
+    }
   }
   // Tool shortcuts
   if (!ctrl && !e.shiftKey) {

@@ -39,11 +39,12 @@ export class Renderer {
       );
     }
 
-    if (editorState.mode === 'placing' && editorState.ghostPosition) {
+    if ((editorState.mode === 'placing' || editorState.mode === 'placingDrag') && editorState.ghostPosition) {
       drawGhostModule(
         ctx, camera,
         editorState.placingKind!,
         editorState.ghostPosition.x, editorState.ghostPosition.y,
+        editorState.placingAnchor?.x, editorState.placingAnchor?.y,
       );
     }
 
@@ -65,7 +66,9 @@ export class Renderer {
     ctx.textAlign = 'left';
 
     const modeText = editorState.mode === 'placing'
-      ? `Place: ${editorState.placingKind}`
+      ? `Place: ${editorState.placingKind} (click first point)`
+      : editorState.mode === 'placingDrag'
+      ? `Place: ${editorState.placingKind} (drag to second point)`
       : editorState.mode;
 
     const selText = selection.size > 0 ? `  |  ${selection.size} selected` : '';
