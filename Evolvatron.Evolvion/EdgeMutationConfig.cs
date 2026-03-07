@@ -5,14 +5,14 @@ namespace Evolvatron.Evolvion;
 /// </summary>
 public class EdgeMutationConfig
 {
-    // Core topology mutations (Phase 10 Rosenbrock: Trial 138 optimized for valley navigation)
-    public float EdgeAdd { get; set; } = 0.007f;  // Reduced: very conservative addition
-    public float EdgeDeleteRandom { get; set; } = 0.042f;  // 10.5x increase: aggressive simplification!
-    public float EdgeSplit { get; set; } = 0.001f;  // Minimal: avoid complexity
+    // Core topology mutations (Sparse Study: "moderate" profile, 80% solve rate across topologies)
+    public float EdgeAdd { get; set; } = 0.05f;
+    public float EdgeDeleteRandom { get; set; } = 0.02f;
+    public float EdgeSplit { get; set; } = 0.01f;
 
-    // Advanced topology mutations (Phase 10 Rosenbrock: Trial 138 optimized)
-    public float EdgeRedirect { get; set; } = 0.132f;  // Increased: rewire working pathways
-    public float EdgeSwap { get; set; } = 0.047f;  // Increased: more shuffling
+    // Advanced topology mutations (Sparse Study: moderate profile)
+    public float EdgeRedirect { get; set; } = 0.05f;
+    public float EdgeSwap { get; set; } = 0.02f;
 
     // Weak edge pruning configuration
     public WeakEdgePruningConfig WeakEdgePruning { get; set; } = new();

@@ -8,17 +8,17 @@ public class EvolutionConfig
 {
     /// <summary>
     /// Number of species in the population.
-    /// Default: 39 (Phase 10 Rosenbrock: Trial 138 - valley navigation champion)
-    /// Previous: 27 (Phase 10 spiral), 20 (NEAT-style), 4 (Phase 6)
+    /// Default: 6 (Sparse Study Phase D: 20/20 solve rate on deep topologies)
+    /// Previous: 39 (Rosenbrock Trial 138), 27 (spiral), 20 (NEAT-style)
     /// </summary>
-    public int SpeciesCount { get; set; } = 39;
+    public int SpeciesCount { get; set; } = 6;
 
     /// <summary>
     /// Minimum number of species to maintain (prevents complete collapse).
-    /// Default: 13 (Phase 10 Rosenbrock: Trial 138 - higher diversity floor)
-    /// Previous: 8 (NEAT-style), 2
+    /// Default: 3 (Sparse Study: 3-6 species is the sweet spot)
+    /// Previous: 13 (Rosenbrock Trial 138), 8 (NEAT-style)
     /// </summary>
-    public int MinSpeciesCount { get; set; } = 13;
+    public int MinSpeciesCount { get; set; } = 3;
 
     /// <summary>
     /// Number of individuals per species.
@@ -30,27 +30,26 @@ public class EvolutionConfig
 
     /// <summary>
     /// Number of elite individuals preserved unchanged each generation.
-    /// Default: 5 (Phase 10 Rosenbrock: Trial 138 - more elites for larger population)
-    /// Previous: 4 (Phase 10 spiral), 2 (Phase 2)
+    /// Default: 10 (Sparse Study Phase D: used across all winning configs)
+    /// Previous: 5 (Rosenbrock Trial 138), 4 (spiral), 2 (Phase 2)
     /// </summary>
-    public int Elites { get; set; } = 5;
+    public int Elites { get; set; } = 10;
 
     /// <summary>
     /// Tournament size for selection pressure.
     /// Higher values = stronger selection.
-    /// Default: 10 (Phase 10 Rosenbrock: Trial 138 - CRITICAL for valley navigation!)
-    /// Previous: 22 (Phase 10 spiral - too high for valleys), 16 (Phase 2)
-    /// Lower selection pressure prevents premature convergence in narrow fitness landscapes.
+    /// Default: 5 (Sparse Study Phase D: lower pressure avoids premature convergence)
+    /// Previous: 10 (Rosenbrock Trial 138), 22 (spiral), 16 (Phase 2)
     /// </summary>
-    public int TournamentSize { get; set; } = 10;
+    public int TournamentSize { get; set; } = 5;
 
     /// <summary>
     /// Percentage of top individuals eligible as parents (0.0 to 1.0).
     /// Only the top X% by fitness can be selected as parents.
-    /// Default: 0.593 (Phase 10 Rosenbrock: Trial 138 - stronger parent filtering)
-    /// Previous: 0.75 (Phase 10 spiral), 1.0 (Phase 2 - all eligible)
+    /// Default: 0.5 (Sparse Study Phase D: used across all winning configs)
+    /// Previous: 0.593 (Rosenbrock Trial 138), 0.75 (spiral), 1.0 (Phase 2)
     /// </summary>
-    public float ParentPoolPercentage { get; set; } = 0.593f;
+    public float ParentPoolPercentage { get; set; } = 0.5f;
 
     /// <summary>
     /// Number of generations a new species is protected from culling.
@@ -107,11 +106,10 @@ public class MutationRates
 
     /// <summary>
     /// Standard deviation for weight jitter, as fraction of weight magnitude.
-    /// Default: 0.058 (Phase 10 Rosenbrock: Trial 138 - CRITICAL! 86% reduction for fine-grained valley navigation)
-    /// Previous: 0.402 (Phase 10 spiral - too coarse for valleys), 0.3 (XOR sweep)
-    /// Gentle mutations enable precise navigation of narrow fitness valleys.
+    /// Default: 0.15 (Sparse Study: 18x improvement over 0.058 for DPNV, validated across 500+ runs)
+    /// Previous: 0.058 (Rosenbrock Trial 138), 0.402 (spiral), 0.3 (XOR sweep)
     /// </summary>
-    public float WeightJitterStdDev { get; set; } = 0.058f;
+    public float WeightJitterStdDev { get; set; } = 0.15f;
 
     /// <summary>
     /// Probability of resetting a weight to random value.
