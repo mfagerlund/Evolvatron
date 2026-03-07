@@ -95,6 +95,38 @@ public class Evolver
 
         // Step 4: Combine elites + offspring
         species.Individuals = elites.Concat(offspring).ToList();
+
+        // Step 5: Species-level edge topology mutations
+        // Capture old edges before mutation for weight remapping
+        var oldEdges = new List<(int Source, int Dest)>(topology.Edges);
+        EdgeTopologyMutations.ApplyEdgeMutations(
+            topology, species.Individuals, config.EdgeMutations, _random);
+
+        // If topology changed, remap weight arrays using (source, dest) identity
+        if (topology.Edges.Count != oldEdges.Count || !topology.Edges.SequenceEqual(oldEdges))
+        {
+            // Build old edge lookup: (src, dst) → old weight index
+            var oldEdgeLookup = new Dictionary<(int, int), int>();
+            for (int e = 0; e < oldEdges.Count; e++)
+                oldEdgeLookup[oldEdges[e]] = e;
+
+            int newEdgeCount = topology.Edges.Count;
+            for (int i = 0; i < species.Individuals.Count; i++)
+            {
+                var ind = species.Individuals[i];
+                var newWeights = new float[newEdgeCount];
+                for (int e = 0; e < newEdgeCount; e++)
+                {
+                    var edge = topology.Edges[e];
+                    if (oldEdgeLookup.TryGetValue(edge, out int oldIdx) && oldIdx < ind.Weights.Length)
+                        newWeights[e] = ind.Weights[oldIdx];
+                    else
+                        newWeights[e] = (_random.NextSingle() * 2f - 1f) * 0.1f;
+                }
+                ind.Weights = newWeights;
+                species.Individuals[i] = ind;
+            }
+        }
     }
 
     /// <summary>
@@ -162,22 +194,8 @@ public class Evolver
         SpeciesSpec topology,
         EdgeMutationConfig edgeConfig)
     {
-        // TODO: Integrate edge topology mutations once EdgeTopologyMutations API is finalized
-        // For now, these are disabled during regular evolution to avoid complexity
-
-        // EdgeAdd
-        // if (_random.NextSingle() < edgeConfig.EdgeAdd)
-        // {
-        //     EdgeTopologyMutations.AddEdge(topology, individual, edgeConfig, _random);
-        // }
-
-        // EdgeDelete
-        // if (_random.NextSingle() < edgeConfig.EdgeDeleteRandom)
-        // {
-        //     EdgeTopologyMutations.DeleteEdge(topology, individual, edgeConfig, _random);
-        // }
-
-        // ... other edge mutations ...
+        // Edge mutations are applied at the species level (see EvolveSpecies),
+        // not per-individual. This method is intentionally empty.
     }
 
     /// <summary>

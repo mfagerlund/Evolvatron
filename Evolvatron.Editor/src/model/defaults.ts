@@ -117,7 +117,7 @@ export function createCheckpoint(x = 0, y = 0, order = 0): CheckpointModule {
     radius: 1.5,
     order,
     rewardBonus: 20,
-    influenceFactor: 2,
+    influenceRadius: 2,
   };
 }
 
@@ -142,7 +142,7 @@ export function createDangerZone(x = 0, y = 0): DangerZoneModule {
     halfExtentY: 2,
     penaltyPerStep: 10,
     isLethal: false,
-    influenceFactor: 3,
+    influenceRadius: 3,
   };
 }
 
@@ -154,7 +154,7 @@ export function createAttractor(x = 0, y = 0): AttractorModule {
     halfExtentX: 1.5,
     halfExtentY: 1.5,
     magnitude: 10,
-    influenceFactor: 3,
+    influenceRadius: 3,
     contactBonus: 50,
   };
 }

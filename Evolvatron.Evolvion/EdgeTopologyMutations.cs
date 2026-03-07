@@ -13,11 +13,11 @@ public static class EdgeTopologyMutations
     /// </summary>
     public static bool TryEdgeAdd(SpeciesSpec spec, Random random)
     {
-        // Pick random destination node (not in bias or input rows)
-        if (spec.RowCounts.Length <= 2)
-            return false; // No hidden or output rows
+        // Pick random destination node (any non-input row)
+        if (spec.RowCounts.Length < 2)
+            return false; // No destination rows
 
-        int destRow = random.Next(2, spec.RowCounts.Length);
+        int destRow = random.Next(1, spec.RowCounts.Length);
         var destPlan = spec.RowPlans[destRow];
         int destNode = destPlan.NodeStart + random.Next(destPlan.NodeCount);
 

@@ -29,24 +29,39 @@ public static class InlineNN
         int worldIdx,
         MegaKernelConfig cfg)
     {
+        ForwardPass(nn, observations, actions, worldIdx,
+            cfg.TotalNodes, cfg.TotalEdges, cfg.NumRows, cfg.InputSize, cfg.OutputSize);
+    }
+
+    /// <summary>
+    /// Generic NN forward pass usable by any environment kernel.
+    /// Takes explicit NN layout parameters instead of a domain-specific config struct.
+    /// </summary>
+    public static void ForwardPass(
+        NNViews nn,
+        ArrayView<float> observations,
+        ArrayView<float> actions,
+        int worldIdx,
+        int totalNodes, int totalEdges, int numRows, int inputSize, int outputSize)
+    {
         int episodeIdx = worldIdx;
-        int individualIdx = episodeIdx; // 1 episode per individual in landing task
-        int nodesPerIndividual = cfg.TotalNodes;
-        int weightsPerIndividual = cfg.TotalEdges;
+        int individualIdx = episodeIdx;
+        int nodesPerIndividual = totalNodes;
+        int weightsPerIndividual = totalEdges;
 
         int nodeOffset = episodeIdx * nodesPerIndividual;
         int weightOffset = individualIdx * weightsPerIndividual;
         int biasOffset = individualIdx * nodesPerIndividual;
-        int inputOffset = episodeIdx * cfg.InputSize;
+        int inputOffset = episodeIdx * inputSize;
 
         // 1. Set inputs (copy observations to input nodes)
-        for (int i = 0; i < cfg.InputSize; i++)
+        for (int i = 0; i < inputSize; i++)
         {
             nn.NodeValues[nodeOffset + i] = observations[inputOffset + i];
         }
 
         // 2. Evaluate rows 1..NumRows-1 (row 0 is inputs)
-        for (int rowIdx = 1; rowIdx < cfg.NumRows; rowIdx++)
+        for (int rowIdx = 1; rowIdx < numRows; rowIdx++)
         {
             var rowPlan = nn.RowPlans[rowIdx];
 
@@ -92,11 +107,11 @@ public static class InlineNN
         }
 
         // 3. Extract outputs from the last row
-        int outputRowIdx = cfg.NumRows - 1;
+        int outputRowIdx = numRows - 1;
         var outputRow = nn.RowPlans[outputRowIdx];
-        int outputOffset = episodeIdx * cfg.OutputSize;
+        int outputOffset = episodeIdx * outputSize;
 
-        for (int i = 0; i < cfg.OutputSize; i++)
+        for (int i = 0; i < outputSize; i++)
         {
             actions[outputOffset + i] = nn.NodeValues[nodeOffset + outputRow.NodeStart + i];
         }

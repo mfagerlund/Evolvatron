@@ -21,6 +21,8 @@ The game has two major workflows:
 
 **Evolvion Integration** (planned): An evolutionary neural controller framework (see Evolvatron.Evolvion\README.md) will eventually be integrated to evolve fixed-topology neural controllers using large-scale parallel GPU execution. Species evolve differing network topologies while individuals within species differ only by weights and node parameters.
 
+**Elman Recurrence**: The system supports **Elman networks** — dedicated extra output neurons whose values are fed back as additional inputs on the next timestep, giving the network memory. This is critical for non-Markovian environments where the agent cannot observe velocity or other hidden state directly. Controlled by `ContextSize` (number of feedback outputs) and `IsJordan` (false=Elman, true=Jordan/action-feedback) on `GPUDoublePoleEvaluator`. Elman is preferred over Jordan because it allows arbitrary memory capacity independent of action dimensionality.
+
 ## Build and Test Commands
 
 ### Building

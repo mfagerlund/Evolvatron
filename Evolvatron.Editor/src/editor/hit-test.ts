@@ -240,7 +240,7 @@ export function getHandleScreenPositions(
 
 /**
  * Get screen positions for influence-factor handles.
- * Only returns handles for modules with an influenceFactor > 1.
+ * Only returns handles for modules with influenceRadius > 0.
  * Uses 4 cardinal handles on the influence region boundary.
  */
 export function getInfluenceHandleScreenPositions(
@@ -256,9 +256,8 @@ export function getInfluenceHandleScreenPositions(
   const s = camera.worldToScreen(mod.position.x, mod.position.y);
 
   if (mod.kind === 'checkpoint') {
-    const inf = mod.influenceFactor ?? 1;
-    if (inf <= 1) return null;
-    const ir = camera.worldToScreenScale(mod.radius * inf);
+    if (mod.influenceRadius <= 0) return null;
+    const ir = camera.worldToScreenScale(mod.radius + mod.influenceRadius);
     return CARDINAL_DIRS.map(d => {
       const angle = Math.atan2(d.dy, d.dx);
       return { sx: s.x + Math.cos(angle) * ir, sy: s.y + Math.sin(angle) * ir, dir: d.dir };
@@ -266,17 +265,16 @@ export function getInfluenceHandleScreenPositions(
   }
 
   if (mod.kind === 'attractor') {
-    if (mod.influenceFactor <= 1) return null;
-    const ihw = camera.worldToScreenScale(mod.halfExtentX * mod.influenceFactor);
-    const ihh = camera.worldToScreenScale(mod.halfExtentY * mod.influenceFactor);
+    if (mod.influenceRadius <= 0) return null;
+    const ihw = camera.worldToScreenScale(mod.halfExtentX + mod.influenceRadius);
+    const ihh = camera.worldToScreenScale(mod.halfExtentY + mod.influenceRadius);
     return CARDINAL_DIRS.map(d => ({ sx: s.x + d.dx * ihw, sy: s.y + d.dy * ihh, dir: d.dir }));
   }
 
   if (mod.kind === 'dangerZone') {
-    const inf = mod.influenceFactor ?? 1;
-    if (inf <= 1) return null;
-    const ihw = camera.worldToScreenScale(mod.halfExtentX * inf);
-    const ihh = camera.worldToScreenScale(mod.halfExtentY * inf);
+    if (mod.influenceRadius <= 0) return null;
+    const ihw = camera.worldToScreenScale(mod.halfExtentX + mod.influenceRadius);
+    const ihh = camera.worldToScreenScale(mod.halfExtentY + mod.influenceRadius);
     return CARDINAL_DIRS.map(d => ({ sx: s.x + d.dx * ihw, sy: s.y + d.dy * ihh, dir: d.dir }));
   }
 

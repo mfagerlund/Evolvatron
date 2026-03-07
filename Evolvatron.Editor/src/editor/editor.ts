@@ -6,10 +6,12 @@ import { MoveModulesCommand } from '../commands/move-modules';
 import { DuplicateModulesCommand } from '../commands/duplicate-modules';
 import { Selection } from './selection';
 import { Camera } from './camera';
+import { HoverState } from './hover-state';
 import { hitTestPoint, hitTestHandle, boxSelectModules } from './hit-test';
 import type { HandleDirection, HandleKind } from './hit-test';
 import {
   createObstacle, createCheckpoint, createSpeedZone, createDangerZone, createAttractor,
+  generateId,
 } from '../model/defaults';
 import { findModule } from '../model/world';
 import {
@@ -17,7 +19,7 @@ import {
   type ResizeSnapshot,
 } from '../commands/resize-module';
 
-export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'placingDrag' | 'panning' | 'resizing';
+export type EditorMode = 'idle' | 'dragging' | 'boxSelecting' | 'placing' | 'placingDrag' | 'panning' | 'resizing' | 'pasting';
 
 export interface EditorState {
   mode: EditorMode;
@@ -42,6 +44,7 @@ export class Editor {
   selection = new Selection();
   camera = new Camera();
   history = new CommandHistory();
+  hoverState = new HoverState();
   state: EditorState = { mode: 'idle' };
 
   private dragStart: Vec2 | null = null;
@@ -55,6 +58,10 @@ export class Editor {
   private resizeDirection: HandleDirection | null = null;
   private resizeKind: HandleKind = 'size';
   private resizeStartValues: ResizeSnapshot | null = null;
+
+  // Clipboard for copy/paste
+  private clipboard: Module[] = [];
+  private clipboardCenter: Vec2 = { x: 0, y: 0 };
 
   /** Current cursor to display. Updated on mouse move. */
   cursor = 'default';
@@ -94,12 +101,96 @@ export class Editor {
     this.markDirty();
   }
 
+  copy(): boolean {
+    const moduleIds = this.selection.moduleIds;
+    if (moduleIds.length === 0) return false;
+
+    this.clipboard = [];
+    let cx = 0, cy = 0;
+
+    for (const id of moduleIds) {
+      const mod = findModule(this.world, id);
+      if (!mod) continue;
+      this.clipboard.push(JSON.parse(JSON.stringify(mod)));
+      cx += mod.position.x;
+      cy += mod.position.y;
+    }
+
+    if (this.clipboard.length === 0) return false;
+    this.clipboardCenter = { x: cx / this.clipboard.length, y: cy / this.clipboard.length };
+    const n = this.clipboard.length;
+    this.showStatus(`Copied ${n} module${n > 1 ? 's' : ''}`);
+    return true;
+  }
+
+  cut(): boolean {
+    if (!this.copy()) return false;
+    this.deleteSelected();
+    const n = this.clipboard.length;
+    this.showStatus(`Cut ${n} module${n > 1 ? 's' : ''}`);
+    return true;
+  }
+
+  paste(): boolean {
+    if (this.clipboard.length === 0) return false;
+    this.selection.clear();
+    // Offset so pasted items appear slightly down-right of originals
+    const offset: Vec2 = {
+      x: this.clipboardCenter.x + 1,
+      y: this.clipboardCenter.y - 1,
+    };
+    this.state = { mode: 'pasting', ghostPosition: offset };
+    this.markDirty();
+    return true;
+  }
+
+  /** Returns the clipboard modules offset to a world position, for ghost rendering. */
+  getPasteGhosts(worldPos: Vec2): Module[] {
+    const dx = worldPos.x - this.clipboardCenter.x;
+    const dy = worldPos.y - this.clipboardCenter.y;
+    return this.clipboard.map(mod => {
+      const ghost = { ...mod, position: { x: mod.position.x + dx, y: mod.position.y + dy } };
+      return ghost as Module;
+    });
+  }
+
+  private placePastedModules(worldPos: Vec2): void {
+    const dx = worldPos.x - this.clipboardCenter.x;
+    const dy = worldPos.y - this.clipboardCenter.y;
+
+    const clones = new Map<string, Module>();
+    const sourceIds: string[] = [];
+    for (const mod of this.clipboard) {
+      const clone = JSON.parse(JSON.stringify(mod)) as Module;
+      clone.id = generateId();
+      clone.position.x += dx;
+      clone.position.y += dy;
+      sourceIds.push(mod.id);
+      clones.set(clone.id, clone);
+    }
+
+    this.history.execute(new DuplicateModulesCommand(sourceIds, clones), this.world);
+
+    this.selection.clear();
+    for (const id of clones.keys()) {
+      this.selection.add(id);
+    }
+  }
+
   // --- Mouse events (screen coords) ---
 
   onMouseDown(sx: number, sy: number, shift: boolean, middle: boolean): void {
     if (middle || this.state.mode === 'panning') {
       this.panStart = { x: sx, y: sy };
       this.state = { ...this.state, mode: 'panning' };
+      return;
+    }
+
+    if (this.state.mode === 'pasting') {
+      const wPos = this.camera.screenToWorld(sx, sy);
+      this.placePastedModules(wPos);
+      this.state = { mode: 'idle' };
+      this.markDirty();
       return;
     }
 
@@ -152,11 +243,25 @@ export class Editor {
   onMouseMove(sx: number, sy: number): void {
     this.mouseWorld = this.camera.screenToWorld(sx, sy);
 
+    // Hover tracking — only in idle mode
+    if (this.state.mode === 'idle') {
+      const hit = hitTestPoint(this.world, this.mouseWorld.x, this.mouseWorld.y);
+      this.hoverState.setTarget(hit ? hit.id : null);
+    } else {
+      this.hoverState.setTarget(null);
+    }
+
     if (this.state.mode === 'panning' && this.panStart) {
       const dx = sx - this.panStart.x;
       const dy = sy - this.panStart.y;
       this.camera.pan(dx, dy);
       this.panStart = { x: sx, y: sy };
+      this.markDirty();
+      return;
+    }
+
+    if (this.state.mode === 'pasting') {
+      this.state.ghostPosition = this.mouseWorld;
       this.markDirty();
       return;
     }
@@ -262,12 +367,33 @@ export class Editor {
     this.markDirty();
   }
 
-  onKeyDown(key: string, ctrl: boolean, _shift: boolean): boolean {
+  /** Transient status message shown in status bar. */
+  statusMessage = '';
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  showStatus(msg: string, durationMs = 2000): void {
+    this.statusMessage = msg;
+    if (this.statusTimer) clearTimeout(this.statusTimer);
+    this.statusTimer = setTimeout(() => {
+      this.statusMessage = '';
+      this.markDirty();
+    }, durationMs);
+    this.markDirty();
+  }
+
+  // Callbacks for actions that need wiring from main.ts
+  onSave: (() => void) | null = null;
+
+  onKeyDown(key: string, ctrl: boolean, shift: boolean): boolean {
     if (key === 'Escape') {
       return this.handleEscape();
     }
     if (key === 'Delete' || key === 'Backspace') {
       return this.deleteSelected();
+    }
+    if (ctrl && (key === 'z' || key === 'Z') && shift) {
+      this.redo();
+      return true;
     }
     if (ctrl && key === 'z') {
       this.undo();
@@ -275,6 +401,10 @@ export class Editor {
     }
     if (ctrl && key === 'y') {
       this.redo();
+      return true;
+    }
+    if (ctrl && key === 's') {
+      this.onSave?.();
       return true;
     }
     if (ctrl && key === 'a') {
@@ -285,12 +415,41 @@ export class Editor {
       this.duplicateSelected();
       return true;
     }
+    if (ctrl && key === 'x') {
+      this.cut();
+      return true;
+    }
+    if (ctrl && key === 'c') {
+      this.copy();
+      return true;
+    }
+    if (ctrl && key === 'v') {
+      this.paste();
+      return true;
+    }
+    // Arrow key nudging
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
+      if (this.selection.size > 0) {
+        this.nudgeSelected(key, shift);
+        return true;
+      }
+    }
+    // Home — zoom to fit
+    if (key === 'Home') {
+      this.zoomToFit();
+      return true;
+    }
     return false;
   }
 
   // --- Actions ---
 
   private handleEscape(): boolean {
+    if (this.state.mode === 'pasting') {
+      this.state = { mode: 'idle' };
+      this.markDirty();
+      return true;
+    }
     if (this.state.mode === 'placingDrag') {
       // Cancel current drag, go back to placing mode
       this.state = { mode: 'placing', placingKind: this.state.placingKind };
@@ -409,6 +568,70 @@ export class Editor {
   redo(): void {
     this.history.redo(this.world);
     this.selection.clear();
+    this.markDirty();
+  }
+
+  nudgeSelected(key: string, shift: boolean): void {
+    const step = shift ? 1.0 : 0.1;
+    let dx = 0, dy = 0;
+    if (key === 'ArrowLeft') dx = -step;
+    if (key === 'ArrowRight') dx = step;
+    if (key === 'ArrowUp') dy = step;
+    if (key === 'ArrowDown') dy = -step;
+    if (dx === 0 && dy === 0) return;
+
+    const deltas = new Map<SelectableId, Vec2>();
+    for (const id of this.selection.ids) {
+      deltas.set(id, { x: dx, y: dy });
+    }
+    this.history.execute(new MoveModulesCommand(deltas), this.world);
+    this.markDirty();
+  }
+
+  zoomToFit(): void {
+    const objects = this.world.modules;
+    if (objects.length === 0 && !this.world.landingPad) return;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    const expand = (x: number, y: number, r: number) => {
+      minX = Math.min(minX, x - r);
+      maxX = Math.max(maxX, x + r);
+      minY = Math.min(minY, y - r);
+      maxY = Math.max(maxY, y + r);
+    };
+
+    // Include all modules
+    for (const mod of objects) {
+      if (mod.kind === 'checkpoint') {
+        expand(mod.position.x, mod.position.y, mod.radius);
+      } else {
+        const r = Math.max(mod.halfExtentX, mod.halfExtentY);
+        expand(mod.position.x, mod.position.y, r);
+      }
+    }
+
+    // Include singletons
+    const pad = this.world.landingPad;
+    expand(pad.position.x, pad.position.y, Math.max(pad.halfWidth, pad.halfHeight));
+    const spawn = this.world.spawnArea;
+    expand(spawn.position.x, spawn.position.y, Math.max(spawn.xRange / 2, spawn.heightRange / 2));
+
+    // Include ground
+    expand(0, this.world.groundY, 0);
+
+    if (!isFinite(minX)) return;
+
+    const worldW = maxX - minX;
+    const worldH = maxY - minY;
+    const padding = 1.2; // 20% padding
+
+    const zoomX = this.camera.canvasWidth / (worldW * padding);
+    const zoomY = this.camera.canvasHeight / (worldH * padding);
+    this.camera.zoom = Math.max(5, Math.min(200, Math.min(zoomX, zoomY)));
+    this.camera.centerX = (minX + maxX) / 2;
+    this.camera.centerY = (minY + maxY) / 2;
     this.markDirty();
   }
 
@@ -628,51 +851,29 @@ export class Editor {
   private captureInfluence(id: SelectableId): ResizeSnapshot {
     const mod = findModule(this.world, id);
     if (!mod) return {};
-    if (mod.kind === 'checkpoint') return { influenceFactor: mod.influenceFactor ?? 1 };
-    if (mod.kind === 'attractor') return { influenceFactor: mod.influenceFactor };
-    if (mod.kind === 'dangerZone') return { influenceFactor: mod.influenceFactor ?? 1 };
+    if ('influenceRadius' in mod) return { influenceRadius: mod.influenceRadius };
     return {};
   }
 
   private applyInfluenceResizeDelta(sx: number, sy: number): void {
     if (!this.dragStart || !this.resizeTargetId || !this.resizeDirection || !this.resizeStartValues) return;
 
-    const id = this.resizeTargetId;
     const dir = this.resizeDirection;
     const start = this.resizeStartValues;
-    const mod = findModule(this.world, id);
-    if (!mod || !('influenceFactor' in mod)) return;
+    const mod = findModule(this.world, this.resizeTargetId);
+    if (!mod || !('influenceRadius' in mod)) return;
 
     const wStart = this.camera.screenToWorld(this.dragStart.x, this.dragStart.y);
     const wNow = this.camera.screenToWorld(sx, sy);
     const dwx = wNow.x - wStart.x;
     const dwy = wNow.y - wStart.y;
 
-    // Determine which axis the drag is along from the handle direction
+    // Project drag onto the handle direction to get radial delta
     const xSign = dir.includes('e') ? 1 : dir.includes('w') ? -1 : 0;
     const ySign = dir.includes('n') ? 1 : dir.includes('s') ? -1 : 0;
+    const radialDelta = xSign * dwx + ySign * dwy;
 
-    if (mod.kind === 'checkpoint') {
-      // For circles, influence is based on radius
-      const baseRadius = mod.radius;
-      if (baseRadius <= 0) return;
-      const startInfluenceR = baseRadius * start.influenceFactor;
-      // Radial delta: project cursor movement onto the handle direction
-      const radialDelta = xSign * dwx + ySign * dwy;
-      const newInfluenceR = startInfluenceR + radialDelta;
-      mod.influenceFactor = Math.max(1, newInfluenceR / baseRadius);
-    } else if (mod.kind === 'attractor' || mod.kind === 'dangerZone') {
-      // For rectangles, compute influence factor from the axis being dragged
-      if (xSign !== 0 && mod.halfExtentX > 0) {
-        const startInfluenceX = mod.halfExtentX * start.influenceFactor;
-        const newInfluenceX = startInfluenceX + xSign * dwx;
-        mod.influenceFactor = Math.max(1, newInfluenceX / mod.halfExtentX);
-      } else if (ySign !== 0 && mod.halfExtentY > 0) {
-        const startInfluenceY = mod.halfExtentY * start.influenceFactor;
-        const newInfluenceY = startInfluenceY + ySign * dwy;
-        mod.influenceFactor = Math.max(1, newInfluenceY / mod.halfExtentY);
-      }
-    }
+    mod.influenceRadius = Math.max(0, start.influenceRadius + radialDelta);
   }
 
   private clearResizeState(): void {

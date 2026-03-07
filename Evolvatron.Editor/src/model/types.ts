@@ -42,8 +42,8 @@ export interface CheckpointModule {
   radius: number;
   order: number;
   rewardBonus: number;
-  /** Multiplier on radius for influence falloff region (1 = no falloff beyond core) */
-  influenceFactor: number;
+  /** Uniform distance beyond core radius for influence falloff (0 = no falloff) */
+  influenceRadius: number;
 }
 
 export interface SpeedZoneModule {
@@ -64,8 +64,8 @@ export interface DangerZoneModule {
   halfExtentY: number;
   penaltyPerStep: number;
   isLethal: boolean;
-  /** Multiplier on size for influence falloff region (1 = no falloff beyond core) */
-  influenceFactor: number;
+  /** Uniform distance beyond core for influence falloff (0 = no falloff) */
+  influenceRadius: number;
 }
 
 export interface AttractorModule {
@@ -76,8 +76,8 @@ export interface AttractorModule {
   halfExtentY: number;
   /** Positive = reward (attractor), negative = penalty (repulsor) */
   magnitude: number;
-  /** Multiplier on size for influence falloff region */
-  influenceFactor: number;
+  /** Uniform distance beyond core for influence falloff (0 = no falloff) */
+  influenceRadius: number;
   /** One-time bonus when entering the core zone (0 to disable) */
   contactBonus: number;
 }

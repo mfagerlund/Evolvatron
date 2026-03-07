@@ -9,60 +9,50 @@ export function sampleReward(world: World, wx: number, wy: number): number {
   let total = 0;
   for (const mod of world.modules) {
     if (mod.kind === 'attractor') {
-      total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, mod.magnitude, mod.influenceFactor, wx, wy);
+      total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, mod.magnitude, mod.influenceRadius, wx, wy);
     } else if (mod.kind === 'dangerZone') {
-      total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, -mod.penaltyPerStep, mod.influenceFactor ?? 1, wx, wy);
+      total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, -mod.penaltyPerStep, mod.influenceRadius, wx, wy);
     } else if (mod.kind === 'checkpoint') {
-      total += rewardAtCircle(mod.position.x, mod.position.y, mod.radius, mod.rewardBonus, mod.influenceFactor ?? 1, wx, wy);
+      total += rewardAtCircle(mod.position.x, mod.position.y, mod.radius, mod.rewardBonus, mod.influenceRadius, wx, wy);
     }
   }
   return total;
 }
 
+/** Reward from a rectangular zone with uniform influence radius. */
 function rewardAt(
   cx: number, cy: number, hx: number, hy: number,
-  magnitude: number, influenceFactor: number,
+  magnitude: number, influenceRadius: number,
   wx: number, wy: number,
 ): number {
-  const dx = Math.abs(wx - cx);
-  const dy = Math.abs(wy - cy);
+  // Distance from point to rectangle boundary (0 if inside)
+  const dx = Math.max(0, Math.abs(wx - cx) - hx);
+  const dy = Math.max(0, Math.abs(wy - cy) - hy);
+  const dist = Math.sqrt(dx * dx + dy * dy);
 
-  const ihx = hx * influenceFactor;
-  const ihy = hy * influenceFactor;
+  if (dist === 0) return magnitude; // Inside core
+  if (influenceRadius <= 0 || dist > influenceRadius) return 0;
 
-  // Outside influence region entirely
-  if (dx > ihx || dy > ihy) return 0;
-
-  // Inside core zone
-  if (dx <= hx && dy <= hy) return magnitude;
-
-  // Normalized distance: 0 at core edge, 1 at influence edge
-  const fx = (ihx > hx) ? Math.max(0, (dx - hx) / (ihx - hx)) : 0;
-  const fy = (ihy > hy) ? Math.max(0, (dy - hy) / (ihy - hy)) : 0;
-  const t = Math.max(fx, fy);
-
-  // Smooth falloff from core to influence edge
-  const falloff = 1 - t * t; // quadratic falloff
-  return magnitude * falloff;
+  const t = dist / influenceRadius;
+  return magnitude * (1 - t * t); // Quadratic falloff
 }
 
+/** Reward from a circular zone with uniform influence radius. */
 function rewardAtCircle(
   cx: number, cy: number, radius: number,
-  magnitude: number, influenceFactor: number,
+  magnitude: number, influenceRadius: number,
   wx: number, wy: number,
 ): number {
   const dx = wx - cx;
   const dy = wy - cy;
   const dist = Math.sqrt(dx * dx + dy * dy);
 
-  const influenceRadius = radius * influenceFactor;
+  if (dist <= radius) return magnitude; // Inside core
+  const edgeDist = dist - radius;
+  if (influenceRadius <= 0 || edgeDist > influenceRadius) return 0;
 
-  if (dist > influenceRadius) return 0;
-  if (dist <= radius) return magnitude;
-
-  const t = (dist - radius) / (influenceRadius - radius);
-  const falloff = 1 - t * t;
-  return magnitude * falloff;
+  const t = edgeDist / influenceRadius;
+  return magnitude * (1 - t * t); // Quadratic falloff
 }
 
 /**

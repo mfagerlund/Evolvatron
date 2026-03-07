@@ -5,6 +5,7 @@ import { setupToolbar } from './ui/toolbar';
 import { setupPropertiesPanel } from './ui/properties-panel';
 import { serialize, deserialize } from './io/serialize';
 import { exportSim } from './io/export-sim';
+import { autosave, loadAutosave } from './io/autosave';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const container = document.getElementById('canvas-container') as HTMLDivElement;
@@ -12,6 +13,16 @@ const container = document.getElementById('canvas-container') as HTMLDivElement;
 const world = createDefaultWorld();
 const editor = new Editor(world);
 const renderer = new Renderer(canvas);
+
+// Restore from IndexedDB autosave if available
+loadAutosave().then(saved => {
+  if (saved) {
+    Object.assign(editor.world, saved);
+    editor.history.clear();
+    editor.selection.clear();
+    editor.markDirty();
+  }
+});
 
 function resizeCanvas(): void {
   const rect = container.getBoundingClientRect();
@@ -110,6 +121,7 @@ function handleNew(): void {
   editor.history.clear();
   editor.selection.clear();
   editor.markDirty();
+  autosave(editor.world);
 }
 
 function handleSave(): void {
@@ -120,6 +132,7 @@ function handleSave(): void {
   a.href = url;
   a.download = 'world.evo.json';
   a.click();
+  editor.showStatus('Saved world.evo.json');
   URL.revokeObjectURL(url);
 }
 
@@ -175,20 +188,45 @@ setupToolbar({
   onToggleRewardOverlay: toggleRewardOverlay,
 });
 
+editor.onSave = handleSave;
+
 // Sync reward overlay button with default state
 document.getElementById('btn-reward-overlay')?.classList.toggle('active', renderer.showRewardOverlay);
 
 const updateProps = setupPropertiesPanel(editor);
 
+// --- Autosave (debounced) ---
+
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAutosave(): void {
+  if (autosaveTimer !== null) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    autosave(editor.world);
+    autosaveTimer = null;
+  }, 500);
+}
+
 // --- Render loop ---
 
 editor.setOnChange(() => {
   updateProps();
+  scheduleAutosave();
 });
 
-function renderLoop(): void {
-  if (editor.consumeDirty()) {
-    renderer.render(editor.world, editor.camera, editor.selection, editor.state, editor.mouseWorld.x, editor.mouseWorld.y);
+let lastFrameTime = 0;
+
+function renderLoop(now: number): void {
+  const dt = lastFrameTime > 0 ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
+  lastFrameTime = now;
+
+  const hoverAnimating = editor.hoverState.update(dt);
+
+  if (editor.consumeDirty() || hoverAnimating) {
+    const ghosts = editor.state.mode === 'pasting' && editor.state.ghostPosition
+      ? editor.getPasteGhosts(editor.state.ghostPosition)
+      : undefined;
+    renderer.render(editor.world, editor.camera, editor.selection, editor.state, editor.hoverState, ghosts, editor.mouseWorld.x, editor.mouseWorld.y, editor.statusMessage);
   }
   requestAnimationFrame(renderLoop);
 }

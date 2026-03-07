@@ -1,6 +1,7 @@
 import type { World, Module, SelectableId } from '../model/types';
 import type { Camera } from '../editor/camera';
 import type { Selection } from '../editor/selection';
+import type { HoverState } from '../editor/hover-state';
 import { getInfluenceHandleScreenPositions } from '../editor/hit-test';
 import { findModule } from '../model/world';
 import { COLORS } from './colors';
@@ -210,6 +211,204 @@ export function drawGhostModule(
     ctx.lineTo(s.x, s.y + 10);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  ctx.globalAlpha = 1.0;
+}
+
+// --- Hover highlights ---
+
+export function drawHoverHighlights(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  world: World,
+  hoverState: HoverState,
+): void {
+  for (const [id, intensity] of hoverState.entries()) {
+    if (intensity <= 0) continue;
+    drawHoverForId(ctx, camera, world, id, intensity);
+  }
+}
+
+function drawHoverForId(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  world: World,
+  id: SelectableId,
+  intensity: number,
+): void {
+  if (id === 'landingPad') {
+    const pad = world.landingPad;
+    const s = camera.worldToScreen(pad.position.x, pad.position.y);
+    const w = camera.worldToScreenScale(pad.halfWidth * 2);
+    const h = camera.worldToScreenScale(pad.halfHeight * 2);
+    drawRectHover(ctx, s.x, s.y, w, h, 0, COLORS.landingPad, intensity);
+    return;
+  }
+  if (id === 'spawnArea') {
+    const spawn = world.spawnArea;
+    const s = camera.worldToScreen(spawn.position.x, spawn.position.y);
+    const w = camera.worldToScreenScale(spawn.xRange);
+    const h = camera.worldToScreenScale(spawn.heightRange);
+    drawRectHover(ctx, s.x, s.y, w, h, 0, COLORS.spawnArea, intensity);
+    return;
+  }
+  const mod = findModule(world, id);
+  if (!mod) return;
+  const s = camera.worldToScreen(mod.position.x, mod.position.y);
+
+  switch (mod.kind) {
+    case 'obstacle': {
+      const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+      const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+      const color = mod.isLethal ? COLORS.obstaclLethal : COLORS.obstacle;
+      drawRectHover(ctx, s.x, s.y, w, h, mod.rotation, color, intensity);
+      break;
+    }
+    case 'checkpoint': {
+      const r = camera.worldToScreenScale(mod.radius);
+      drawCircleHover(ctx, s.x, s.y, r, COLORS.checkpoint, intensity);
+      break;
+    }
+    case 'speedZone': {
+      const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+      const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+      drawRectHover(ctx, s.x, s.y, w, h, 0, COLORS.speedZone, intensity);
+      break;
+    }
+    case 'dangerZone': {
+      const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+      const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+      const color = mod.isLethal ? COLORS.dangerZoneLethal : COLORS.dangerZone;
+      drawRectHover(ctx, s.x, s.y, w, h, 0, color, intensity);
+      break;
+    }
+    case 'attractor': {
+      const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+      const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+      const color = mod.magnitude < 0 ? COLORS.repulsor : COLORS.attractor;
+      drawRectHover(ctx, s.x, s.y, w, h, 0, color, intensity);
+      break;
+    }
+  }
+}
+
+function drawRectHover(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  w: number, h: number,
+  rotationDeg: number,
+  color: string,
+  intensity: number,
+): void {
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (rotationDeg !== 0) {
+    ctx.rotate((-rotationDeg * Math.PI) / 180);
+  }
+
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14 * intensity;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.5 * intensity;
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.08 * intensity;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+
+  ctx.restore();
+}
+
+function drawCircleHover(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  r: number,
+  color: string,
+  intensity: number,
+): void {
+  ctx.save();
+
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14 * intensity;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.5 * intensity;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.08 * intensity;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// --- Paste ghosts ---
+
+export function drawPasteGhosts(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  modules: Module[],
+): void {
+  ctx.globalAlpha = 0.5;
+
+  for (const mod of modules) {
+    const s = camera.worldToScreen(mod.position.x, mod.position.y);
+
+    switch (mod.kind) {
+      case 'obstacle': {
+        const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+        const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate((-mod.rotation * Math.PI) / 180);
+        ctx.strokeStyle = mod.isLethal ? COLORS.obstaclLethal : COLORS.obstacle;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        ctx.restore();
+        break;
+      }
+      case 'checkpoint': {
+        const r = camera.worldToScreenScale(mod.radius);
+        ctx.strokeStyle = COLORS.checkpoint;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'speedZone': {
+        const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+        const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+        ctx.strokeStyle = COLORS.speedZone;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+        break;
+      }
+      case 'dangerZone': {
+        const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+        const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+        ctx.strokeStyle = mod.isLethal ? COLORS.dangerZoneLethal : COLORS.dangerZone;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+        break;
+      }
+      case 'attractor': {
+        const w = camera.worldToScreenScale(mod.halfExtentX * 2);
+        const h = camera.worldToScreenScale(mod.halfExtentY * 2);
+        ctx.strokeStyle = mod.magnitude < 0 ? COLORS.repulsor : COLORS.attractor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
+        break;
+      }
+    }
   }
 
   ctx.globalAlpha = 1.0;

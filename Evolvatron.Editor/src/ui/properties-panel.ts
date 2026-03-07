@@ -115,7 +115,7 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
       appendNumberField(container, 'Radius', mod.radius, v => commitProp(editor, id, 'radius', mod.radius, v));
       appendNumberField(container, 'Order', mod.order, v => commitProp(editor, id, 'order', mod.order, v));
       appendNumberField(container, 'Reward Bonus', mod.rewardBonus, v => commitProp(editor, id, 'rewardBonus', mod.rewardBonus, v));
-      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
+      appendNumberField(container, 'Influence Radius', mod.influenceRadius, v => commitProp(editor, id, 'influenceRadius', mod.influenceRadius, v));
       break;
     case 'speedZone':
       appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));
@@ -127,14 +127,14 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
       appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));
       appendNumberField(container, 'Half Extent Y', mod.halfExtentY, v => commitProp(editor, id, 'halfExtentY', mod.halfExtentY, v));
       appendNumberField(container, 'Penalty/Step', mod.penaltyPerStep, v => commitProp(editor, id, 'penaltyPerStep', mod.penaltyPerStep, v));
-      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
+      appendNumberField(container, 'Influence Radius', mod.influenceRadius, v => commitProp(editor, id, 'influenceRadius', mod.influenceRadius, v));
       appendCheckbox(container, 'Lethal', mod.isLethal, v => commitProp(editor, id, 'isLethal', mod.isLethal, v));
       break;
     case 'attractor':
       appendNumberField(container, 'Half Extent X', mod.halfExtentX, v => commitProp(editor, id, 'halfExtentX', mod.halfExtentX, v));
       appendNumberField(container, 'Half Extent Y', mod.halfExtentY, v => commitProp(editor, id, 'halfExtentY', mod.halfExtentY, v));
       appendNumberField(container, 'Magnitude', mod.magnitude, v => commitProp(editor, id, 'magnitude', mod.magnitude, v));
-      appendNumberField(container, 'Influence Factor', mod.influenceFactor, v => commitProp(editor, id, 'influenceFactor', mod.influenceFactor, v));
+      appendNumberField(container, 'Influence Radius', mod.influenceRadius, v => commitProp(editor, id, 'influenceRadius', mod.influenceRadius, v));
       appendNumberField(container, 'Contact Bonus', mod.contactBonus, v => commitProp(editor, id, 'contactBonus', mod.contactBonus, v));
       break;
   }

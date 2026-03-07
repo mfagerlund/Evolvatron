@@ -511,9 +511,12 @@ public static class SpeciesDiversification
     {
         var individuals = new List<Individual>(populationSize);
 
+        // Precompute Glorot limits per edge once: O(E) instead of O(E² × N)
+        float[] glorotLimits = PrecomputeGlorotLimits(topology);
+
         for (int i = 0; i < populationSize; i++)
         {
-            var individual = InitializeIndividual(topology, random);
+            var individual = InitializeIndividual(topology, glorotLimits, random);
             individuals.Add(individual);
         }
 
@@ -530,30 +533,32 @@ public static class SpeciesDiversification
         SpeciesSpec topology,
         Random random)
     {
+        float[] glorotLimits = PrecomputeGlorotLimits(topology);
+        return InitializeIndividual(topology, glorotLimits, random);
+    }
+
+    private static Individual InitializeIndividual(
+        SpeciesSpec topology,
+        float[] glorotLimits,
+        Random random)
+    {
         int totalNodes = topology.RowCounts.Sum();
         int totalEdges = topology.Edges.Count;
 
         var individual = new Individual
         {
             Weights = new float[totalEdges],
-            NodeParams = new float[totalNodes * 4], // 4 params per node
+            NodeParams = new float[totalNodes * 4],
             Activations = new ActivationType[totalNodes],
             Biases = new float[totalNodes],
             Fitness = 0f,
             Age = 0
         };
 
-        // Initialize weights using Glorot/Xavier uniform
+        // Initialize weights using precomputed Glorot/Xavier limits
         for (int i = 0; i < totalEdges; i++)
         {
-            var (src, dst) = topology.Edges[i];
-
-            // Compute fan-in and fan-out
-            int fanIn = topology.Edges.Count(e => e.Dest == dst);
-            int fanOut = topology.Edges.Count(e => e.Source == src);
-
-            float limit = MathF.Sqrt(6f / (fanIn + fanOut));
-            individual.Weights[i] = (random.NextSingle() * 2f - 1f) * limit;
+            individual.Weights[i] = (random.NextSingle() * 2f - 1f) * glorotLimits[i];
         }
 
         // Initialize activations randomly from allowed set
@@ -569,10 +574,9 @@ public static class SpeciesDiversification
             }
         }
 
-        // Initialize node params to default values (will be set by activation requirements)
+        // Initialize node params to default values
         for (int i = 0; i < totalNodes; i++)
         {
-            // Default LeakyReLU alpha = 0.01, ELU alpha = 1.0, etc.
             individual.NodeParams[i * 4 + 0] = 0.01f; // alpha
             individual.NodeParams[i * 4 + 1] = 1.0f;  // beta
             individual.NodeParams[i * 4 + 2] = 0f;
@@ -586,6 +590,32 @@ public static class SpeciesDiversification
         }
 
         return individual;
+    }
+
+    private static float[] PrecomputeGlorotLimits(SpeciesSpec topology)
+    {
+        int totalEdges = topology.Edges.Count;
+        var fanIn = new Dictionary<int, int>();
+        var fanOut = new Dictionary<int, int>();
+
+        foreach (var (src, dst) in topology.Edges)
+        {
+            fanIn.TryGetValue(dst, out int fi);
+            fanIn[dst] = fi + 1;
+            fanOut.TryGetValue(src, out int fo);
+            fanOut[src] = fo + 1;
+        }
+
+        var limits = new float[totalEdges];
+        for (int i = 0; i < totalEdges; i++)
+        {
+            var (src, dst) = topology.Edges[i];
+            int fi = fanIn.GetValueOrDefault(dst, 1);
+            int fo = fanOut.GetValueOrDefault(src, 1);
+            limits[i] = MathF.Sqrt(6f / (fi + fo));
+        }
+
+        return limits;
     }
 
     /// <summary>

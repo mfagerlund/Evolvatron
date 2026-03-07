@@ -238,6 +238,16 @@ Key question: do CartPole-optimal hyperparameters transfer to Rocket, or does ea
 
 ## Phase 8: GPU Evaluation Pipeline Optimization
 
+### 8.0 Eliminate CPU Evaluator via ILGPU CPU Backend (Medium)
+
+The pure-C# `CPUEvaluator` duplicates all GPU kernel logic and must be manually kept in sync. This has caused multiple bugs (velocity stabilization, motor dt, MaxVelocity mismatch). ILGPU can target CPU via `CPUAccelerator`, running the exact same kernel code — zero sync burden by construction.
+
+**Benchmark to run**: Compare `CPUEvaluator` vs `GPUEvaluator` with `CPUAccelerator` on a real workload (2K population, 600 steps, rocket environment). If ILGPU CPU is within 30% of pure C#, delete `CPUEvaluator` entirely.
+
+**What we keep**: `CPUStepper` (physics engine) stays — it serves `TrajectoryOptimizer` which needs per-step Jacobian access that kernels can't provide. The physics stepper is a different layer from the Evolvion evaluator.
+
+**What we lose**: Debuggability of stepping through pure C# evaluation. Mitigated by: (a) `CPUStepper` still exists for physics debugging, (b) NN forward pass can be tested in isolation without a full evaluator.
+
 ### 8.1 Remove Redundant Synchronization (Easy)
 Current code calls `_accelerator.Synchronize()` after every kernel launch (~300 syncs/species/generation). ILGPU streams are in-order, so consecutive launches on the same stream don't need explicit sync. Only sync when reading results back to CPU.
 

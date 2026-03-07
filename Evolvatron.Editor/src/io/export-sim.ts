@@ -16,7 +16,7 @@ export interface SimCheckpoint {
   Radius: number;
   Order: number;
   RewardBonus: number;
-  InfluenceFactor: number;
+  InfluenceRadius: number;
 }
 
 export interface SimSpeedZone {
@@ -35,7 +35,7 @@ export interface SimDangerZone {
   HalfExtentY: number;
   PenaltyPerStep: number;
   IsLethal: boolean;
-  InfluenceFactor: number;
+  InfluenceRadius: number;
 }
 
 export interface SimAttractor {
@@ -44,7 +44,7 @@ export interface SimAttractor {
   HalfExtentX: number;
   HalfExtentY: number;
   Magnitude: number;
-  InfluenceFactor: number;
+  InfluenceRadius: number;
   ContactBonus: number;
 }
 
@@ -127,7 +127,7 @@ export function exportSimWorld(world: World): SimWorld {
           Radius: mod.radius,
           Order: mod.order,
           RewardBonus: mod.rewardBonus,
-          InfluenceFactor: mod.influenceFactor,
+          InfluenceRadius: mod.influenceRadius,
         });
         break;
       case 'speedZone':
@@ -148,7 +148,7 @@ export function exportSimWorld(world: World): SimWorld {
           HalfExtentY: mod.halfExtentY,
           PenaltyPerStep: mod.penaltyPerStep,
           IsLethal: mod.isLethal,
-          InfluenceFactor: mod.influenceFactor,
+          InfluenceRadius: mod.influenceRadius,
         });
         break;
       case 'attractor':
@@ -158,7 +158,7 @@ export function exportSimWorld(world: World): SimWorld {
           HalfExtentX: mod.halfExtentX,
           HalfExtentY: mod.halfExtentY,
           Magnitude: mod.magnitude,
-          InfluenceFactor: mod.influenceFactor,
+          InfluenceRadius: mod.influenceRadius,
           ContactBonus: mod.contactBonus,
         });
         break;

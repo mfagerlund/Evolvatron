@@ -148,10 +148,9 @@ function drawCheckpoint(
   const s = camera.worldToScreen(mod.position.x, mod.position.y);
   const r = camera.worldToScreenScale(mod.radius);
 
-  // Draw influence region if factor > 1
-  const cpInfluence = mod.influenceFactor ?? 1;
-  if (cpInfluence > 1) {
-    const ir = camera.worldToScreenScale(mod.radius * cpInfluence);
+  // Draw influence region if influenceRadius > 0
+  if (mod.influenceRadius > 0) {
+    const ir = camera.worldToScreenScale(mod.radius + mod.influenceRadius);
     ctx.beginPath();
     ctx.arc(s.x, s.y, ir, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 204, 0, 0.06)';
@@ -212,12 +211,11 @@ function drawDangerZone(
   const fill = mod.isLethal ? 'rgba(255, 0, 51, 0.3)' : COLORS.dangerZoneFill;
   const stroke = mod.isLethal ? COLORS.dangerZoneLethal : COLORS.dangerZone;
 
-  // Draw influence region if factor > 1
-  const dangerInfluence = mod.influenceFactor ?? 1;
-  if (dangerInfluence > 1) {
-    const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * dangerInfluence);
-    const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * dangerInfluence);
-    const cornerRadius = Math.min(iw, ih) * 0.15;
+  // Draw influence region if influenceRadius > 0
+  if (mod.influenceRadius > 0) {
+    const iw = camera.worldToScreenScale((mod.halfExtentX + mod.influenceRadius) * 2);
+    const ih = camera.worldToScreenScale((mod.halfExtentY + mod.influenceRadius) * 2);
+    const cornerRadius = camera.worldToScreenScale(mod.influenceRadius);
 
     ctx.fillStyle = 'rgba(255, 51, 102, 0.06)';
     ctx.beginPath();
@@ -252,10 +250,15 @@ function drawAttractor(
   const h = camera.worldToScreenScale(mod.halfExtentY * 2);
   const isRepulsor = mod.magnitude < 0;
 
-  // Draw influence region (rounded box)
-  const iw = camera.worldToScreenScale(mod.halfExtentX * 2 * mod.influenceFactor);
-  const ih = camera.worldToScreenScale(mod.halfExtentY * 2 * mod.influenceFactor);
-  const cornerRadius = Math.min(iw, ih) * 0.15;
+  // Draw influence region (rounded box, uniform radius)
+  if (mod.influenceRadius <= 0) {
+    // Skip influence drawing, go straight to core zone
+    drawAttractorCore(ctx, camera, s, w, h, mod);
+    return;
+  }
+  const iw = camera.worldToScreenScale((mod.halfExtentX + mod.influenceRadius) * 2);
+  const ih = camera.worldToScreenScale((mod.halfExtentY + mod.influenceRadius) * 2);
+  const cornerRadius = camera.worldToScreenScale(mod.influenceRadius);
 
   ctx.fillStyle = isRepulsor ? COLORS.influenceRegionRepulsor : COLORS.influenceRegion;
   ctx.beginPath();
@@ -267,14 +270,24 @@ function drawAttractor(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Draw core zone
+  drawAttractorCore(ctx, camera, s, w, h, mod);
+}
+
+function drawAttractorCore(
+  ctx: CanvasRenderingContext2D,
+  _camera: Camera,
+  s: { x: number; y: number },
+  w: number, h: number,
+  mod: import('../model/types').AttractorModule,
+): void {
+  const isRepulsor = mod.magnitude < 0;
+
   ctx.fillStyle = isRepulsor ? COLORS.repulsorFill : COLORS.attractorFill;
   ctx.fillRect(s.x - w / 2, s.y - h / 2, w, h);
   ctx.strokeStyle = isRepulsor ? COLORS.repulsor : COLORS.attractor;
   ctx.lineWidth = 2;
   ctx.strokeRect(s.x - w / 2, s.y - h / 2, w, h);
 
-  // Label
   ctx.fillStyle = isRepulsor ? COLORS.repulsor : COLORS.attractor;
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';

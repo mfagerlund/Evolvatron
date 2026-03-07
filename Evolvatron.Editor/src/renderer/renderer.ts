@@ -1,10 +1,11 @@
-import type { World } from '../model/types';
+import type { World, Module } from '../model/types';
 import type { Camera } from '../editor/camera';
 import type { Selection } from '../editor/selection';
+import type { HoverState } from '../editor/hover-state';
 import type { EditorState } from '../editor/editor';
 import { COLORS } from './colors';
 import { drawGrid, drawGround, drawLandingPad, drawSpawnArea, drawModules } from './draw-modules';
-import { drawSelectionHighlights, drawBoxSelection, drawGhostModule } from './draw-overlay';
+import { drawSelectionHighlights, drawBoxSelection, drawGhostModule, drawHoverHighlights, drawPasteGhosts } from './draw-overlay';
 import { drawRewardOverlay, sampleReward } from './draw-reward-overlay';
 
 export class Renderer {
@@ -15,7 +16,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d')!;
   }
 
-  render(world: World, camera: Camera, selection: Selection, editorState: EditorState, mouseWorldX?: number, mouseWorldY?: number): void {
+  render(world: World, camera: Camera, selection: Selection, editorState: EditorState, hoverState: HoverState, pasteGhosts?: Module[], mouseWorldX?: number, mouseWorldY?: number, statusMessage?: string): void {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
@@ -33,6 +34,7 @@ export class Renderer {
     drawSpawnArea(ctx, camera, world);
     drawModules(ctx, camera, world);
     drawLandingPad(ctx, camera, world);
+    drawHoverHighlights(ctx, camera, world, hoverState);
 
     if (selection.size > 0) {
       drawSelectionHighlights(ctx, camera, world, selection);
@@ -55,7 +57,11 @@ export class Renderer {
       );
     }
 
-    this.drawStatusBar(ctx, camera, editorState, selection, w, h, world, mouseWorldX, mouseWorldY);
+    if (pasteGhosts && pasteGhosts.length > 0) {
+      drawPasteGhosts(ctx, camera, pasteGhosts);
+    }
+
+    this.drawStatusBar(ctx, camera, editorState, selection, w, h, world, mouseWorldX, mouseWorldY, statusMessage);
   }
 
   private drawStatusBar(
@@ -67,18 +73,30 @@ export class Renderer {
     world: World,
     mouseWorldX?: number,
     mouseWorldY?: number,
+    statusMessage?: string,
   ): void {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, h - 24, w, 24);
 
-    ctx.fillStyle = COLORS.textSecondary;
     ctx.font = '11px monospace';
     ctx.textAlign = 'left';
+
+    // Transient status message takes priority (right-aligned, highlighted)
+    if (statusMessage) {
+      ctx.fillStyle = '#88ddbb';
+      ctx.textAlign = 'right';
+      ctx.fillText(statusMessage, w - 8, h - 7);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.fillStyle = COLORS.textSecondary;
 
     const modeText = editorState.mode === 'placing'
       ? `Place: ${editorState.placingKind} (click first point)`
       : editorState.mode === 'placingDrag'
       ? `Place: ${editorState.placingKind} (drag to second point)`
+      : editorState.mode === 'pasting'
+      ? 'Paste (click to place, Esc to cancel)'
       : editorState.mode;
 
     const selText = selection.size > 0 ? `  |  ${selection.size} selected` : '';
