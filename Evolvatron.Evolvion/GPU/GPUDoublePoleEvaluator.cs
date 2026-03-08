@@ -60,6 +60,9 @@ public class GPUDoublePoleEvaluator : IDisposable
     // Initial state (matching Colonel: pole1 at 4 degrees)
     private const float InitialPole1Angle = 3.14159265358979f / 45f; // 4 degrees
 
+    // Multi-position evaluation
+    private float[][]? _startingPositions; // cached starting positions (N x 6)
+
     /// <summary>
     /// Computes optimal population size based on GPU hardware.
     /// Targets 4 warps per SM for good occupancy.
@@ -125,9 +128,112 @@ public class GPUDoublePoleEvaluator : IDisposable
         EnsureBuffers(worldCount, inputSize, outputSize);
         UploadInitialState(worldCount);
 
-        float angleThreshold = PoleAngleThresholdDegrees * 3.14159265358979f / 180f;
+        var config = BuildConfig(spec, inputSize, outputSize);
+        var nnViews = BuildNNViews();
+        var episodeViews = BuildEpisodeViews();
 
-        var config = new DoublePoleConfig
+        RunEvaluationLoop(worldCount, config, nnViews, episodeViews);
+
+        // Read back results
+        _accelerator.Synchronize();
+        _fitnessValues!.CopyToCPU(_fitnessCache!);
+        _stepCounters!.CopyToCPU(_stepCache!);
+
+        int solved = 0;
+        var result = new float[worldCount];
+        for (int i = 0; i < worldCount; i++)
+        {
+            result[i] = _fitnessCache![i];
+            if (_stepCache![i] >= MaxSteps)
+                solved++;
+        }
+
+        return (result, solved);
+    }
+
+    /// <summary>
+    /// Set starting positions for multi-position evaluation.
+    /// Each position is a float[6]: [cartPos, cartVel, pole1Angle, pole1AngVel, pole2Angle, pole2AngVel].
+    /// </summary>
+    public void SetStartingPositions(float[][] positions)
+    {
+        _startingPositions = positions;
+    }
+
+    /// <summary>
+    /// Evaluates all individuals across ALL starting positions.
+    /// Runs one full evaluation per position, aggregates fitness as mean across positions.
+    /// Solved = individual survived MaxSteps on EVERY position.
+    /// </summary>
+    public (float[] fitness, int allSolved) EvaluateAllPositions(
+        SpeciesSpec spec,
+        List<Individual> individuals,
+        int seed)
+    {
+        if (_startingPositions == null || _startingPositions.Length == 0)
+            throw new InvalidOperationException("Call SetStartingPositions before EvaluateAllPositions");
+
+        int worldCount = individuals.Count;
+        if (worldCount == 0)
+            return (Array.Empty<float>(), 0);
+
+        int numPositions = _startingPositions.Length;
+        int inputSize = spec.RowCounts[0];
+        int outputSize = spec.RowCounts[^1];
+
+        // Upload NN weights once
+        InitializeNeuralState(spec, individuals);
+        EnsureBuffers(worldCount, inputSize, outputSize);
+
+        var config = BuildConfig(spec, inputSize, outputSize);
+        var nnViews = BuildNNViews();
+        var episodeViews = BuildEpisodeViews();
+
+        // Accumulate fitness across positions
+        var totalFitness = new float[worldCount];
+        var solvedCounts = new int[worldCount]; // how many positions each individual solved
+
+        for (int posIdx = 0; posIdx < numPositions; posIdx++)
+        {
+            // Reset episode state and upload this position's initial state
+            UploadInitialState(worldCount, _startingPositions[posIdx]);
+
+            // Run evaluation loop
+            RunEvaluationLoop(worldCount, config, nnViews, episodeViews);
+
+            // Read back results
+            _accelerator.Synchronize();
+            _fitnessValues!.CopyToCPU(_fitnessCache!);
+            _stepCounters!.CopyToCPU(_stepCache!);
+
+            for (int i = 0; i < worldCount; i++)
+            {
+                totalFitness[i] += _fitnessCache![i];
+                if (_stepCache![i] >= MaxSteps)
+                    solvedCounts[i]++;
+            }
+        }
+
+        // Aggregate fitness: solvedCount * MaxSteps + mean_steps
+        // This ensures solving more positions always dominates over surviving longer on fewer.
+        // Range: 0 (all fail instantly) to numPositions * MaxSteps + MaxSteps (all solved).
+        var result = new float[worldCount];
+        int allSolved = 0;
+        for (int i = 0; i < worldCount; i++)
+        {
+            float meanSteps = totalFitness[i] / numPositions;
+            result[i] = solvedCounts[i] * MaxSteps + meanSteps;
+            if (solvedCounts[i] == numPositions)
+                allSolved++;
+        }
+
+        return (result, allSolved);
+    }
+
+    private DoublePoleConfig BuildConfig(SpeciesSpec spec, int inputSize, int outputSize)
+    {
+        float angleThreshold = PoleAngleThresholdDegrees * 3.14159265358979f / 180f;
+        return new DoublePoleConfig
         {
             MaxSteps = MaxSteps,
             TicksPerLaunch = TicksPerLaunch,
@@ -143,8 +249,11 @@ public class GPUDoublePoleEvaluator : IDisposable
             IsJordan = IsJordan ? 1 : 0,
             GruauEnabled = UseGruauFitness ? 1 : 0
         };
+    }
 
-        var nnViews = new NNViews
+    private NNViews BuildNNViews()
+    {
+        return new NNViews
         {
             NodeValues = _neuralState!.NodeValues.View,
             Edges = _neuralState.Edges.View,
@@ -154,8 +263,11 @@ public class GPUDoublePoleEvaluator : IDisposable
             NodeParams = _neuralState.Individuals.NodeParams.View,
             RowPlans = _neuralState.RowPlans.View
         };
+    }
 
-        var episodeViews = new DoublePoleEpisodeViews
+    private DoublePoleEpisodeViews BuildEpisodeViews()
+    {
+        return new DoublePoleEpisodeViews
         {
             IsTerminal = _isTerminal!.View,
             StepCounters = _stepCounters!.View,
@@ -163,14 +275,16 @@ public class GPUDoublePoleEvaluator : IDisposable
             JiggleBuffer = _jiggleBuffer!.View,
             ContextBuffer = _contextBuffer!.View
         };
+    }
 
-        // Main loop: each launch processes TicksPerLaunch ticks
+    private void RunEvaluationLoop(int worldCount, DoublePoleConfig config,
+        NNViews nnViews, DoublePoleEpisodeViews episodeViews)
+    {
         int totalLaunches = (MaxSteps + TicksPerLaunch - 1) / TicksPerLaunch;
-        int earlyExitInterval = Math.Max(1, 2000 / TicksPerLaunch); // check every ~2000 ticks
+        int earlyExitInterval = Math.Max(1, 2000 / TicksPerLaunch);
 
         for (int launch = 0; launch < totalLaunches; launch++)
         {
-            // Early exit check
             if (launch > 0 && launch % earlyExitInterval == 0)
             {
                 _accelerator.Synchronize();
@@ -192,22 +306,24 @@ public class GPUDoublePoleEvaluator : IDisposable
                 _actions!.View,
                 _state!.View);
         }
+    }
 
-        // Read back results
-        _accelerator.Synchronize();
-        _fitnessValues!.CopyToCPU(_fitnessCache!);
-        _stepCounters!.CopyToCPU(_stepCache!);
-
-        int solved = 0;
-        var result = new float[worldCount];
-        for (int i = 0; i < worldCount; i++)
+    private void UploadInitialState(int worldCount, float[] position)
+    {
+        var initialState = new float[worldCount * 6];
+        for (int w = 0; w < worldCount; w++)
         {
-            result[i] = _fitnessCache![i];
-            if (_stepCache![i] >= MaxSteps)
-                solved++;
+            int b = w * 6;
+            for (int j = 0; j < 6; j++)
+                initialState[b + j] = position[j];
         }
+        _state!.CopyFromCPU(initialState);
 
-        return (result, solved);
+        _isTerminal!.MemSetToZero();
+        _stepCounters!.MemSetToZero();
+        _fitnessValues!.MemSetToZero();
+        _jiggleBuffer!.MemSetToZero();
+        _contextBuffer!.MemSetToZero();
     }
 
     private void UploadInitialState(int worldCount)

@@ -8,17 +8,18 @@ public class EvolutionConfig
 {
     /// <summary>
     /// Number of species in the population.
-    /// Default: 6 (Sparse Study Phase D: 20/20 solve rate on deep topologies)
-    /// Previous: 39 (Rosenbrock Trial 138), 27 (spiral), 20 (NEAT-style)
+    /// Default: 3 (Phase B2: best tradeoff between topology diversity and generation throughput)
+    /// Species provide essential topology exploration — different structures compete to find
+    /// what works for the problem. Each species gets full GPU-optimal pop (free throughput).
+    /// Phase B2 dp_6_6_6: 3sp=8/10 vs 1sp=7/10 vs 6sp=6/10 (120s budget, 10 seeds)
     /// </summary>
-    public int SpeciesCount { get; set; } = 6;
+    public int SpeciesCount { get; set; } = 3;
 
     /// <summary>
     /// Minimum number of species to maintain (prevents complete collapse).
-    /// Default: 3 (Sparse Study: 3-6 species is the sweet spot)
-    /// Previous: 13 (Rosenbrock Trial 138), 8 (NEAT-style)
+    /// Default: 2 (always keep at least 2 competing topologies for diversity)
     /// </summary>
-    public int MinSpeciesCount { get; set; } = 3;
+    public int MinSpeciesCount { get; set; } = 2;
 
     /// <summary>
     /// Number of individuals per species.

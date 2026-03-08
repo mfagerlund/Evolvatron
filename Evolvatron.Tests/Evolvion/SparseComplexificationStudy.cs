@@ -292,6 +292,103 @@ public class SparseComplexificationStudy
 
     #endregion
 
+    #region Phase B2: Species Diversity (Full GPU Pop Per Species)
+
+    /// <summary>
+    /// Phase B2: Re-run species diversity study with CORRECT sizing.
+    /// Each species gets the full GPU-optimal population (16K on RTX 4090).
+    /// More species = more sequential kernel launches per generation = slower gens,
+    /// but each launch fully saturates the GPU.
+    /// This isolates the pure effect of topology diversity from population starvation.
+    /// </summary>
+    [Fact]
+    public void PhaseB2_SpeciesDiversity_FullPop()
+    {
+        using var gpu = new GPUDoublePoleEvaluator();
+        int optPop = gpu.OptimalPopulationSize;
+        Warmup(gpu);
+
+        string path = Path.Combine(BasePath, "phase_b2_species_full_pop.md");
+        Directory.CreateDirectory(BasePath);
+        File.WriteAllText(path, "");
+
+        void Log(string line) { _output.WriteLine(line); File.AppendAllText(path, line + "\n"); }
+
+        // Focus on topologies where species mattered most in Phase B
+        var topos = new Topo[]
+        {
+            new("dp_6_6_6",   new[]{6, 6, 6},     "deep"),     // 1sp=1/5 in Phase A
+            new("dp_4_4_4",   new[]{4, 4, 4},      "deep"),     // already 5/5 at 1sp
+            new("dp_8_8_8",   new[]{8, 8, 8},      "deep"),     // 2/5 at 1sp
+            new("vd_6_6_6_6", new[]{6, 6, 6, 6},   "vdeep"),    // 2/5 at 1sp
+            new("md_8_8",     new[]{8, 8},          "medium"),   // 4/5 at 1sp
+        };
+
+        int[] speciesCounts = { 1, 3, 6, 12 };
+        int[] seeds = Enumerable.Range(1, 10).ToArray(); // 10 seeds for statistical power
+
+        Log($"# Phase B2: Species Diversity — Full GPU Pop Per Species\n");
+        Log($"- **Device**: {gpu.DeviceName}");
+        Log($"- **Pop per species**: {optPop:N0} (EACH species gets full GPU-optimal pop)");
+        Log($"- **Total pop**: species × {optPop:N0} (e.g., 12sp = {12 * optPop:N0} total)");
+        Log($"- **Config**: Elman ctx=2, jit=0.15, Gruau ON, moderate edges");
+        Log($"- **Budget**: 120s per run");
+        Log($"- **Date**: {DateTime.Now:yyyy-MM-dd HH:mm}\n");
+
+        Log($"| {"Topology",-14} | {"Species",7} | {"TotalPop",8} | {"Seed",5} | {"Shape",-16} | {"InitEdg",7} | {"Solved",6} | {"Time(s)",7} | {"Best",10} | {"Gens",5} | {"Gen/s",5} | {"FinalEdg",8} |");
+        Log($"|:---------------|--------:|---------:|------:|:-----------------|--------:|-------:|--------:|-----------:|------:|------:|---------:|");
+
+        var summaries = new List<(Topo topo, int species, TopoSummary summary)>();
+
+        foreach (var topo in topos)
+        {
+            foreach (int sp in speciesCounts)
+            {
+                var runs = new List<RunResult>();
+
+                foreach (int seed in seeds)
+                {
+                    var r = RunSparseExperiment(gpu, topo.Hidden, optPop, seed,
+                        species: sp, jitter: 0.15f, gruau: true,
+                        edgeAdd: 0.05f, edgeDelete: 0.02f, edgeSplit: 0.01f,
+                        edgeRedirect: 0.05f, edgeSwap: 0.02f,
+                        budget: 120);
+                    runs.Add(r);
+
+                    string solvedStr = r.SolvedGen >= 0 ? $"{r.SolvedGen}" : "DNF";
+                    string timeStr = r.SolvedGen >= 0 ? $"{r.SolveTime:F1}" : "-";
+                    Log($"| {topo.Name,-14} | {sp,7} | {sp * optPop,8} | {seed,5} | {r.Shape,-16} | {r.InitEdges,7} | {solvedStr,6} | {timeStr,7} | {r.Best,10:F1} | {r.Gens,5} | {r.GenPerSec,5:F1} | {r.FinalEdges,8} |");
+                }
+
+                var summary = ComputeSummary(topo, runs);
+                summaries.Add((topo, sp, summary));
+            }
+        }
+
+        // Summary
+        Log("\n## Species Effect Summary (Full Pop)\n");
+        Log($"| {"Topology",-14} | {"1sp",12} | {"3sp",12} | {"6sp",12} | {"12sp",12} |");
+        Log($"|:---------------|-------------:|-------------:|-------------:|-------------:|");
+
+        foreach (var topo in topos)
+        {
+            var row = new StringBuilder();
+            row.Append($"| {topo.Name,-14} |");
+
+            foreach (int sp in speciesCounts)
+            {
+                var s = summaries.First(x => x.topo.Name == topo.Name && x.species == sp).summary;
+                string med = s.MedianSolveTime.HasValue ? $"{s.MedianSolveTime:F0}s" : "-";
+                string cell = $"{s.SolveCount}/{s.TotalRuns} {med}";
+                row.Append($" {cell,12} |");
+            }
+            Log(row.ToString());
+        }
+
+    }
+
+    #endregion
+
     #region Phase C: Edge Mutation Rates
 
     /// <summary>

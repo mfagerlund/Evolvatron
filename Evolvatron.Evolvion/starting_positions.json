@@ -1,0 +1,21 @@
+{
+  "description": "16 fixed starting positions for DPNV benchmark. State: [cartPos, cartVel, pole1Angle, pole1AngVel, pole2Angle, pole2AngVel]",
+  "positions": [
+    {"id": 0, "tier": "gentle", "desc": "Standard (4 deg)", "state": [0.0, 0.0, 0.0698, 0.0, 0.0, 0.0]},
+    {"id": 1, "tier": "gentle", "desc": "Mirror of standard", "state": [0.0, 0.0, -0.0698, 0.0, 0.0, 0.0]},
+    {"id": 2, "tier": "gentle", "desc": "Both poles off (3 deg)", "state": [0.0, 0.0, 0.0524, 0.0, -0.0524, 0.0]},
+    {"id": 3, "tier": "gentle", "desc": "Cart offset right", "state": [0.5, 0.0, 0.0698, 0.0, 0.0, 0.0]},
+    {"id": 4, "tier": "moderate", "desc": "Wide pole1 (10 deg)", "state": [0.0, 0.0, 0.1745, 0.0, 0.0, 0.0]},
+    {"id": 5, "tier": "moderate", "desc": "Moving cart", "state": [0.0, 1.0, 0.0698, 0.0, 0.0, 0.0]},
+    {"id": 6, "tier": "moderate", "desc": "Pole2 falling (8 deg)", "state": [0.0, 0.0, 0.0349, 0.0, 0.1396, 0.0]},
+    {"id": 7, "tier": "moderate", "desc": "Pole1 spinning", "state": [0.0, 0.0, 0.0698, 1.0, 0.0, 0.0]},
+    {"id": 8, "tier": "hard", "desc": "Cart right, poles diverge", "state": [1.0, 0.0, 0.1396, 0.0, -0.0873, 0.0]},
+    {"id": 9, "tier": "hard", "desc": "Fast cart, opposing poles", "state": [0.0, 1.5, -0.1047, 0.0, 0.0698, 0.0]},
+    {"id": 10, "tier": "hard", "desc": "Angular motion", "state": [0.0, 0.0, 0.0873, -1.5, -0.0524, 1.0]},
+    {"id": 11, "tier": "hard", "desc": "Everything perturbed", "state": [-0.8, -0.8, 0.1745, 0.5, -0.0873, -0.5]},
+    {"id": 12, "tier": "extreme", "desc": "Cart near edge (12+8 deg)", "state": [1.5, 0.0, 0.2094, 0.0, -0.1396, 0.0]},
+    {"id": 13, "tier": "extreme", "desc": "Big angle + spin (15 deg)", "state": [0.0, 0.0, 0.2618, 2.0, 0.0, 0.0]},
+    {"id": 14, "tier": "extreme", "desc": "Full chaos", "state": [-1.0, 1.2, -0.1745, -1.0, 0.1396, 1.5]},
+    {"id": 15, "tier": "extreme", "desc": "Mixed perturbation", "state": [0.3, -1.5, 0.2094, -0.8, -0.1047, 0.8]}
+  ]
+}
