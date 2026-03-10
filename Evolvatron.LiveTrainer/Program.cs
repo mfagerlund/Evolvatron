@@ -7,13 +7,9 @@ using Evolvatron.Evolvion.GPU.MegaKernel;
 using Evolvatron.Evolvion.World;
 using Raylib_cs;
 
-if (args.Length == 0)
-{
-    Console.WriteLine("Usage: dotnet run -- <world.json> [--generations N] [--spawns N]");
-    return 1;
-}
+string defaultWorld = @"C:\Slask\world.sim.json";
 
-string jsonPath = Path.GetFullPath(args[0]);
+string jsonPath = args.Length > 0 ? Path.GetFullPath(args[0]) : defaultWorld;
 if (!File.Exists(jsonPath))
 {
     Console.Error.WriteLine($"File not found: {jsonPath}");
@@ -32,7 +28,7 @@ for (int i = 1; i < args.Length; i++)
 }
 
 // Shared training state
-const int MaxReplayCount = 30;
+const int MaxReplayCount = 10; // individuals (each shown from all spawn positions)
 float[]? latestTopNParams = null; // flat: [rocket0_params, rocket1_params, ...], sorted best-first
 float[]? latestTopNFitness = null; // fitness values for top N, sorted best-first
 int currentGeneration = 0;
@@ -41,6 +37,8 @@ float landingRate = 0f;
 bool trainingDone = false;
 int solvedGeneration = -1; // gen where first individual landed ALL spawns (-1 = unsolved)
 float[]? solverParams = null; // params of individual that landed all spawns
+int trainPopulation = 0; // population size for HUD
+int trainSpawns = 0; // spawn positions per generation for HUD
 object championLock = new();
 
 // Graph data (landing rate history)
@@ -50,6 +48,7 @@ var fitnessHistory = new List<float>();
 // File-watch reload state
 var trainCts = new CancellationTokenSource();
 int worldChangedFlag = 0; // 0=no, 1=yes — use Interlocked for thread safety
+object gpuLock = new(); // serializes GPU access between training thread and render thread
 Thread? trainingThread = null;
 
 // Load world + start training + configure viz
@@ -119,7 +118,9 @@ void RunTraining(CancellationToken ct)
     var sw = Stopwatch.StartNew();
 
     int actualSpawns = trainEval.SpawnCount > 0 ? trainEval.SpawnCount : numSpawns;
-    Console.WriteLine($"  Using {actualSpawns} deterministic spawn positions (fixed seeds)");
+    trainPopulation = optimizer.TotalPopulation;
+    trainSpawns = actualSpawns;
+    Console.WriteLine($"  Pop={trainPopulation}, Spawns={actualSpawns} (fixed seeds)");
 
     // Elitism: carry forward best individual
     float[]? eliteParams = null;
@@ -138,8 +139,13 @@ void RunTraining(CancellationToken ct)
             Array.Copy(eliteParams, 0, paramVectors, (totalPop - 1) * paramCount, paramCount);
 
         // Fixed baseSeed → same spawn positions every generation (from world config)
-        var (fitness, landings, maxLandingCount, maxLandingIdx) = trainEval.EvaluateMultiSpawn(
-            paramVectors, totalPop, actualSpawns, baseSeed: trainEval.SpawnSeed);
+        (float[] fitness, int landings, int maxLandingCount, int maxLandingIdx) result;
+        lock (gpuLock)
+        {
+            result = trainEval.EvaluateMultiSpawn(
+                paramVectors, totalPop, actualSpawns, baseSeed: trainEval.SpawnSeed);
+        }
+        var (fitness, landings, maxLandingCount, maxLandingIdx) = result;
 
         // Track elite (best ever)
         for (int i = 0; i < totalPop; i++)
@@ -206,7 +212,7 @@ void RunTraining(CancellationToken ct)
         }
 
         if (gen % 10 == 0)
-            Console.WriteLine($"  Gen {gen,3}: fit={MathF.Max(eliteFitness, maxFit),8:F1}  land={rate,5:F1}%  [{sw.Elapsed.TotalSeconds:F0}s]");
+            Console.WriteLine($"  Gen {gen,3}: fit={MathF.Max(eliteFitness, maxFit),8:F1}  land={landings}/{totalPop * actualSpawns} ({rate:F1}%)  maxLand={maxLandingCount}/{actualSpawns}  [{sw.Elapsed.TotalSeconds:F0}s]");
     }
 
     if (!ct.IsCancellationRequested)
@@ -269,7 +275,7 @@ List<float> dispFitHistory = new();
 int simSpeed = 2; // physics steps per frame (2 = real-time at 60fps/120hz)
 bool paused = false;
 int displayedLosers = 29; // how many non-winner rockets to show (0 = winner only)
-bool spawnSpreadMode = false; // S key: show best individual from all training spawn positions
+// spawnSpreadMode removed — always show all individuals × all spawns
 
 // Camera
 float padX = world.LandingPad.PadX;
@@ -327,7 +333,7 @@ while (!Raylib.WindowShouldClose())
     // Input
     if (Raylib.IsKeyPressed(KeyboardKey.Space)) paused = !paused;
     if (Raylib.IsKeyPressed(KeyboardKey.Equal) || Raylib.IsKeyPressed(KeyboardKey.KpAdd))
-        simSpeed = Math.Min(simSpeed + 1, 20);
+        simSpeed = Math.Min(simSpeed + 1, 8);
     if (Raylib.IsKeyPressed(KeyboardKey.Minus) || Raylib.IsKeyPressed(KeyboardKey.KpSubtract))
         simSpeed = Math.Max(simSpeed - 1, 1);
     if (Raylib.IsKeyPressed(KeyboardKey.R))
@@ -354,7 +360,7 @@ while (!Raylib.WindowShouldClose())
         groundSurfaceY = world.GroundY + 0.5f;
         spawnY = world.Spawn.Y + world.Spawn.HeightRange;
     }
-    if (Raylib.IsKeyPressed(KeyboardKey.S)) { spawnSpreadMode = !spawnSpreadMode; StartNewReplay(); }
+    // S key: was spread mode toggle, now always on
     if (Raylib.IsKeyPressed(KeyboardKey.Up))
         displayedLosers = Math.Min(displayedLosers + 5, MaxReplayCount - 1);
     if (Raylib.IsKeyPressed(KeyboardKey.Down))
@@ -399,14 +405,25 @@ while (!Raylib.WindowShouldClose())
                 if (rTerminal![r] == 0) { allTerminal = false; break; }
         }
 
-        for (int s = 0; s < simSpeed; s++)
+        // Try to acquire GPU — skip stepping if training holds the lock
+        if (Monitor.TryEnter(gpuLock))
         {
-            if (allTerminal) break;
-            vizEval!.StepReplay();
-            replayStep++;
+            try
+            {
+                for (int s = 0; s < simSpeed; s++)
+                {
+                    if (allTerminal) break;
+                    vizEval!.StepReplay();
+                    replayStep++;
+                }
+                vizEval!.ReadMultiReplayState(out bodies!, out geoms!,
+                    out rTerminal!, out rLanded!, out rThrottle!, out rGimbal!);
+            }
+            finally
+            {
+                Monitor.Exit(gpuLock);
+            }
         }
-        vizEval!.ReadMultiReplayState(out bodies!, out geoms!,
-            out rTerminal!, out rLanded!, out rThrottle!, out rGimbal!);
 
         // Re-check after stepping
         allTerminal = true;
@@ -542,13 +559,15 @@ while (!Raylib.WindowShouldClose())
         cpIdx++;
     }
 
-    // Rocket trails
-    int maxTrailIdx = Math.Min(1 + displayedLosers, trails.Count);
+    // Rocket trails — displayedLosers counts extra individuals (each has replaySpawns rockets)
+    int trailSpawnsForMax = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
+    int maxTrailIdx = Math.Min((1 + displayedLosers) * trailSpawnsForMax, trails.Count);
     for (int r = maxTrailIdx - 1; r >= 0; r--)
     {
         var t = trails[r];
         if (t.Count <= 1) continue;
-        bool isWinnerTrail = r == 0;
+        int trailSpawns = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
+        bool isWinnerTrail = r < trailSpawns; // first individual's spawns
         for (int i = 1; i < t.Count; i++)
         {
             int alpha;
@@ -572,22 +591,22 @@ while (!Raylib.WindowShouldClose())
     // Multi-rocket rendering
     if (bodies != null && geoms != null && rTerminal != null)
     {
-        // Draw losers first (faintest last-place → brighter near top), then winner on top
-        int maxIdx = Math.Min(1 + displayedLosers, activeReplayCount);
+        // Draw all rockets — layout: [ind0_spawn0, ind0_spawn1, ..., ind1_spawn0, ...]
+        int replaySpawns = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
+        int maxIdx = Math.Min((1 + displayedLosers) * replaySpawns, activeReplayCount);
         for (int rocketIdx = maxIdx - 1; rocketIdx >= 0; rocketIdx--)
         {
-            bool isWinner = rocketIdx == 0 && !spawnSpreadMode;
-            bool isProminent = isWinner || spawnSpreadMode;
+            int individualIdx = rocketIdx / replaySpawns;
+            bool isWinner = individualIdx == 0;
+            bool isProminent = isWinner; // only best individual gets full detail
             bool isTerminal = rTerminal[rocketIdx] != 0;
             bool isLanded = rLanded != null && rLanded[rocketIdx] != 0;
 
             int baseAlpha;
-            if (spawnSpreadMode)
-                baseAlpha = isTerminal ? 150 : 200;
-            else if (isWinner)
+            if (isWinner)
                 baseAlpha = isTerminal ? 150 : 220;
             else
-                baseAlpha = Math.Max(15, 80 - (rocketIdx - 1) * 2);
+                baseAlpha = Math.Max(30, 120 - individualIdx * 8);
 
             if (isTerminal && !isProminent)
                 baseAlpha = baseAlpha / 3;
@@ -791,16 +810,16 @@ while (!Raylib.WindowShouldClose())
     Raylib.DrawText("EVOLVATRON LIVE", 10, 8, 20, Color.White);
     string genText = dispDone ? $"Gen: {dispGen} (done)" : $"Gen: {dispGen}/{maxGenerations}";
     Raylib.DrawText(genText, 190, 8, 18, Color.LightGray);
-    Raylib.DrawText($"Fit: {dispFit:F0}", 400, 8, 18, Color.Green);
-    Raylib.DrawText($"Land: {dispRate:F1}%", 520, 8, 18, Color.Yellow);
+    Raylib.DrawText($"Fit: {dispFit:F0}", 400, 8, 18, new Color(220, 200, 80, 255));
+    Raylib.DrawText($"Land: {dispRate:F1}%", 520, 8, 18, new Color(80, 220, 120, 255));
     float replayTime = replayStep / 120f;
     float maxTime = world.SimulationConfig.MaxSteps / 120f;
     Raylib.DrawText($"T:{replayTime:F1}/{maxTime:F1}s", 660, 8, 16, Color.LightGray);
     Raylib.DrawText($"Speed: {simSpeed}x", 800, 8, 18, Color.LightGray);
     string losersText = displayedLosers > 0 ? $"Show: {1 + displayedLosers}" : "Show: 1";
     Raylib.DrawText(losersText, 920, 8, 18, Color.LightGray);
-    if (spawnSpreadMode)
-        Raylib.DrawText("SPREAD", 1020, 8, 18, Color.Orange);
+    Raylib.DrawText($"Pop:{trainPopulation} Pos:{trainSpawns}", 1020, 8, 16, Color.LightGray);
+    // Always in spread mode (all individuals × all spawns)
     if (dispSolved >= 0)
         Raylib.DrawText($"SOLVED @{dispSolved}", 1100, 8, 18, Color.Green);
     if (paused)
@@ -826,35 +845,14 @@ return 0;
 void StartNewReplay()
 {
     if (currentTopNParams == null) return;
-    replaySeed++;
     trails.Clear();
     replayStep = 0;
     postTerminalFrames = 0;
 
-    if (spawnSpreadMode)
-    {
-        int paramCount = topology.TotalParams;
-        float[] bestParams;
-        // Use solver (landed all spawns) if available, otherwise fitness elite
-        lock (championLock)
-        {
-            if (solverParams != null)
-                bestParams = (float[])solverParams.Clone();
-            else
-            {
-                bestParams = new float[paramCount];
-                Array.Copy(currentTopNParams, 0, bestParams, 0, paramCount);
-            }
-        }
-        int spawns = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
-        vizEval.PrepareSpawnSpreadReplay(bestParams, spawns, vizEval.SpawnSeed);
-        activeReplayCount = spawns;
-    }
-    else
-    {
-        activeReplayCount = currentTopNParams.Length / topology.TotalParams;
-        vizEval!.PrepareMultiReplay(currentTopNParams, activeReplayCount, replaySeed);
-    }
+    int spawns = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
+    int numIndividuals = currentTopNParams.Length / topology.TotalParams;
+    vizEval.PrepareMultiIndividualSpreadReplay(currentTopNParams, numIndividuals, spawns, vizEval.SpawnSeed);
+    activeReplayCount = numIndividuals * spawns;
 
     vizEval!.ReadMultiReplayState(out bodies!, out geoms!, out rTerminal!, out rLanded!, out rThrottle!, out rGimbal!);
     for (int r = 0; r < activeReplayCount; r++)

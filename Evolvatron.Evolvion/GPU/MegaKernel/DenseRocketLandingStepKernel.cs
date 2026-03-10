@@ -384,28 +384,42 @@ public static class DenseRocketLandingStepKernel
                 reward += sz.RewardPerStep;
         }
 
-        // --- Attractors (AABB + influence, one-time contact bonus + proximity shaping) ---
+        // --- Attractors (closest-ever proximity: reward only increases when getting closer) ---
         int attractorMask = zones.AttractorContacted[worldIdx];
         for (int ai = 0; ai < config.AttractorCount; ai++)
         {
+            bool alreadyContacted = (attractorMask & (1 << ai)) != 0;
+            if (alreadyContacted) continue; // fully collected — no more reward
+
             var att = zones.Attractors[ai];
             float dx = XMath.Abs(comX - att.X) - att.HalfExtentX;
             float dy = XMath.Abs(comY - att.Y) - att.HalfExtentY;
 
+            int proxIdx = worldIdx * 8 + ai;
+
             if (dx < 0f && dy < 0f)
             {
-                if ((attractorMask & (1 << ai)) == 0)
-                {
-                    reward += att.ContactBonus;
-                    attractorMask |= (1 << ai);
-                }
+                // Entered the attractor — collect remaining proximity + contact bonus
+                float oldBest = zones.AttractorBestProximity[proxIdx];
+                reward += (1f - oldBest) * att.Magnitude * 0.1f; // proximity delta to reach 1.0
+                reward += att.ContactBonus;
+                zones.AttractorBestProximity[proxIdx] = 1f;
+                attractorMask |= (1 << ai);
             }
-
-            float edgeDist = XMath.Max(XMath.Max(dx, dy), 0f);
-            if (edgeDist < att.InfluenceRadius)
+            else
             {
-                float closeness = 1f - edgeDist / att.InfluenceRadius;
-                reward += closeness * att.Magnitude * 0.001f;
+                // Proximity shaping — only reward improvement over closest-ever
+                float edgeDist = XMath.Max(XMath.Max(dx, dy), 0f);
+                if (edgeDist < att.InfluenceRadius)
+                {
+                    float closeness = 1f - edgeDist / att.InfluenceRadius;
+                    float oldBest = zones.AttractorBestProximity[proxIdx];
+                    if (closeness > oldBest)
+                    {
+                        reward += (closeness - oldBest) * att.Magnitude * 0.1f;
+                        zones.AttractorBestProximity[proxIdx] = closeness;
+                    }
+                }
             }
         }
         zones.AttractorContacted[worldIdx] = attractorMask;

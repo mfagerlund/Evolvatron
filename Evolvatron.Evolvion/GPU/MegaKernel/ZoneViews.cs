@@ -20,4 +20,9 @@ public struct ZoneViews
     public ArrayView<float> ZoneRewardAccum;
     public ArrayView<int> CheckpointProgress;
     public ArrayView<int> AttractorContacted;
+
+    // Per-world per-attractor closest-ever proximity score (worldCount * MAX_ATTRACTORS)
+    // Stores the best closeness value [0..1] ever achieved for each attractor.
+    // Reward delta = new_best - old_best, so reward only accumulates when getting closer.
+    public ArrayView<float> AttractorBestProximity;
 }

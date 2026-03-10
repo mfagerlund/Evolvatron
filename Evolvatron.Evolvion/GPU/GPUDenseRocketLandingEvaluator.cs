@@ -53,6 +53,8 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     private MemoryBuffer1D<float, Stride1D.Dense>? _zoneRewardAccum;
     private MemoryBuffer1D<int, Stride1D.Dense>? _checkpointProgress;
     private MemoryBuffer1D<int, Stride1D.Dense>? _attractorContacted;
+    private MemoryBuffer1D<float, Stride1D.Dense>? _attractorBestProximity;
+    private const int MaxAttractorsPerWorld = 8;
 
     // Kernels
     private readonly Action<Index1D, PhysicsViews, DenseNNViews, EpisodeViews,
@@ -374,6 +376,11 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
                 ContactBonus = 0f
             });
         }
+
+        if (Attractors.Count > MaxAttractorsPerWorld)
+            throw new InvalidOperationException(
+                $"World has {Attractors.Count} attractors (including pad attractor) but max is {MaxAttractorsPerWorld}. " +
+                $"Remove some attractors from the editor.");
     }
 
     private DenseRocketNNConfig BuildNNConfig()
@@ -496,7 +503,8 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             Attractors = _attractorsBuf!.View,
             ZoneRewardAccum = _zoneRewardAccum!.View,
             CheckpointProgress = _checkpointProgress!.View,
-            AttractorContacted = _attractorContacted!.View
+            AttractorContacted = _attractorContacted!.View,
+            AttractorBestProximity = _attractorBestProximity!.View
         };
     }
 
@@ -505,20 +513,13 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         PhysicsViews physicsViews, DenseNNViews nnViews, EpisodeViews episodeViews,
         ZoneViews zoneViews)
     {
+        // Batch size: dispatch N kernels then sync to avoid GPU TDR timeout.
+        // Windows TDR is 2s; each fused kernel with 16K worlds takes ~0.1-0.5ms,
+        // so 10 dispatches ≈ 1-5ms — well within safety margin.
+        const int batchSize = 10;
+
         for (int step = 0; step < MaxSteps; step++)
         {
-            if (step > 0 && step % 30 == 0)
-            {
-                _accelerator.Synchronize();
-                _isTerminal!.CopyToCPU(_terminalCache!);
-                bool allDone = true;
-                for (int i = 0; i < worldCount; i++)
-                {
-                    if (_terminalCache![i] == 0) { allDone = false; break; }
-                }
-                if (allDone) break;
-            }
-
             _fusedStepKernel(
                 worldCount,
                 physicsViews,
@@ -529,6 +530,24 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
                 zoneViews,
                 _observations!.View,
                 _actions!.View);
+
+            // Sync after every batch to prevent GPU monopolization
+            if ((step + 1) % batchSize == 0)
+            {
+                _accelerator.Synchronize();
+
+                // Early-exit check every 30 steps (less frequent — the sync is the important part)
+                if (step % 30 == 29)
+                {
+                    _isTerminal!.CopyToCPU(_terminalCache!);
+                    bool allDone = true;
+                    for (int i = 0; i < worldCount; i++)
+                    {
+                        if (_terminalCache![i] == 0) { allDone = false; break; }
+                    }
+                    if (allDone) break;
+                }
+            }
         }
     }
 
@@ -569,6 +588,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _zoneRewardAccum!.MemSetToZero();
         _checkpointProgress!.MemSetToZero();
         _attractorContacted!.MemSetToZero();
+        _attractorBestProximity!.MemSetToZero();
         _worldState!.ClearContactCounts();
         _worldState.ClearContactCache();
         _accelerator.Synchronize();
@@ -604,6 +624,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _zoneRewardAccum?.Dispose();
         _checkpointProgress?.Dispose();
         _attractorContacted?.Dispose();
+        _attractorBestProximity?.Dispose();
 
         int totalColliders = 2 + Obstacles.Count;
         int maxContacts = 24 + Obstacles.Count * 4;
@@ -643,6 +664,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _zoneRewardAccum = _accelerator.Allocate1D<float>(worldCount);
         _checkpointProgress = _accelerator.Allocate1D<int>(worldCount);
         _attractorContacted = _accelerator.Allocate1D<int>(worldCount);
+        _attractorBestProximity = _accelerator.Allocate1D<float>(worldCount * MaxAttractorsPerWorld);
 
         // Upload zone definitions
         if (Checkpoints.Count > 0)
@@ -775,7 +797,46 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _replayGimbal = new float[numSpawns];
     }
 
-    private void CreateAndUploadRocketTemplate(int worldCount, int seed, bool perWorldSeed = false)
+    /// <summary>
+    /// Prepare replay showing multiple individuals each from all training spawn positions.
+    /// Layout: [ind0_spawn0, ind0_spawn1, ..., ind1_spawn0, ind1_spawn1, ...]
+    /// Total rockets = numIndividuals * numSpawns.
+    /// </summary>
+    public void PrepareMultiIndividualSpreadReplay(float[] flatParams, int numIndividuals, int numSpawns, int baseSeed)
+    {
+        int totalRockets = numIndividuals * numSpawns;
+        _replayCount = totalRockets;
+        int paramCount = _topology.TotalParams;
+
+        // Expand: each individual's params repeated for each spawn
+        var expandedParams = new float[totalRockets * paramCount];
+        for (int i = 0; i < numIndividuals; i++)
+            for (int s = 0; s < numSpawns; s++)
+                Array.Copy(flatParams, i * paramCount, expandedParams, (i * numSpawns + s) * paramCount, paramCount);
+
+        // Build per-world seeds: rocket (i, s) gets spawn seed baseSeed + s
+        var worldSeeds = new int[totalRockets];
+        for (int i = 0; i < numIndividuals; i++)
+            for (int s = 0; s < numSpawns; s++)
+                worldSeeds[i * numSpawns + s] = baseSeed + s;
+
+        EnsureBuffers(totalRockets);
+        SplitAndUpload(expandedParams, totalRockets);
+        CreateAndUploadRocketTemplate(totalRockets, 0, perWorldSeeds: worldSeeds);
+        ResetEpisodeState(totalRockets);
+
+        int totalBodies = _worldState!.Config.TotalRigidBodies;
+        int totalGeoms = _worldState.Config.TotalGeoms;
+        if (_replayBodies == null || _replayBodies.Length != totalBodies)
+        {
+            _replayBodies = new GPURigidBody[totalBodies];
+            _replayGeoms = new GPURigidBodyGeom[totalGeoms];
+        }
+        _replayThrottle = new float[totalRockets];
+        _replayGimbal = new float[totalRockets];
+    }
+
+    private void CreateAndUploadRocketTemplate(int worldCount, int seed, bool perWorldSeed = false, int[]? perWorldSeeds = null)
     {
         const float bodyHeight = 1.5f;
         const float bodyRadius = 0.2f;
@@ -847,12 +908,14 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
 
         // Pre-generate spawn positions: one position per world in perWorldSeed mode,
         // or one shared position for all worlds in training mode (fair CEM comparison).
+        bool usePerWorld = perWorldSeed || perWorldSeeds != null;
         var spawnPositions = new (float x, float y, float tilt, float vx, float vy)[
-            perWorldSeed ? worldCount : 1];
+            usePerWorld ? worldCount : 1];
 
         for (int s = 0; s < spawnPositions.Length; s++)
         {
-            var posRng = perWorldSeed ? new Random(seed + s) : (s == 0 ? rng : rng);
+            int worldSeed = perWorldSeeds != null ? perWorldSeeds[s] : seed + s;
+            var posRng = usePerWorld ? new Random(worldSeed) : (s == 0 ? rng : rng);
             float sx;
             if (SpawnXMin > 0f)
             {
@@ -872,7 +935,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
 
         for (int w = 0; w < worldCount; w++)
         {
-            var sp = spawnPositions[perWorldSeed ? w : 0];
+            var sp = spawnPositions[usePerWorld ? w : 0];
             float spawnX = sp.x;
             float spawnY = sp.y;
             float spawnTilt = sp.tilt;
@@ -992,6 +1055,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _zoneRewardAccum?.Dispose();
         _checkpointProgress?.Dispose();
         _attractorContacted?.Dispose();
+        _attractorBestProximity?.Dispose();
         _accelerator.Dispose();
         _context.Dispose();
     }
