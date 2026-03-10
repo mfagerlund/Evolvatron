@@ -32,4 +32,5 @@ public struct EpisodeViews
     public ArrayView<int> StepCounters;
     public ArrayView<float> FitnessValues;
     public ArrayView<float> WaggleAccum;
+    public ArrayView<int> SettledSteps;
 }

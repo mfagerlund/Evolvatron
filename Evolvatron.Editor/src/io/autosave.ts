@@ -1,5 +1,5 @@
 import type { World } from '../model/types';
-import { serialize, deserialize } from './serialize';
+import { serialize, deserialize, type CameraState } from './serialize';
 
 const DB_NAME = 'evolvatron-editor';
 const STORE_NAME = 'autosave';
@@ -16,14 +16,14 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function autosave(world: World): Promise<void> {
+export async function autosave(world: World, camera?: CameraState): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(STORE_NAME, 'readwrite');
-  tx.objectStore(STORE_NAME).put(serialize(world), KEY);
+  tx.objectStore(STORE_NAME).put(serialize(world, camera), KEY);
   db.close();
 }
 
-export async function loadAutosave(): Promise<World | null> {
+export async function loadAutosave(): Promise<{ world: World; camera?: CameraState } | null> {
   try {
     const db = await openDB();
     return new Promise((resolve) => {

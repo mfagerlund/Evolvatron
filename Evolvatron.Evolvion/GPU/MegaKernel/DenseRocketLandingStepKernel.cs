@@ -182,11 +182,10 @@ public static class DenseRocketLandingStepKernel
 
         float zoneAccum = zones.ZoneRewardAccum[worldIdx];
 
-        // === 7. Terminal checks ===
+        // === 7. Terminal checks (settling-based) ===
 
         float speed = XMath.Sqrt(velX2 * velX2 + velY2 * velY2);
         bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
-        bool upright = angleErr < config.MaxLandingAngle;
 
         // Check for any physics contacts this step
         int contactBase2 = worldIdx * config.MaxContactsPerWorld;
@@ -214,28 +213,13 @@ public static class DenseRocketLandingStepKernel
             return;
         }
 
-        // Any contact (ground or obstacle) — check landing vs crash
-        if (hasContact)
+        // High-speed impact — crash on hard contact (ground, pad, or obstacle)
+        if (hasContact && speed > config.MaxLandingVel)
         {
-            bool lowVel = speed < config.MaxLandingVel;
-
-            // Landing success — near pad, slow, upright
-            if (nearPad && lowVel && upright)
-            {
-                episode.IsTerminal[worldIdx] = 1;
-                episode.HasLanded[worldIdx] = 1;
-                episode.FitnessValues[worldIdx] = ComputeFitness(
-                    steps, comX2, comY2, velX2, velY2, angleErr, angVel, 1, waggle,
-                    zoneAccum, config);
-                return;
-            }
-
-            // Contact crash — hit something too fast, wrong angle, or wrong spot
             episode.IsTerminal[worldIdx] = 1;
             float padCrashBonus = 0f;
             if (nearPad)
             {
-                // Partial credit for reaching the pad even though the landing failed
                 float speedRatio = config.MaxLandingVel / XMath.Max(speed, 0.01f);
                 if (speedRatio > 1f) speedRatio = 1f;
                 padCrashBonus = config.LandingBonus * 0.5f * speedRatio;
@@ -246,8 +230,10 @@ public static class DenseRocketLandingStepKernel
             return;
         }
 
-        // Mid-air crash — extreme tumbling (no contact needed)
-        if (angleErr > Pi * 0.5f)
+        // Low-speed contact — keep simulating (rocket settles physically)
+
+        // Mid-air extreme tumbling (only when airborne — let grounded rockets tip)
+        if (!hasContact && angleErr > Pi * 0.75f)
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
@@ -265,6 +251,47 @@ public static class DenseRocketLandingStepKernel
                 steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
                 zoneAccum, config);
             return;
+        }
+
+        // Settling detection — track consecutive frames at rest
+        bool atRest = speed < config.SettleSpeedThreshold
+                   && XMath.Abs(angVel) < config.SettleAngVelThreshold;
+
+        if (atRest && hasContact)
+        {
+            int settled = episode.SettledSteps[worldIdx] + 1;
+            episode.SettledSteps[worldIdx] = settled;
+
+            if (settled >= config.SettleStepsRequired)
+            {
+                episode.IsTerminal[worldIdx] = 1;
+
+                if (nearPad && angleErr < config.SettleTipAngle)
+                {
+                    // Successful landing — settled upright on pad
+                    episode.HasLanded[worldIdx] = 1;
+                    episode.FitnessValues[worldIdx] = ComputeFitness(
+                        steps, comX2, comY2, velX2, velY2, angleErr, angVel, 1, waggle,
+                        zoneAccum, config);
+                }
+                else
+                {
+                    // Settled but tipped over or off-pad — crash
+                    float padCrashBonus = 0f;
+                    if (nearPad)
+                    {
+                        padCrashBonus = config.LandingBonus * 0.3f;
+                    }
+                    episode.FitnessValues[worldIdx] = ComputeFitness(
+                        steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                        zoneAccum, config) + padCrashBonus;
+                }
+                return;
+            }
+        }
+        else
+        {
+            episode.SettledSteps[worldIdx] = 0;
         }
 
         // Max steps

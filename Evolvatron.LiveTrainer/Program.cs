@@ -40,6 +40,7 @@ float bestFitness = 0f;
 float landingRate = 0f;
 bool trainingDone = false;
 int solvedGeneration = -1; // gen where first individual landed ALL spawns (-1 = unsolved)
+float[]? solverParams = null; // params of individual that landed all spawns
 object championLock = new();
 
 // Graph data (landing rate history)
@@ -76,6 +77,7 @@ void LoadWorldAndStart()
         landingRate = 0f;
         trainingDone = false;
         solvedGeneration = -1;
+        solverParams = null;
         landingRateHistory.Clear();
         fitnessHistory.Clear();
     }
@@ -136,7 +138,7 @@ void RunTraining(CancellationToken ct)
             Array.Copy(eliteParams, 0, paramVectors, (totalPop - 1) * paramCount, paramCount);
 
         // Fixed baseSeed → same spawn positions every generation (from world config)
-        var (fitness, landings, maxLandingCount) = trainEval.EvaluateMultiSpawn(
+        var (fitness, landings, maxLandingCount, maxLandingIdx) = trainEval.EvaluateMultiSpawn(
             paramVectors, totalPop, actualSpawns, baseSeed: trainEval.SpawnSeed);
 
         // Track elite (best ever)
@@ -188,10 +190,18 @@ void RunTraining(CancellationToken ct)
             landingRate = rate;
             landingRateHistory.Add(rate);
             fitnessHistory.Add(MathF.Max(bestFitness, maxFit));
-            if (solvedGeneration < 0 && maxLandingCount >= actualSpawns)
+            if (maxLandingCount >= actualSpawns)
             {
-                solvedGeneration = gen + 1;
-                Console.WriteLine($"  *** MAP SOLVED at Gen {solvedGeneration}! ({maxLandingCount}/{actualSpawns} landings) ***");
+                // Always keep the best solver (most landings, highest fitness among solvers)
+                var newSolverParams = new float[paramCount];
+                Array.Copy(paramVectors, maxLandingIdx * paramCount, newSolverParams, 0, paramCount);
+                solverParams = newSolverParams;
+
+                if (solvedGeneration < 0)
+                {
+                    solvedGeneration = gen + 1;
+                    Console.WriteLine($"  *** MAP SOLVED at Gen {solvedGeneration}! ({maxLandingCount}/{actualSpawns} landings) ***");
+                }
             }
         }
 
@@ -245,7 +255,7 @@ byte[]? rTerminal = null;
 byte[]? rLanded = null;
 float[]? rThrottle = null;
 float[]? rGimbal = null;
-var trail = new List<(float x, float y)>(MaxTrailPoints);
+var trails = new List<List<(float x, float y)>>();
 
 // Training stats snapshot (read under lock)
 int dispGen = 0;
@@ -291,7 +301,7 @@ while (!Raylib.WindowShouldClose())
         replayActive = false;
         bodies = null;
         geoms = null;
-        trail.Clear();
+        trails.Clear();
         postTerminalFrames = 0;
 
         // Reload everything
@@ -320,7 +330,30 @@ while (!Raylib.WindowShouldClose())
         simSpeed = Math.Min(simSpeed + 1, 20);
     if (Raylib.IsKeyPressed(KeyboardKey.Minus) || Raylib.IsKeyPressed(KeyboardKey.KpSubtract))
         simSpeed = Math.Max(simSpeed - 1, 1);
-    if (Raylib.IsKeyPressed(KeyboardKey.R)) StartNewReplay();
+    if (Raylib.IsKeyPressed(KeyboardKey.R))
+    {
+        // Full restart: cancel training, reset, start fresh
+        trainCts.Cancel();
+        trainingThread?.Join(5000);
+        currentTopNParams = null;
+        replayActive = false;
+        bodies = null;
+        geoms = null;
+        trails.Clear();
+        postTerminalFrames = 0;
+        dispRateHistory.Clear();
+        dispFitHistory.Clear();
+        dispGen = 0;
+        dispFit = 0f;
+        dispRate = 0f;
+        dispDone = false;
+        dispSolved = -1;
+        LoadWorldAndStart();
+        padX = world.LandingPad.PadX;
+        padY = world.LandingPad.PadY;
+        groundSurfaceY = world.GroundY + 0.5f;
+        spawnY = world.Spawn.Y + world.Spawn.HeightRange;
+    }
     if (Raylib.IsKeyPressed(KeyboardKey.S)) { spawnSpreadMode = !spawnSpreadMode; StartNewReplay(); }
     if (Raylib.IsKeyPressed(KeyboardKey.Up))
         displayedLosers = Math.Min(displayedLosers + 5, MaxReplayCount - 1);
@@ -380,11 +413,16 @@ while (!Raylib.WindowShouldClose())
         for (int r = 0; r < activeReplayCount; r++)
             if (rTerminal![r] == 0) { allTerminal = false; break; }
 
-        // Update trail for winner (rocket 0)
-        if (rTerminal![0] == 0 && trail.Count < MaxTrailPoints)
+        // Update trails for all active rockets
+        while (trails.Count < activeReplayCount)
+            trails.Add(new List<(float x, float y)>(MaxTrailPoints));
+        for (int r = 0; r < activeReplayCount; r++)
         {
-            var (cx, cy) = ComputeCOM(bodies!, 0);
-            trail.Add((cx, cy));
+            if (rTerminal![r] == 0 && trails[r].Count < MaxTrailPoints)
+            {
+                var (tcx, tcy) = ComputeCOM(bodies!, r);
+                trails[r].Add((tcx, tcy));
+            }
         }
 
         if (allTerminal && replayActive)
@@ -504,14 +542,30 @@ while (!Raylib.WindowShouldClose())
         cpIdx++;
     }
 
-    // Winner trail
-    if (trail.Count > 1)
+    // Rocket trails
+    int maxTrailIdx = Math.Min(1 + displayedLosers, trails.Count);
+    for (int r = maxTrailIdx - 1; r >= 0; r--)
     {
-        for (int i = 1; i < trail.Count; i++)
+        var t = trails[r];
+        if (t.Count <= 1) continue;
+        bool isWinnerTrail = r == 0;
+        for (int i = 1; i < t.Count; i++)
         {
-            int alpha = 60 + (int)(160f * i / trail.Count);
-            Raylib.DrawLineEx(W2S(trail[i - 1].x, trail[i - 1].y), W2S(trail[i].x, trail[i].y),
-                1.5f, new Color(80, 160, 255, alpha));
+            int alpha;
+            Color trailColor;
+            if (isWinnerTrail)
+            {
+                alpha = 60 + (int)(160f * i / t.Count);
+                trailColor = new Color(80, 160, 255, alpha);
+            }
+            else
+            {
+                int baseA = Math.Max(10, 40 - (r - 1) * 2);
+                alpha = baseA / 2 + (int)((float)baseA / 2 * i / t.Count);
+                trailColor = new Color(160, 160, 180, alpha);
+            }
+            Raylib.DrawLineEx(W2S(t[i - 1].x, t[i - 1].y), W2S(t[i].x, t[i].y),
+                isWinnerTrail ? 1.5f : 1f, trailColor);
         }
     }
 
@@ -522,18 +576,20 @@ while (!Raylib.WindowShouldClose())
         int maxIdx = Math.Min(1 + displayedLosers, activeReplayCount);
         for (int rocketIdx = maxIdx - 1; rocketIdx >= 0; rocketIdx--)
         {
-            bool isWinner = rocketIdx == 0;
+            bool isWinner = rocketIdx == 0 && !spawnSpreadMode;
+            bool isProminent = isWinner || spawnSpreadMode;
             bool isTerminal = rTerminal[rocketIdx] != 0;
             bool isLanded = rLanded != null && rLanded[rocketIdx] != 0;
 
-            // Alpha: winner=220, losers fade from 80 (rank 1) to 15 (rank N)
             int baseAlpha;
-            if (isWinner)
+            if (spawnSpreadMode)
+                baseAlpha = isTerminal ? 150 : 200;
+            else if (isWinner)
                 baseAlpha = isTerminal ? 150 : 220;
             else
                 baseAlpha = Math.Max(15, 80 - (rocketIdx - 1) * 2);
 
-            if (isTerminal && !isWinner)
+            if (isTerminal && !isProminent)
                 baseAlpha = baseAlpha / 3;
 
             int bodyBase = rocketIdx * BodiesPerWorld;
@@ -549,10 +605,10 @@ while (!Raylib.WindowShouldClose())
                 Color color;
                 bool isCrashed = isTerminal && !isLanded;
                 if (isCrashed)
-                    color = isWinner
+                    color = isProminent
                         ? new Color(220, 60, 60, baseAlpha)
                         : new Color(200, 50, 50, baseAlpha);
-                else if (isWinner)
+                else if (isProminent)
                     color = isMainBody
                         ? new Color(100, 200, 255, baseAlpha)
                         : new Color(80, 160, 220, baseAlpha);
@@ -567,7 +623,7 @@ while (!Raylib.WindowShouldClose())
                     var sp = W2S(wx, wy);
                     float sr = geom.Radius * scale;
                     Raylib.DrawCircleV(sp, sr, color);
-                    if (isWinner && isMainBody)
+                    if (isProminent && isMainBody)
                     {
                         var outlineColor = isCrashed
                             ? new Color(255, 100, 100, baseAlpha / 2)
@@ -577,8 +633,8 @@ while (!Raylib.WindowShouldClose())
                 }
             }
 
-            // Thrust flame (winner only)
-            if (isWinner && !isTerminal && rThrottle != null && rThrottle[0] > 0.01f)
+            // Thrust flame
+            if (isProminent && !isTerminal && rThrottle != null && rThrottle[rocketIdx] > 0.01f)
             {
                 var body0 = bodies[bodyBase];
                 float bodyCos = MathF.Cos(body0.Angle);
@@ -587,11 +643,11 @@ while (!Raylib.WindowShouldClose())
                 float botX = body0.X - halfBody * bodyCos;
                 float botY = body0.Y - halfBody * bodySin;
 
-                float gimbalVal = rGimbal != null ? rGimbal[0] : 0f;
+                float gimbalVal = rGimbal != null ? rGimbal[rocketIdx] : 0f;
                 float flameAngle = body0.Angle + gimbalVal * 0.5f;
                 float flameCos = MathF.Cos(flameAngle);
                 float flameSin = MathF.Sin(flameAngle);
-                float throttle = rThrottle[0];
+                float throttle = rThrottle[rocketIdx];
 
                 float flameLen = throttle * 2.0f;
                 float tipX = botX - flameCos * flameLen;
@@ -609,10 +665,10 @@ while (!Raylib.WindowShouldClose())
                     new Color(255, 100, 20, (int)(100 * throttle)));
             }
 
-            // Sensor rays (winner only)
-            if (isWinner && !isTerminal && world.SimulationConfig.SensorCount >= 4)
+            // Sensor rays
+            if (isProminent && !isTerminal && world.SimulationConfig.SensorCount >= 4)
             {
-                var (comX, comY) = ComputeCOM(bodies, 0);
+                var (comX, comY) = ComputeCOM(bodies, rocketIdx);
                 var body0 = bodies[bodyBase];
                 float upX = MathF.Cos(body0.Angle);
                 float upY = MathF.Sin(body0.Angle);
@@ -632,10 +688,10 @@ while (!Raylib.WindowShouldClose())
                 }
             }
 
-            // Status label (winner only)
-            if (isWinner && isTerminal)
+            // Status label
+            if (isProminent && isTerminal)
             {
-                var (cx, cy) = ComputeCOM(bodies, 0);
+                var (cx, cy) = ComputeCOM(bodies, rocketIdx);
                 string label = isLanded ? "LANDED" : "CRASHED";
                 var labelColor = isLanded ? Color.Green : new Color(200, 80, 80, 200);
                 var pos = W2S(cx, cy + 2f);
@@ -659,15 +715,11 @@ while (!Raylib.WindowShouldClose())
         Raylib.DrawRectangleLinesEx(new Rectangle(graphX, graphY, graphW, graphH), 1f, new Color(60, 60, 80, 200));
         Raylib.DrawText("Landing %", graphX + 4, graphY + 2, 10, new Color(200, 200, 200, 150));
 
-        // Find max for scaling
-        float maxRate = 1f;
-        foreach (var r in dispRateHistory)
-            if (r > maxRate) maxRate = r;
-        maxRate = MathF.Ceiling(maxRate / 10f) * 10f;
-        if (maxRate < 10f) maxRate = 10f;
+        // Always scale landing % to 100%
+        float maxRate = 100f;
 
-        // Grid lines at 25%, 50%, 75%
-        for (int pct = 25; pct < (int)maxRate; pct += 25)
+        // Grid lines at 25%, 50%, 75%, 100%
+        for (int pct = 25; pct <= 100; pct += 25)
         {
             float gy = graphY + graphH - (pct / maxRate) * graphH;
             Raylib.DrawLineEx(new Vector2(graphX, gy), new Vector2(graphX + graphW, gy), 1f, new Color(50, 50, 70, 100));
@@ -704,6 +756,15 @@ while (!Raylib.WindowShouldClose())
                 Raylib.DrawLineEx(new Vector2(x0, y0), new Vector2(x1, y1), 1.5f, new Color(220, 200, 80, 180));
             }
         }
+
+        // Solved vertical bar
+        if (dispSolved > 0 && count > 1)
+        {
+            float solvedX = graphX + (dispSolved - 1) * step;
+            Raylib.DrawLineEx(new Vector2(solvedX, graphY), new Vector2(solvedX, graphY + graphH),
+                2f, new Color(80, 255, 80, 180));
+            Raylib.DrawText("S", (int)solvedX - 3, graphY + graphH - 12, 10, new Color(80, 255, 80, 200));
+        }
     }
 
     // HUD
@@ -728,7 +789,7 @@ while (!Raylib.WindowShouldClose())
     Raylib.DrawText($"FPS:{Raylib.GetFPS()}", ScreenWidth - 80, 8, 16, Color.Green);
 
     Raylib.DrawRectangle(0, ScreenHeight - 28, ScreenWidth, 28, new Color(0, 0, 0, 180));
-    Raylib.DrawText("SPACE:Pause  +/-:Speed  R:Restart  S:SpawnSpread  Up/Down:Rockets", 10, ScreenHeight - 22, 14, Color.Gray);
+    Raylib.DrawText("SPACE:Pause  +/-:Speed  R:NewRun  S:SpawnSpread  Up/Down:Rockets", 10, ScreenHeight - 22, 14, Color.Gray);
     Raylib.DrawText(Path.GetFileName(jsonPath), ScreenWidth - 200, ScreenHeight - 22, 14, Color.DarkGray);
 
     Raylib.EndDrawing();
@@ -747,15 +808,25 @@ void StartNewReplay()
 {
     if (currentTopNParams == null) return;
     replaySeed++;
-    trail.Clear();
+    trails.Clear();
     replayStep = 0;
     postTerminalFrames = 0;
 
     if (spawnSpreadMode)
     {
         int paramCount = topology.TotalParams;
-        var bestParams = new float[paramCount];
-        Array.Copy(currentTopNParams, 0, bestParams, 0, paramCount);
+        float[] bestParams;
+        // Use solver (landed all spawns) if available, otherwise fitness elite
+        lock (championLock)
+        {
+            if (solverParams != null)
+                bestParams = (float[])solverParams.Clone();
+            else
+            {
+                bestParams = new float[paramCount];
+                Array.Copy(currentTopNParams, 0, bestParams, 0, paramCount);
+            }
+        }
         int spawns = vizEval!.SpawnCount > 0 ? vizEval.SpawnCount : numSpawns;
         vizEval.PrepareSpawnSpreadReplay(bestParams, spawns, vizEval.SpawnSeed);
         activeReplayCount = spawns;
@@ -767,8 +838,13 @@ void StartNewReplay()
     }
 
     vizEval!.ReadMultiReplayState(out bodies!, out geoms!, out rTerminal!, out rLanded!, out rThrottle!, out rGimbal!);
-    var (cx, cy) = ComputeCOM(bodies!, 0);
-    trail.Add((cx, cy));
+    for (int r = 0; r < activeReplayCount; r++)
+    {
+        var t = new List<(float x, float y)>(MaxTrailPoints);
+        var (tcx, tcy) = ComputeCOM(bodies!, r);
+        t.Add((tcx, tcy));
+        trails.Add(t);
+    }
     replayActive = true;
 }
 

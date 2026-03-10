@@ -63,6 +63,12 @@ public struct MegaKernelConfig
     public float RewardAngleWeight;      // scales angle-error penalty
     public float RewardAngVelWeight;     // scales angular-velocity penalty
 
+    // Settling detection
+    public float SettleSpeedThreshold;    // speed below which rocket is "at rest"
+    public float SettleAngVelThreshold;   // angular velocity below which rocket is "at rest"
+    public int SettleStepsRequired;       // consecutive settled steps before declaring landed/crashed
+    public float SettleTipAngle;          // angle beyond which a settled rocket is "tipped over" (crash)
+
     // Reward zone counts (Phase 3)
     public int CheckpointCount;
     public int DangerZoneCount;

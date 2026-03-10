@@ -43,6 +43,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     private MemoryBuffer1D<int, Stride1D.Dense>? _stepCounters;
     private MemoryBuffer1D<float, Stride1D.Dense>? _fitnessValues;
     private MemoryBuffer1D<float, Stride1D.Dense>? _waggleAccum;
+    private MemoryBuffer1D<int, Stride1D.Dense>? _settledSteps;
 
     // Zone buffers (Phase 3)
     private MemoryBuffer1D<GPUCheckpoint, Stride1D.Dense>? _checkpointsBuf;
@@ -92,6 +93,10 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     public float MaxLandingAngle { get; set; } = 15f * MathF.PI / 180f;
     public float LandingBonus { get; set; } = 200f;
     public float HasteBonus { get; set; } = 1.0f;
+    public float SettleSpeedThreshold { get; set; } = 0.3f;
+    public float SettleAngVelThreshold { get; set; } = 0.5f;
+    public int SettleStepsRequired { get; set; } = 30;   // ~0.25s at 120Hz
+    public float SettleTipAngle { get; set; } = 45f * MathF.PI / 180f;
 
     // Difficulty knobs
     public float SpawnCenterX { get; set; } = 0f;
@@ -177,11 +182,11 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     /// Evaluate population from flat parameter vectors with multiple spawn conditions.
     /// Returns aggregated fitness (solvedCount * maxSteps + meanFitness) per individual.
     /// </summary>
-    public (float[] fitness, int landings, int maxLandingCount) EvaluateMultiSpawn(
+    public (float[] fitness, int landings, int maxLandingCount, int maxLandingIdx) EvaluateMultiSpawn(
         float[] paramVectors, int totalPop, int numSpawns, int baseSeed)
     {
         if (totalPop == 0)
-            return (Array.Empty<float>(), 0, 0);
+            return (Array.Empty<float>(), 0, 0, 0);
 
         EnsureBuffers(totalPop);
         SplitAndUpload(paramVectors, totalPop);
@@ -227,10 +232,18 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         }
 
         int maxLandingCount = 0;
+        int maxLandingIdx = 0;
         for (int i = 0; i < totalPop; i++)
-            if (landingCounts[i] > maxLandingCount) maxLandingCount = landingCounts[i];
+        {
+            if (landingCounts[i] > maxLandingCount ||
+                (landingCounts[i] == maxLandingCount && result[i] > result[maxLandingIdx]))
+            {
+                maxLandingCount = landingCounts[i];
+                maxLandingIdx = i;
+            }
+        }
 
-        return (result, totalLandings, maxLandingCount);
+        return (result, totalLandings, maxLandingCount, maxLandingIdx);
     }
 
     /// <summary>
@@ -239,7 +252,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     /// </summary>
     public (int landings, int total) EvaluateChampion(float[] mu, int numSpawns, int baseSeed)
     {
-        var (fitness, landings, _) = EvaluateMultiSpawn(mu, 1, numSpawns, baseSeed);
+        var (fitness, landings, _, _) = EvaluateMultiSpawn(mu, 1, numSpawns, baseSeed);
         return (landings, numSpawns);
     }
 
@@ -408,6 +421,10 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             PadHalfWidth = PadHalfWidth,
             MaxLandingVel = MaxLandingVel,
             MaxLandingAngle = MaxLandingAngle,
+            SettleSpeedThreshold = SettleSpeedThreshold,
+            SettleAngVelThreshold = SettleAngVelThreshold,
+            SettleStepsRequired = SettleStepsRequired,
+            SettleTipAngle = SettleTipAngle,
             GroundY = GroundY,
             SpawnHeight = SpawnHeight,
             LandingBonus = LandingBonus,
@@ -464,7 +481,8 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             HasLanded = _hasLanded!.View,
             StepCounters = _stepCounters!.View,
             FitnessValues = _fitnessValues!.View,
-            WaggleAccum = _waggleAccum!.View
+            WaggleAccum = _waggleAccum!.View,
+            SettledSteps = _settledSteps!.View
         };
     }
 
@@ -547,6 +565,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             _currentGimbal!.View,
             _fitnessValues!.View);
         _waggleAccum!.MemSetToZero();
+        _settledSteps!.MemSetToZero();
         _zoneRewardAccum!.MemSetToZero();
         _checkpointProgress!.MemSetToZero();
         _attractorContacted!.MemSetToZero();
@@ -575,6 +594,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _stepCounters?.Dispose();
         _fitnessValues?.Dispose();
         _waggleAccum?.Dispose();
+        _settledSteps?.Dispose();
         _weights?.Dispose();
         _biases?.Dispose();
         _checkpointsBuf?.Dispose();
@@ -611,6 +631,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _stepCounters = _accelerator.Allocate1D<int>(worldCount);
         _fitnessValues = _accelerator.Allocate1D<float>(worldCount);
         _waggleAccum = _accelerator.Allocate1D<float>(worldCount);
+        _settledSteps = _accelerator.Allocate1D<int>(worldCount);
         _weights = _accelerator.Allocate1D<float>(worldCount * _topology.TotalWeights);
         _biases = _accelerator.Allocate1D<float>(worldCount * _topology.TotalBiases);
 
@@ -824,25 +845,39 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             allColliders[2 + i] = Obstacles[i];
         _worldState.UploadSharedColliders(allColliders);
 
-        for (int w = 0; w < worldCount; w++)
-        {
-            if (perWorldSeed)
-                rng = new Random(seed + w);
+        // Pre-generate spawn positions: one position per world in perWorldSeed mode,
+        // or one shared position for all worlds in training mode (fair CEM comparison).
+        var spawnPositions = new (float x, float y, float tilt, float vx, float vy)[
+            perWorldSeed ? worldCount : 1];
 
-            float spawnX;
+        for (int s = 0; s < spawnPositions.Length; s++)
+        {
+            var posRng = perWorldSeed ? new Random(seed + s) : (s == 0 ? rng : rng);
+            float sx;
             if (SpawnXMin > 0f)
             {
-                float side = rng.NextDouble() < 0.5 ? -1f : 1f;
-                spawnX = SpawnCenterX + side * (SpawnXMin + (float)(rng.NextDouble() * (SpawnXRange - SpawnXMin)));
+                float side = posRng.NextDouble() < 0.5 ? -1f : 1f;
+                sx = SpawnCenterX + side * (SpawnXMin + (float)(posRng.NextDouble() * (SpawnXRange - SpawnXMin)));
             }
             else
             {
-                spawnX = SpawnCenterX + (float)(rng.NextDouble() * SpawnXRange * 2 - SpawnXRange);
+                sx = SpawnCenterX + (float)(posRng.NextDouble() * SpawnXRange * 2 - SpawnXRange);
             }
-            float spawnY = SpawnHeight + (float)(rng.NextDouble() * SpawnHeightRange);
-            float spawnTilt = (float)(rng.NextDouble() * SpawnAngleRange * 2 - SpawnAngleRange);
-            float velX = (float)(rng.NextDouble() * InitialVelXRange * 2 - InitialVelXRange);
-            float velY = (float)(rng.NextDouble() * -InitialVelYMax);
+            float sy = SpawnHeight + (float)(posRng.NextDouble() * SpawnHeightRange);
+            float st = (float)(posRng.NextDouble() * SpawnAngleRange * 2 - SpawnAngleRange);
+            float svx = (float)(posRng.NextDouble() * InitialVelXRange * 2 - InitialVelXRange);
+            float svy = (float)(posRng.NextDouble() * -InitialVelYMax);
+            spawnPositions[s] = (sx, sy, st, svx, svy);
+        }
+
+        for (int w = 0; w < worldCount; w++)
+        {
+            var sp = spawnPositions[perWorldSeed ? w : 0];
+            float spawnX = sp.x;
+            float spawnY = sp.y;
+            float spawnTilt = sp.tilt;
+            float velX = sp.vx;
+            float velY = sp.vy;
 
             float centerY = spawnY;
             float cosT = MathF.Cos(spawnTilt);
@@ -946,6 +981,7 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         _stepCounters?.Dispose();
         _fitnessValues?.Dispose();
         _waggleAccum?.Dispose();
+        _settledSteps?.Dispose();
         _weights?.Dispose();
         _biases?.Dispose();
         _layerSizes.Dispose();

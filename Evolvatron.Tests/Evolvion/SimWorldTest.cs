@@ -212,7 +212,7 @@ public class SimWorldTest
         for (int gen = 0; gen < 10; gen++)
         {
             var paramVectors = optimizer.GeneratePopulation(rng);
-            var (fitness, landings, _) = evaluator.EvaluateMultiSpawn(
+            var (fitness, landings, _, _) = evaluator.EvaluateMultiSpawn(
                 paramVectors, optimizer.TotalPopulation, numSpawns: 5, baseSeed: gen * 100);
             optimizer.Update(fitness, paramVectors);
             optimizer.ManageIslands(rng);
@@ -258,7 +258,7 @@ public class SimWorldTest
         int pop = optimizer.TotalPopulation;
 
         // Evaluate with default weights (position=20)
-        var (fitnessDefault, _, _) = evalDefault.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
+        var (fitnessDefault, _, _, _) = evalDefault.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
         float meanDefault = fitnessDefault.Average();
 
         // Evaluate with zero position weight
@@ -266,7 +266,7 @@ public class SimWorldTest
         evalNoPos.Configure(world);
         evalNoPos.RewardPositionWeight = 0f;
 
-        var (fitnessNoPos, _, _) = evalNoPos.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
+        var (fitnessNoPos, _, _, _) = evalNoPos.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
         float meanNoPos = fitnessNoPos.Average();
 
         Console.WriteLine($"  Mean fitness — default: {meanDefault:F2}, no-position: {meanNoPos:F2}");
@@ -333,7 +333,7 @@ public class SimWorldTest
         int pop = optimizer.TotalPopulation;
 
         // Evaluate WITH zones (danger zone penalty + attractor + checkpoints)
-        var (fitnessZones, _, _) = evalWithZones.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
+        var (fitnessZones, _, _, _) = evalWithZones.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
         float meanZones = fitnessZones.Average();
 
         // Evaluate WITHOUT zones
@@ -344,7 +344,7 @@ public class SimWorldTest
         evalNoZones.SpeedZones.Clear();
         evalNoZones.Attractors.Clear();
 
-        var (fitnessNoZones, _, _) = evalNoZones.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
+        var (fitnessNoZones, _, _, _) = evalNoZones.EvaluateMultiSpawn(paramVectors, pop, numSpawns: 3, baseSeed: 0);
         float meanNoZones = fitnessNoZones.Average();
 
         Console.WriteLine($"  Mean fitness — with zones: {meanZones:F2}, no zones: {meanNoZones:F2}");
@@ -386,7 +386,7 @@ public class SimWorldTest
         for (int gen = 0; gen < 10; gen++)
         {
             var paramVectors = optimizer.GeneratePopulation(rng);
-            var (fitness, landings, _) = evaluator.EvaluateMultiSpawn(
+            var (fitness, landings, _, _) = evaluator.EvaluateMultiSpawn(
                 paramVectors, optimizer.TotalPopulation, numSpawns: 5, baseSeed: gen * 100);
             optimizer.Update(fitness, paramVectors);
             optimizer.ManageIslands(rng);

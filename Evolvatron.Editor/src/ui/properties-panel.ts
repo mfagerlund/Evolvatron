@@ -233,6 +233,7 @@ function appendIntField(container: HTMLElement, label: string, value: number, on
 }
 
 function appendNumberField(container: HTMLElement, label: string, value: number, onChange: (v: number) => void, integer = false): void {
+  const v0 = value ?? 0;
   const row = document.createElement('div');
   row.className = 'prop-row';
   const lbl = document.createElement('label');
@@ -243,7 +244,7 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
   const input = document.createElement('input');
   input.type = 'text';
   input.inputMode = integer ? 'numeric' : 'decimal';
-  input.value = integer ? Math.round(value).toString() : (Number.isInteger(value) ? value.toString() : value.toFixed(3));
+  input.value = integer ? Math.round(v0).toString() : (Number.isInteger(v0) ? v0.toString() : v0.toFixed(3));
   input.addEventListener('change', () => {
     const v = integer ? parseInt(input.value, 10) : parseFloat(input.value);
     if (!isNaN(v)) onChange(v);

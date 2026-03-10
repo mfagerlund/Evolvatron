@@ -151,7 +151,7 @@ static void RunTraining(string jsonPath, int maxGenerations, int numSpawns, Canc
         cancel.ThrowIfCancellationRequested();
 
         var paramVectors = optimizer.GeneratePopulation(rng);
-        var (fitness, landings, _) = evaluator.EvaluateMultiSpawn(
+        var (fitness, landings, _, _) = evaluator.EvaluateMultiSpawn(
             paramVectors, optimizer.TotalPopulation, numSpawns, baseSeed: gen * 100);
         optimizer.Update(fitness, paramVectors);
         optimizer.ManageIslands(rng);

@@ -17,7 +17,12 @@ const renderer = new Renderer(canvas);
 // Restore from IndexedDB autosave if available
 loadAutosave().then(saved => {
   if (saved) {
-    Object.assign(editor.world, saved);
+    Object.assign(editor.world, saved.world);
+    if (saved.camera) {
+      editor.camera.centerX = saved.camera.centerX;
+      editor.camera.centerY = saved.camera.centerY;
+      editor.camera.zoom = saved.camera.zoom;
+    }
     editor.history.clear();
     editor.selection.clear();
     editor.markDirty();
@@ -152,7 +157,11 @@ function handleNew(): void {
 let saveFileHandle: FileSystemFileHandle | null = null;
 
 async function handleSave(): Promise<void> {
-  const json = serialize(editor.world);
+  const json = serialize(editor.world, {
+    centerX: editor.camera.centerX,
+    centerY: editor.camera.centerY,
+    zoom: editor.camera.zoom,
+  });
   try {
     if (!saveFileHandle) {
       saveFileHandle = await window.showSaveFilePicker({
@@ -210,8 +219,13 @@ function handleLoad(): void {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const loaded = deserialize(reader.result as string);
+        const { world: loaded, camera } = deserialize(reader.result as string);
         Object.assign(editor.world, loaded);
+        if (camera) {
+          editor.camera.centerX = camera.centerX;
+          editor.camera.centerY = camera.centerY;
+          editor.camera.zoom = camera.zoom;
+        }
         editor.history.clear();
         editor.selection.clear();
         editor.markDirty();
@@ -286,7 +300,7 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleAutosave(): void {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
-    autosave(editor.world);
+    autosave(editor.world, { centerX: editor.camera.centerX, centerY: editor.camera.centerY, zoom: editor.camera.zoom });
     autosaveTimer = null;
   }, 500);
 }
