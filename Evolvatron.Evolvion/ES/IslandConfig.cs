@@ -20,16 +20,15 @@ public class IslandConfig
     public float ESAdamBeta1 { get; set; } = 0.9f;
     public float ESAdamBeta2 { get; set; } = 0.999f;
 
+    // SNES parameters (Wierstra et al. 2014)
+    public float SNESEtaMu { get; set; } = 1.0f;
+    public float SNESEtaSigma { get; set; } = 0.2f;
+    public bool SNESMirrored { get; set; } = false;
+
     // Shared (tuned via systematic sweep — see scratch/cem_parameter_sweep.md)
     public float InitialSigma { get; set; } = 0.25f;
     public float MinSigma { get; set; } = 0.08f;
     public float MaxSigma { get; set; } = 2.0f;
-
-    // Regularization
-    // L2 weight decay: mu[p] *= (1 - WeightDecay) each generation.
-    // Shrinks weights toward zero, favoring simpler/more generalizable solutions.
-    // Analogous to GA's WeightJitterStdDev as implicit regularization.
-    public float WeightDecay { get; set; } = 0f;
 
     // Island lifecycle
     public int StagnationThreshold { get; set; } = 30;
@@ -39,5 +38,6 @@ public class IslandConfig
 public enum UpdateStrategyType
 {
     CEM,
-    ES
+    ES,
+    SNES
 }

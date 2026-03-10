@@ -19,7 +19,10 @@ The game has two major workflows:
 - Reward shaping for RL landing tasks
 - Agents train on **2-15 input signals and 2-25 outputs** (not pixels)
 
-**Evolvion Integration** (planned): An evolutionary neural controller framework (see Evolvatron.Evolvion\README.md) will eventually be integrated to evolve fixed-topology neural controllers using large-scale parallel GPU execution. Species evolve differing network topologies while individuals within species differ only by weights and node parameters.
+**Evolvion Integration**: The evolutionary neural controller framework (`Evolvatron.Evolvion/`) evolves fixed-topology neural controllers using large-scale parallel GPU execution. Two optimization systems exist:
+1. **CEM (flagship)**: Cross-Entropy Method with multi-position training. Distribution-based (mu/sigma per parameter), fits to top 1% elites. Uses `IslandOptimizer` + `GPUDenseDoublePoleEvaluator` with dense NN kernel. Multi-pos(10) training produces generalist controllers (median 303-324/625 on DPNV benchmark).
+2. **ES (experimental fallback)**: OpenAI-style Evolution Strategies with Adam optimizer. Same infrastructure as CEM. Needs more training positions (25 vs 10) and is more variable.
+3. **Evolvion GA (legacy)**: Species-based GA with sparse edge-based kernel. Retained for topology exploration but NOT used for fixed-topology problems — multi-position training hurts GA because weight jitter already provides implicit regularization.
 
 **Elman Recurrence**: The system supports **Elman networks** — dedicated extra output neurons whose values are fed back as additional inputs on the next timestep, giving the network memory. This is critical for non-Markovian environments where the agent cannot observe velocity or other hidden state directly. Controlled by `ContextSize` (number of feedback outputs) and `IsJordan` (false=Elman, true=Jordan/action-feedback) on `GPUDoublePoleEvaluator`. Elman is preferred over Jordan because it allows arbitrary memory capacity independent of action dimensionality.
 

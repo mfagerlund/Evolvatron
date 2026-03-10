@@ -61,6 +61,25 @@ public class DenseTopology
         return new DenseTopology(layers);
     }
 
+    /// <summary>
+    /// Creates a topology for rocket landing controllers.
+    /// 8 base observations (pos, vel, up, gimbal, throttle) + optional sensors.
+    /// 2 outputs (throttle, gimbal).
+    /// </summary>
+    public static DenseTopology ForRocket(int[] hiddenSizes, int sensorCount = 0)
+    {
+        int inputSize = 8 + sensorCount;
+        int outputSize = 2;
+
+        var layers = new int[hiddenSizes.Length + 2];
+        layers[0] = inputSize;
+        for (int i = 0; i < hiddenSizes.Length; i++)
+            layers[i + 1] = hiddenSizes[i];
+        layers[^1] = outputSize;
+
+        return new DenseTopology(layers);
+    }
+
     public override string ToString()
         => string.Join("→", LayerSizes) + $" ({TotalParams} params, {TotalWeights}w+{TotalBiases}b)";
 }

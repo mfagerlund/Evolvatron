@@ -34,6 +34,7 @@ public class IslandOptimizer
         {
             UpdateStrategyType.CEM => new CEMStrategy(config),
             UpdateStrategyType.ES => new ESStrategy(config),
+            UpdateStrategyType.SNES => new SNESStrategy(config),
             _ => throw new ArgumentException($"Unknown strategy: {config.Strategy}")
         };
 
@@ -81,15 +82,6 @@ public class IslandOptimizer
             var islandParams = new ReadOnlySpan<float>(paramVectors, paramOffset, IndividualsPerIsland * paramCount);
 
             _strategy.Update(Islands[i], islandFitness, islandParams, IndividualsPerIsland);
-
-            // L2 weight decay: shrink mu toward zero
-            if (Config.WeightDecay > 0f)
-            {
-                float factor = 1f - Config.WeightDecay;
-                var mu = Islands[i].Mu;
-                for (int p = 0; p < paramCount; p++)
-                    mu[p] *= factor;
-            }
 
             // Track best fitness for stagnation detection
             float currentBest = float.NegativeInfinity;

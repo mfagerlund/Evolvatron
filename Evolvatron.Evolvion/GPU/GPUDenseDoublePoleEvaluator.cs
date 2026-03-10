@@ -58,6 +58,7 @@ public class GPUDenseDoublePoleEvaluator : IDisposable
     // Fitness
     public bool UseGruauFitness { get; set; } = true;
 
+
     // Initial state
     private const float InitialPole1Angle = 3.14159265358979f / 45f; // 4 degrees
 

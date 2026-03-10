@@ -41,7 +41,7 @@ public class DenseGABenchmark
         int seed,
         double budgetSeconds)
     {
-        var ga = new DenseGAOptimizer(topology, popSize, seed)
+        var ga = new DenseGAOptimizer(topology, popSize, numSpecies: 1, seed)
         {
             JitterStdDev = jitterStdDev,
             EliteCount = 10,
