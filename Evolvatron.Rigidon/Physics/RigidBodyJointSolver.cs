@@ -105,8 +105,8 @@ public static class RigidBodyJointSolver
                 constraint.Mass22 = 0f;
             }
 
-            // Effective mass for angle limit constraint
-            if (constraint.EnableLimits)
+            // Effective mass for angle constraint (limits or motor reference angle)
+            if (constraint.EnableLimits || constraint.EnableMotor)
             {
                 float angularMass = bodyA.InvInertia + bodyB.InvInertia;
                 constraint.AngleLimitMass = angularMass > Epsilon ? 1f / angularMass : 0f;
@@ -305,8 +305,8 @@ public static class RigidBodyJointSolver
                 bodyB.Angle += bodyB.InvInertia * (rBX * impulseY - rBY * impulseX);
             }
 
-            // Solve angle limit position errors
-            if (constraint.EnableLimits)
+            // Solve angle position errors (limits or motor reference angle)
+            if (constraint.EnableLimits || constraint.EnableMotor)
             {
                 float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
 
@@ -315,13 +315,17 @@ public static class RigidBodyJointSolver
                 while (angle < -MathF.PI) angle += 2f * MathF.PI;
 
                 float angleError = 0f;
-                if (angle < constraint.LowerAngle - AngularSlop)
+                if (constraint.EnableLimits)
                 {
-                    angleError = angle - constraint.LowerAngle;
+                    if (angle < constraint.LowerAngle - AngularSlop)
+                        angleError = angle - constraint.LowerAngle;
+                    else if (angle > constraint.UpperAngle + AngularSlop)
+                        angleError = angle - constraint.UpperAngle;
                 }
-                else if (angle > constraint.UpperAngle + AngularSlop)
+                else
                 {
-                    angleError = angle - constraint.UpperAngle;
+                    if (MathF.Abs(angle) > AngularSlop)
+                        angleError = angle;
                 }
 
                 if (MathF.Abs(angleError) > Epsilon)

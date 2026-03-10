@@ -233,7 +233,7 @@ public static class DenseRocketLandingStepKernel
         // Low-speed contact — keep simulating (rocket settles physically)
 
         // Mid-air extreme tumbling (only when airborne — let grounded rockets tip)
-        if (!hasContact && angleErr > Pi * 0.75f)
+        if (!hasContact && angleErr > Pi * 0.5f)
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
@@ -253,20 +253,34 @@ public static class DenseRocketLandingStepKernel
             return;
         }
 
-        // Settling detection — track consecutive frames at rest
+        // Settling detection — track contact time + rest time
+        // SettledSteps encodes: high 16 bits = total contact steps, low 16 bits = consecutive rest steps
+        int settledRaw = episode.SettledSteps[worldIdx];
+        int contactSteps = (settledRaw >> 16) & 0xFFFF;
+        int restSteps = settledRaw & 0xFFFF;
+
         bool atRest = speed < config.SettleSpeedThreshold
                    && XMath.Abs(angVel) < config.SettleAngVelThreshold;
 
-        if (atRest && hasContact)
+        if (hasContact)
         {
-            int settled = episode.SettledSteps[worldIdx] + 1;
-            episode.SettledSteps[worldIdx] = settled;
+            contactSteps++;
+            if (atRest)
+                restSteps++;
+            else
+                restSteps = 0;
 
-            if (settled >= config.SettleStepsRequired)
+            episode.SettledSteps[worldIdx] = (contactSteps << 16) | restSteps;
+
+            // Settled: enough consecutive rest frames, OR too long on ground (force terminate)
+            bool settled = restSteps >= config.SettleStepsRequired;
+            bool contactTimeout = contactSteps >= config.SettleStepsRequired * 4;
+
+            if (settled || contactTimeout)
             {
                 episode.IsTerminal[worldIdx] = 1;
 
-                if (nearPad && angleErr < config.SettleTipAngle)
+                if (nearPad && angleErr < config.SettleTipAngle && settled)
                 {
                     // Successful landing — settled upright on pad
                     episode.HasLanded[worldIdx] = 1;
@@ -276,7 +290,7 @@ public static class DenseRocketLandingStepKernel
                 }
                 else
                 {
-                    // Settled but tipped over or off-pad — crash
+                    // Settled tipped/off-pad, or contact timeout — crash
                     float padCrashBonus = 0f;
                     if (nearPad)
                     {

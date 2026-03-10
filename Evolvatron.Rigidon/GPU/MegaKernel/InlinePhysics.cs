@@ -261,7 +261,7 @@ public static class InlinePhysics
                 constraint.Mass22 = k11 * invDet;
             }
 
-            if (constraint.EnableLimits != 0)
+            if (constraint.EnableLimits != 0 || constraint.EnableMotor != 0)
             {
                 float angMass = bodyA.InvInertia + bodyB.InvInertia;
                 constraint.AngleLimitMass = angMass > Epsilon ? 1f / angMass : 0f;
@@ -470,16 +470,26 @@ public static class InlinePhysics
                 bodyB.Angle += bodyB.InvInertia * (rBX * impY - rBY * impX);
             }
 
-            if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
+            if ((constraint.EnableLimits != 0 || constraint.EnableMotor != 0) && constraint.AngleLimitMass > 0f)
             {
                 float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
                 angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
                 float angleError = 0f;
-                if (angle < constraint.LowerAngle - AngularSlop)
-                    angleError = angle - constraint.LowerAngle;
-                else if (angle > constraint.UpperAngle + AngularSlop)
-                    angleError = angle - constraint.UpperAngle;
+                if (constraint.EnableLimits != 0)
+                {
+                    // Angle limits: clamp to [lower, upper] range
+                    if (angle < constraint.LowerAngle - AngularSlop)
+                        angleError = angle - constraint.LowerAngle;
+                    else if (angle > constraint.UpperAngle + AngularSlop)
+                        angleError = angle - constraint.UpperAngle;
+                }
+                else
+                {
+                    // Motor without limits: maintain reference angle
+                    if (XMath.Abs(angle) > AngularSlop)
+                        angleError = angle;
+                }
 
                 if (XMath.Abs(angleError) > Epsilon)
                 {

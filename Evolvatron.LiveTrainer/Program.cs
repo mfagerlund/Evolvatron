@@ -594,6 +594,38 @@ while (!Raylib.WindowShouldClose())
 
             int bodyBase = rocketIdx * BodiesPerWorld;
 
+            // Thrust flame (draw behind rocket body)
+            if (isProminent && !isTerminal && rThrottle != null && rThrottle[rocketIdx] > 0.01f)
+            {
+                var flameBody = bodies[bodyBase];
+                float flameBCos = MathF.Cos(flameBody.Angle);
+                float flameBSin = MathF.Sin(flameBody.Angle);
+                float halfBody = 0.75f;
+                float botX = flameBody.X - halfBody * flameBCos;
+                float botY = flameBody.Y - halfBody * flameBSin;
+
+                float gimbalVal = rGimbal != null ? rGimbal[rocketIdx] : 0f;
+                float flameAngle = flameBody.Angle + gimbalVal * 0.5f;
+                float flameCos = MathF.Cos(flameAngle);
+                float flameSin = MathF.Sin(flameAngle);
+                float throttle = rThrottle[rocketIdx];
+
+                float flameLen = throttle * 2.0f;
+                float tipX = botX - flameCos * flameLen;
+                float tipY = botY - flameSin * flameLen;
+                float px = -flameSin * 0.3f * throttle;
+                float py = flameCos * 0.3f * throttle;
+
+                var tip = W2S(tipX, tipY);
+                var left = W2S(botX + px, botY + py);
+                var right = W2S(botX - px, botY - py);
+
+                Raylib.DrawTriangle(tip, right, left,
+                    new Color(255, 180, 30, (int)(180 * throttle)));
+                Raylib.DrawTriangle(tip, right, left,
+                    new Color(255, 100, 20, (int)(100 * throttle)));
+            }
+
             // Body geoms
             for (int b = 0; b < BodiesPerWorld; b++)
             {
@@ -603,11 +635,16 @@ while (!Raylib.WindowShouldClose())
                 bool isMainBody = (b == 0);
 
                 Color color;
-                bool isCrashed = isTerminal && !isLanded;
+                bool isTimeout = isTerminal && !isLanded && replayStep >= world.SimulationConfig.MaxSteps;
+                bool isCrashed = isTerminal && !isLanded && !isTimeout;
                 if (isCrashed)
                     color = isProminent
                         ? new Color(220, 60, 60, baseAlpha)
                         : new Color(200, 50, 50, baseAlpha);
+                else if (isTimeout)
+                    color = isProminent
+                        ? new Color(200, 180, 80, baseAlpha)
+                        : new Color(180, 160, 60, baseAlpha);
                 else if (isProminent)
                     color = isMainBody
                         ? new Color(100, 200, 255, baseAlpha)
@@ -627,42 +664,12 @@ while (!Raylib.WindowShouldClose())
                     {
                         var outlineColor = isCrashed
                             ? new Color(255, 100, 100, baseAlpha / 2)
+                            : isTimeout
+                            ? new Color(220, 200, 80, baseAlpha / 2)
                             : new Color(255, 255, 255, baseAlpha / 2);
                         Raylib.DrawCircleLinesV(sp, sr, outlineColor);
                     }
                 }
-            }
-
-            // Thrust flame
-            if (isProminent && !isTerminal && rThrottle != null && rThrottle[rocketIdx] > 0.01f)
-            {
-                var body0 = bodies[bodyBase];
-                float bodyCos = MathF.Cos(body0.Angle);
-                float bodySin = MathF.Sin(body0.Angle);
-                float halfBody = 0.75f;
-                float botX = body0.X - halfBody * bodyCos;
-                float botY = body0.Y - halfBody * bodySin;
-
-                float gimbalVal = rGimbal != null ? rGimbal[rocketIdx] : 0f;
-                float flameAngle = body0.Angle + gimbalVal * 0.5f;
-                float flameCos = MathF.Cos(flameAngle);
-                float flameSin = MathF.Sin(flameAngle);
-                float throttle = rThrottle[rocketIdx];
-
-                float flameLen = throttle * 2.0f;
-                float tipX = botX - flameCos * flameLen;
-                float tipY = botY - flameSin * flameLen;
-                float px = -flameSin * 0.3f * throttle;
-                float py = flameCos * 0.3f * throttle;
-
-                var tip = W2S(tipX, tipY);
-                var left = W2S(botX + px, botY + py);
-                var right = W2S(botX - px, botY - py);
-
-                Raylib.DrawTriangle(tip, right, left,
-                    new Color(255, 180, 30, (int)(180 * throttle)));
-                Raylib.DrawTriangle(tip, right, left,
-                    new Color(255, 100, 20, (int)(100 * throttle)));
             }
 
             // Sensor rays
@@ -692,8 +699,11 @@ while (!Raylib.WindowShouldClose())
             if (isProminent && isTerminal)
             {
                 var (cx, cy) = ComputeCOM(bodies, rocketIdx);
-                string label = isLanded ? "LANDED" : "CRASHED";
-                var labelColor = isLanded ? Color.Green : new Color(200, 80, 80, 200);
+                bool isTimeout = !isLanded && replayStep >= world.SimulationConfig.MaxSteps;
+                string label = isLanded ? "LANDED" : isTimeout ? "TIMEOUT" : "CRASHED";
+                var labelColor = isLanded ? Color.Green
+                    : isTimeout ? new Color(200, 180, 80, 200)
+                    : new Color(200, 80, 80, 200);
                 var pos = W2S(cx, cy + 2f);
                 Raylib.DrawText(label, (int)pos.X - 30, (int)pos.Y - 10, 20, labelColor);
             }
@@ -713,13 +723,22 @@ while (!Raylib.WindowShouldClose())
 
         Raylib.DrawRectangle(graphX, graphY, graphW, graphH, new Color(0, 0, 0, 160));
         Raylib.DrawRectangleLinesEx(new Rectangle(graphX, graphY, graphW, graphH), 1f, new Color(60, 60, 80, 200));
-        Raylib.DrawText("Landing %", graphX + 4, graphY + 2, 10, new Color(200, 200, 200, 150));
 
-        // Always scale landing % to 100%
-        float maxRate = 100f;
+        // Auto-scale landing % to data range (minimum 10%, snap to nice values)
+        float peakRate = 1f;
+        foreach (var r in dispRateHistory)
+            if (r > peakRate) peakRate = r;
+        float maxRate;
+        if (peakRate > 50f) maxRate = 100f;
+        else if (peakRate > 20f) maxRate = 50f;
+        else if (peakRate > 10f) maxRate = 25f;
+        else maxRate = 10f;
 
-        // Grid lines at 25%, 50%, 75%, 100%
-        for (int pct = 25; pct <= 100; pct += 25)
+        Raylib.DrawText($"Land ({maxRate:F0}%)", graphX + 4, graphY + 2, 10, new Color(80, 220, 120, 150));
+
+        // Grid lines
+        int gridStep = maxRate <= 10 ? 2 : maxRate <= 25 ? 5 : 25;
+        for (int pct = gridStep; pct <= (int)maxRate; pct += gridStep)
         {
             float gy = graphY + graphH - (pct / maxRate) * graphH;
             Raylib.DrawLineEx(new Vector2(graphX, gy), new Vector2(graphX + graphW, gy), 1f, new Color(50, 50, 70, 100));

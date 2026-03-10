@@ -122,8 +122,8 @@ public static class GPURigidBodyJointKernels
             constraint.Mass22 = 0f;
         }
 
-        // Effective mass for angle limit constraint
-        if (constraint.EnableLimits != 0)
+        // Effective mass for angle constraint (limits or motor reference angle)
+        if (constraint.EnableLimits != 0 || constraint.EnableMotor != 0)
         {
             float angularMass = bodyA.InvInertia + bodyB.InvInertia;
             constraint.AngleLimitMass = angularMass > Epsilon ? 1f / angularMass : 0f;
@@ -370,8 +370,8 @@ public static class GPURigidBodyJointKernels
             Atomic.Add(ref bodies[constraint.BodyBIndex].Angle, bodyB.InvInertia * (rBX * impulseY - rBY * impulseX));
         }
 
-        // Solve angle limit position errors
-        if (constraint.EnableLimits != 0 && constraint.AngleLimitMass > 0f)
+        // Solve angle position errors (limits or motor reference angle)
+        if ((constraint.EnableLimits != 0 || constraint.EnableMotor != 0) && constraint.AngleLimitMass > 0f)
         {
             // Re-read body angles in case they were modified by position correction above
             float angleA = bodies[constraint.BodyAIndex].Angle;
@@ -383,13 +383,17 @@ public static class GPURigidBodyJointKernels
             angle -= 2f * XMath.PI * XMath.Floor((angle + XMath.PI) / (2f * XMath.PI));
 
             float angleError = 0f;
-            if (angle < constraint.LowerAngle - AngularSlop)
+            if (constraint.EnableLimits != 0)
             {
-                angleError = angle - constraint.LowerAngle;
+                if (angle < constraint.LowerAngle - AngularSlop)
+                    angleError = angle - constraint.LowerAngle;
+                else if (angle > constraint.UpperAngle + AngularSlop)
+                    angleError = angle - constraint.UpperAngle;
             }
-            else if (angle > constraint.UpperAngle + AngularSlop)
+            else
             {
-                angleError = angle - constraint.UpperAngle;
+                if (XMath.Abs(angle) > AngularSlop)
+                    angleError = angle;
             }
 
             if (XMath.Abs(angleError) > Epsilon)
