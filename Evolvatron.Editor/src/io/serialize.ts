@@ -24,5 +24,16 @@ export function deserialize(json: string): World {
   if (!w.landingPad || !w.spawnArea || !Array.isArray(w.modules)) {
     throw new Error('Invalid world data: missing required fields');
   }
+  // Migrate: fill defaults for fields added after initial format
+  w.spawnArea.spawnCount ??= 10;
+  w.spawnArea.spawnSeed ??= 0;
+  w.landingPad.attractionMagnitude ??= 10;
+  w.landingPad.attractionRadius ??= 10;
+  for (const mod of w.modules) {
+    if (mod.kind === 'obstacle') {
+      (mod as any).penaltyPerStep ??= 10;
+      (mod as any).influenceRadius ??= 3;
+    }
+  }
   return w;
 }

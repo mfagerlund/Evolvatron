@@ -9,6 +9,7 @@ export const COLORS = {
   landingPadFill: 'rgba(0, 204, 102, 0.3)',
   spawnArea: '#6699ff',
   spawnAreaFill: 'rgba(102, 153, 255, 0.15)',
+  spawnDot: 'rgba(102, 153, 255, 0.8)',
 
   obstacle: '#ff6644',
   obstacleFill: 'rgba(255, 102, 68, 0.5)',

@@ -173,42 +173,66 @@ public static class RocketLandingStepKernel
         float errX = comX2 - config.PadX;
         float errY = comY2 - config.PadY;
 
-        // Obstacle death: any contact with collider index > 0 is terminal
-        if (config.ObstacleDeathEnabled != 0)
+        float speed = XMath.Sqrt(velX2 * velX2 + velY2 * velY2);
+        bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
+        bool upright = angleErr < config.MaxLandingAngle;
+
+        int contactBase2 = worldIdx * config.MaxContactsPerWorld;
+        int nContacts = physics.ContactCounts[worldIdx];
+        bool hasContact = false;
+        bool hitObstacle = false;
+        for (int c = 0; c < nContacts; c++)
         {
-            int contactBase2 = worldIdx * config.MaxContactsPerWorld;
-            int nContacts = physics.ContactCounts[worldIdx];
-            for (int c = 0; c < nContacts; c++)
+            var contact = physics.Contacts[contactBase2 + c];
+            if (contact.IsValid != 0)
             {
-                var contact = physics.Contacts[contactBase2 + c];
-                if (contact.IsValid != 0 && contact.ColliderIndex > 0)
-                {
-                    episode.IsTerminal[worldIdx] = 1;
-                    episode.FitnessValues[worldIdx] = ComputeFitness(
-                        steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                        velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
-                    return;
-                }
+                hasContact = true;
+                if (contact.ColliderIndex >= config.FirstObstacleIndex)
+                    hitObstacle = true;
             }
         }
 
-        // Landing success
-        bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
-        bool lowVel = XMath.Abs(velX2) < config.MaxLandingVel && XMath.Abs(velY2) < config.MaxLandingVel;
-        bool upright = angleErr < config.MaxLandingAngle;
-
-        if (nearPad && lowVel && upright)
+        // Obstacle collision — always fatal
+        if (hitObstacle && config.ObstacleDeathEnabled != 0)
         {
             episode.IsTerminal[worldIdx] = 1;
-            episode.HasLanded[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
                 steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 1, config.LandingBonus, waggle, config.WagglePenalty);
+                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
             return;
         }
 
-        // Crash
-        if (XMath.Abs(velY2) > 15f || XMath.Abs(velX2) > 10f || angleErr > Pi * 0.4f)
+        // Any contact — landing or crash
+        if (hasContact)
+        {
+            bool lowVel = speed < config.MaxLandingVel;
+
+            if (nearPad && lowVel && upright)
+            {
+                episode.IsTerminal[worldIdx] = 1;
+                episode.HasLanded[worldIdx] = 1;
+                episode.FitnessValues[worldIdx] = ComputeFitness(
+                    steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
+                    velX2, velY2, angleErr, 1, config.LandingBonus, waggle, config.WagglePenalty);
+                return;
+            }
+
+            episode.IsTerminal[worldIdx] = 1;
+            float padCrashBonus = 0f;
+            if (nearPad)
+            {
+                float speedRatio = config.MaxLandingVel / XMath.Max(speed, 0.01f);
+                if (speedRatio > 1f) speedRatio = 1f;
+                padCrashBonus = config.LandingBonus * 0.5f * speedRatio;
+            }
+            episode.FitnessValues[worldIdx] = ComputeFitness(
+                steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
+                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty) + padCrashBonus;
+            return;
+        }
+
+        // Mid-air crash — extreme tumbling
+        if (angleErr > Pi * 0.5f)
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(

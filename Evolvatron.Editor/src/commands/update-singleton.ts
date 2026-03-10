@@ -1,7 +1,7 @@
 import type { World } from '../model/types';
 import type { Command } from './command';
 
-type SingletonTarget = 'landingPad' | 'spawnArea';
+type SingletonTarget = 'landingPad' | 'spawnArea' | 'simulationConfig' | 'rewardWeights';
 
 export class UpdateSingletonCommand implements Command {
   description: string;

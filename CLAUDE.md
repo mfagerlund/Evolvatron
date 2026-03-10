@@ -359,6 +359,22 @@ These are completely separate code — they don't share a single line of physics
 | `LunarLanderDemo` | CPU `CPUStepper` | Trajectory optimization visualization |
 | XPBD particle tests | CPU `CPUStepper` | Physics engine unit tests |
 
+## No ID-Based Lookups
+
+**NEVER resolve relationships by scanning a list for a matching ID at runtime.**
+
+IDs exist for exactly two things: serialization (JSON/disk) and GPU array indices (hardware constraint). In all C# and TypeScript runtime code, use direct object references. When deserializing, resolve IDs to references **once** during load, then discard the IDs.
+
+```csharp
+// WRONG — O(n) scan every time you need a relationship
+var zone = world.Zones.First(z => z.Id == someId);
+
+// RIGHT — direct reference, resolved at deserialization
+checkpoint.NextCheckpoint  // already the object
+```
+
+If you're writing `.Find(x => x.Id ==` or `.Where(x => x.Id ==` in runtime code, the data model is wrong. Fix the model so the reference is direct.
+
 ## Notes and Gotchas
 
 1. **Lambda Reset**: XPBD lambdas must be reset at the start of each step (done in `XPBDSolver.ResetLambdas`)

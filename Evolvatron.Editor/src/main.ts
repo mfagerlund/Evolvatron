@@ -38,6 +38,10 @@ resizeCanvas();
 // --- Canvas events ---
 
 canvas.addEventListener('mousedown', (e) => {
+  // Blur any focused input so keyboard shortcuts work on the canvas
+  if (document.activeElement instanceof HTMLElement && document.activeElement !== canvas) {
+    document.activeElement.blur();
+  }
   const rect = canvas.getBoundingClientRect();
   const sx = e.clientX - rect.left;
   const sy = e.clientY - rect.top;
@@ -75,6 +79,26 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('keydown', (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
+
+  // Ctrl+S always saves, regardless of focus
+  if (ctrl && e.key === 's') {
+    e.preventDefault();
+    editor.onSave?.();
+    return;
+  }
+
+  const tag = (e.target as HTMLElement)?.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+  if (inInput) {
+    if (e.key === 'Escape') {
+      (e.target as HTMLElement).blur();
+      e.preventDefault();
+    }
+    return;
+  }
+
+  // Not in input — full editor key handling
   const wasPlacing = editor.state.mode === 'placing' || editor.state.mode === 'placingDrag';
   if (editor.onKeyDown(e.key, ctrl, e.shiftKey)) {
     e.preventDefault();
@@ -82,6 +106,7 @@ window.addEventListener('keydown', (e) => {
       updateToolbarActive('select');
     }
   }
+
   // Tool shortcuts
   if (!ctrl && !e.shiftKey) {
     switch (e.key.toLowerCase()) {
@@ -124,16 +149,57 @@ function handleNew(): void {
   autosave(editor.world);
 }
 
-function handleSave(): void {
+let saveFileHandle: FileSystemFileHandle | null = null;
+
+async function handleSave(): Promise<void> {
   const json = serialize(editor.world);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'world.evo.json';
-  a.click();
-  editor.showStatus('Saved world.evo.json');
-  URL.revokeObjectURL(url);
+  try {
+    if (!saveFileHandle) {
+      saveFileHandle = await window.showSaveFilePicker({
+        suggestedName: 'world.evo.json',
+        types: [{ description: 'Editor World', accept: { 'application/json': ['.evo.json'] } }],
+      });
+    }
+    const writable = await saveFileHandle.createWritable();
+    await writable.write(json);
+    await writable.close();
+
+    // Auto-export .sim.json alongside save
+    if (!exportFileHandle) {
+      const simName = saveFileHandle.name.replace(/\.evo\.json$/i, '.sim.json');
+      try {
+        exportFileHandle = await window.showSaveFilePicker({
+          suggestedName: simName,
+          types: [{ description: 'Simulation World', accept: { 'application/json': ['.sim.json', '.json'] } }],
+        });
+      } catch (pickErr: any) {
+        if (pickErr?.name === 'AbortError') {
+          editor.showStatus(`Saved ${saveFileHandle.name} (export skipped)`);
+          return;
+        }
+      }
+    }
+    if (exportFileHandle) {
+      const simJson = exportSim(editor.world);
+      const ew = await exportFileHandle.createWritable();
+      await ew.write(simJson);
+      await ew.close();
+      editor.showStatus(`Saved ${saveFileHandle.name} + ${exportFileHandle.name}`);
+    } else {
+      editor.showStatus(`Saved ${saveFileHandle.name}`);
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return;
+    // Fallback for unsupported browsers
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'world.evo.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    editor.showStatus('Saved world.evo.json');
+  }
 }
 
 function handleLoad(): void {
@@ -166,15 +232,33 @@ function toggleRewardOverlay(): void {
   editor.markDirty();
 }
 
-function handleExport(): void {
+let exportFileHandle: FileSystemFileHandle | null = null;
+
+async function handleExport(): Promise<void> {
   const json = exportSim(editor.world);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'world.sim.json';
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    if (!exportFileHandle) {
+      exportFileHandle = await window.showSaveFilePicker({
+        suggestedName: 'world.sim.json',
+        types: [{ description: 'Simulation World', accept: { 'application/json': ['.sim.json', '.json'] } }],
+      });
+    }
+    const writable = await exportFileHandle.createWritable();
+    await writable.write(json);
+    await writable.close();
+    editor.showStatus(`Exported ${exportFileHandle.name}`);
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return;
+    // Fallback for unsupported browsers
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'world.sim.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    editor.showStatus('Exported world.sim.json');
+  }
 }
 
 // --- Setup UI ---

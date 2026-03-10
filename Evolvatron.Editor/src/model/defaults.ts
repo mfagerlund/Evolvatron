@@ -20,6 +20,8 @@ export function createLandingPad(): LandingPad {
     landingBonus: 100,
     maxLandingVelocity: 2.0,
     maxLandingAngle: 15,
+    attractionMagnitude: 10,
+    attractionRadius: 10,
   };
 }
 
@@ -31,6 +33,8 @@ export function createSpawnArea(): SpawnArea {
     angleRange: 30,
     velXRange: 2,
     velYMax: 3,
+    spawnCount: 10,
+    spawnSeed: 0,
   };
 }
 
@@ -47,6 +51,7 @@ export function createSimulationConfig(): SimulationConfig {
     maxGimbalAngle: 15,
     sensorCount: 4,
     maxSteps: 600,
+    hasteBonus: 1.0,
   };
 }
 
@@ -102,10 +107,12 @@ export function createObstacle(x = 0, y = 0): ObstacleModule {
     id: generateId(),
     kind: 'obstacle',
     position: { x, y },
-    halfExtentX: 1,
-    halfExtentY: 0.25,
+    halfExtentX: 2,
+    halfExtentY: 2,
     rotation: 0,
     isLethal: false,
+    penaltyPerStep: 10,
+    influenceRadius: 3,
   };
 }
 

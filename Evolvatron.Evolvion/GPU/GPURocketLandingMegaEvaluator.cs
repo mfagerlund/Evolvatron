@@ -197,7 +197,17 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             SensorCount = SensorCount,
             MaxSensorRange = MaxSensorRange,
             WagglePenalty = WagglePenalty,
-            ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0
+            ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0,
+            FirstObstacleIndex = 1, // [0]=ground, [1..]=obstacles (no pad collider in legacy)
+            RewardSurvivalWeight = 20f,
+            RewardPositionWeight = 20f,
+            RewardVelocityWeight = 5f,
+            RewardAngleWeight = 5f,
+            RewardAngVelWeight = 0f,
+            CheckpointCount = 0,
+            DangerZoneCount = 0,
+            SpeedZoneCount = 0,
+            AttractorCount = 0
         };
 
         // Build view structs
@@ -596,7 +606,11 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             MaxLandingVel = MaxLandingVel, MaxLandingAngle = MaxLandingAngle,
             GroundY = GroundY, SpawnHeight = SpawnHeight, LandingBonus = LandingBonus,
             SensorCount = SensorCount, MaxSensorRange = MaxSensorRange,
-            WagglePenalty = WagglePenalty, ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0
+            WagglePenalty = WagglePenalty, ObstacleDeathEnabled = ObstacleDeathEnabled ? 1 : 0,
+            FirstObstacleIndex = 1,
+            RewardSurvivalWeight = 20f, RewardPositionWeight = 20f,
+            RewardVelocityWeight = 5f, RewardAngleWeight = 5f, RewardAngVelWeight = 0f,
+            CheckpointCount = 0, DangerZoneCount = 0, SpeedZoneCount = 0, AttractorCount = 0
         };
 
         _vizPhysics = new PhysicsViews

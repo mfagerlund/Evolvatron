@@ -1,0 +1,108 @@
+{
+  "GroundY": -5,
+  "LandingPad": {
+    "PadX": 0,
+    "PadY": -4.5,
+    "PadHalfWidth": 2,
+    "PadHalfHeight": 0.25,
+    "LandingBonus": 100,
+    "MaxLandingVelocity": 2,
+    "MaxLandingAngle": 15,
+    "AttractionMagnitude": 10,
+    "AttractionRadius": 10
+  },
+  "Spawn": {
+    "X": 0,
+    "Y": 15,
+    "XRange": 8,
+    "HeightRange": 2,
+    "AngleRange": 30,
+    "VelXRange": 2,
+    "VelYMax": 3,
+    "SpawnCount": 10,
+    "SpawnSeed": 0
+  },
+  "Obstacles": [
+    {
+      "CX": -9.517,
+      "CY": 9.467,
+      "UX": 1,
+      "UY": 0,
+      "HalfExtentX": 2.583,
+      "HalfExtentY": 2.267,
+      "IsLethal": false,
+      "PenaltyPerStep": 10,
+      "InfluenceRadius": 3
+    }
+  ],
+  "Checkpoints": [
+    {
+      "X": -1.933,
+      "Y": 9.583,
+      "Radius": 1.792,
+      "Order": 0,
+      "RewardBonus": 20,
+      "InfluenceRadius": 2
+    },
+    {
+      "X": 3.7,
+      "Y": 10.6,
+      "Radius": 1.447,
+      "Order": 1,
+      "RewardBonus": 20,
+      "InfluenceRadius": 2
+    }
+  ],
+  "SpeedZones": [
+    {
+      "X": 6.383,
+      "Y": 7.783,
+      "HalfExtentX": 1.25,
+      "HalfExtentY": 1.783,
+      "MaxSpeed": 5,
+      "RewardPerStep": 0.1
+    }
+  ],
+  "DangerZones": [
+    {
+      "X": -4.617,
+      "Y": 3.517,
+      "HalfExtentX": 0.75,
+      "HalfExtentY": 1.083,
+      "PenaltyPerStep": 10,
+      "IsLethal": false,
+      "InfluenceRadius": 3
+    }
+  ],
+  "Attractors": [
+    {
+      "X": 2.683,
+      "Y": 1.15,
+      "HalfExtentX": 1.883,
+      "HalfExtentY": 1.95,
+      "Magnitude": 10,
+      "InfluenceRadius": 3,
+      "ContactBonus": 50
+    }
+  ],
+  "SimulationConfig": {
+    "Dt": 0.008333333333333333,
+    "GravityY": -9.81,
+    "FrictionMu": 0.8,
+    "Restitution": 0,
+    "GlobalDamping": 0.02,
+    "AngularDamping": 0.1,
+    "SolverIterations": 6,
+    "MaxThrust": 200,
+    "MaxGimbalAngle": 15,
+    "SensorCount": 4,
+    "MaxSteps": 600
+  },
+  "RewardWeights": {
+    "PositionWeight": 1,
+    "VelocityWeight": 0.5,
+    "AngleWeight": 0.3,
+    "AngularVelocityWeight": 0.1,
+    "ControlEffortWeight": 0.05
+  }
+}

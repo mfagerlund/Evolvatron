@@ -49,7 +49,7 @@ public class DenseRocketLandingTest
         for (int gen = 0; gen < 100; gen++)
         {
             var paramVectors = optimizer.GeneratePopulation(rng);
-            var (fitness, landings) = evaluator.EvaluateMultiSpawn(
+            var (fitness, landings, _) = evaluator.EvaluateMultiSpawn(
                 paramVectors, optimizer.TotalPopulation, numSpawns, baseSeed: gen * 100);
             optimizer.Update(fitness, paramVectors);
             optimizer.ManageIslands(rng);
@@ -124,7 +124,7 @@ public class DenseRocketLandingTest
         for (int gen = 0; gen < 300; gen++)
         {
             var paramVectors = optimizer.GeneratePopulation(rng);
-            var (fitness, landings) = evaluator.EvaluateMultiSpawn(
+            var (fitness, landings, _) = evaluator.EvaluateMultiSpawn(
                 paramVectors, optimizer.TotalPopulation, numSpawns, baseSeed: gen * 100);
             optimizer.Update(fitness, paramVectors);
             optimizer.ManageIslands(rng);

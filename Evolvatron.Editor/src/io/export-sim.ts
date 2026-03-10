@@ -8,6 +8,8 @@ export interface SimObstacle {
   HalfExtentX: number;
   HalfExtentY: number;
   IsLethal: boolean;
+  PenaltyPerStep: number;
+  InfluenceRadius: number;
 }
 
 export interface SimCheckpoint {
@@ -58,6 +60,8 @@ export interface SimWorld {
     LandingBonus: number;
     MaxLandingVelocity: number;
     MaxLandingAngle: number;
+    AttractionMagnitude: number;
+    AttractionRadius: number;
   };
   Spawn: {
     X: number;
@@ -67,6 +71,8 @@ export interface SimWorld {
     AngleRange: number;
     VelXRange: number;
     VelYMax: number;
+    SpawnCount: number;
+    SpawnSeed: number;
   };
   Obstacles: SimObstacle[];
   Checkpoints: SimCheckpoint[];
@@ -85,6 +91,7 @@ export interface SimWorld {
     MaxGimbalAngle: number;
     SensorCount: number;
     MaxSteps: number;
+    HasteBonus: number;
   };
   RewardWeights: {
     PositionWeight: number;
@@ -105,6 +112,8 @@ export function obstacleToSim(obs: ObstacleModule): SimObstacle {
     HalfExtentX: obs.halfExtentX,
     HalfExtentY: obs.halfExtentY,
     IsLethal: obs.isLethal,
+    PenaltyPerStep: obs.penaltyPerStep,
+    InfluenceRadius: obs.influenceRadius,
   };
 }
 
@@ -180,6 +189,8 @@ export function exportSimWorld(world: World): SimWorld {
       LandingBonus: pad.landingBonus,
       MaxLandingVelocity: pad.maxLandingVelocity,
       MaxLandingAngle: pad.maxLandingAngle,
+      AttractionMagnitude: pad.attractionMagnitude,
+      AttractionRadius: pad.attractionRadius,
     },
     Spawn: {
       X: spawn.position.x,
@@ -189,6 +200,8 @@ export function exportSimWorld(world: World): SimWorld {
       AngleRange: spawn.angleRange,
       VelXRange: spawn.velXRange,
       VelYMax: spawn.velYMax,
+      SpawnCount: spawn.spawnCount,
+      SpawnSeed: spawn.spawnSeed,
     },
     Obstacles: obstacles,
     Checkpoints: checkpoints,
@@ -207,6 +220,7 @@ export function exportSimWorld(world: World): SimWorld {
       MaxGimbalAngle: cfg.maxGimbalAngle,
       SensorCount: cfg.sensorCount,
       MaxSteps: cfg.maxSteps,
+      HasteBonus: cfg.hasteBonus,
     },
     RewardWeights: {
       PositionWeight: rw.positionWeight,

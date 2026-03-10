@@ -45,6 +45,7 @@ public struct MegaKernelConfig
     public float GroundY;
     public float SpawnHeight;
     public float LandingBonus;
+    public float HasteBonus;      // (maxSteps - landingStep) * hasteBonus on successful landing
 
     // Sensors
     public int SensorCount;
@@ -52,5 +53,19 @@ public struct MegaKernelConfig
 
     // Behaviour shaping
     public float WagglePenalty;     // per-step penalty weight for throttle/gimbal changes
-    public int ObstacleDeathEnabled; // 1 = contact with any collider index > 0 is terminal
+    public int ObstacleDeathEnabled; // 1 = contact with collider index >= FirstObstacleIndex is terminal
+    public int FirstObstacleIndex;  // collider indices below this are safe (ground, pad)
+
+    // Reward weights (parameterized fitness — editor-controlled)
+    public float RewardSurvivalWeight;   // scales survival-fraction bonus
+    public float RewardPositionWeight;   // scales closeness-to-pad bonus
+    public float RewardVelocityWeight;   // scales speed penalty
+    public float RewardAngleWeight;      // scales angle-error penalty
+    public float RewardAngVelWeight;     // scales angular-velocity penalty
+
+    // Reward zone counts (Phase 3)
+    public int CheckpointCount;
+    public int DangerZoneCount;
+    public int SpeedZoneCount;
+    public int AttractorCount;
 }

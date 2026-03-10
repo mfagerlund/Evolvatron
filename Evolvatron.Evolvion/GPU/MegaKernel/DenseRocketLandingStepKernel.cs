@@ -23,6 +23,7 @@ public static class DenseRocketLandingStepKernel
         EpisodeViews episode,
         MegaKernelConfig config,
         DenseRocketNNConfig nnConfig,
+        ZoneViews zones,
         ArrayView<float> observations,
         ArrayView<float> actions)
     {
@@ -130,7 +131,7 @@ public static class DenseRocketLandingStepKernel
         // === 4. Physics substep (reuses InlinePhysics with MegaKernelConfig) ===
         InlinePhysics.SubStepOneWorld(physics, worldIdx, config);
 
-        // === 5. Terminal check + inline fitness ===
+        // === 5. Post-physics state ===
         int steps = episode.StepCounters[worldIdx] + 1;
         episode.StepCounters[worldIdx] = steps;
 
@@ -167,47 +168,91 @@ public static class DenseRocketLandingStepKernel
         float errX = comX2 - config.PadX;
         float errY = comY2 - config.PadY;
 
-        // Obstacle death
-        if (config.ObstacleDeathEnabled != 0)
+        float angVel = body0post.AngularVel;
+
+        // === 6. Zone evaluation (after physics, before terminal checks) ===
+        if (config.CheckpointCount > 0 || config.DangerZoneCount > 0 ||
+            config.SpeedZoneCount > 0 || config.AttractorCount > 0)
         {
-            int contactBase2 = worldIdx * config.MaxContactsPerWorld;
-            int nContacts = physics.ContactCounts[worldIdx];
-            for (int c = 0; c < nContacts; c++)
+            float speed2 = XMath.Sqrt(velX2 * velX2 + velY2 * velY2);
+            float zoneReward = EvaluateZones(
+                worldIdx, comX2, comY2, speed2, config, zones);
+            zones.ZoneRewardAccum[worldIdx] += zoneReward;
+        }
+
+        float zoneAccum = zones.ZoneRewardAccum[worldIdx];
+
+        // === 7. Terminal checks ===
+
+        float speed = XMath.Sqrt(velX2 * velX2 + velY2 * velY2);
+        bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
+        bool upright = angleErr < config.MaxLandingAngle;
+
+        // Check for any physics contacts this step
+        int contactBase2 = worldIdx * config.MaxContactsPerWorld;
+        int nContacts = physics.ContactCounts[worldIdx];
+        bool hasContact = false;
+        bool hitObstacle = false;
+        for (int c = 0; c < nContacts; c++)
+        {
+            var contact = physics.Contacts[contactBase2 + c];
+            if (contact.IsValid != 0)
             {
-                var contact = physics.Contacts[contactBase2 + c];
-                if (contact.IsValid != 0 && contact.ColliderIndex > 0)
-                {
-                    episode.IsTerminal[worldIdx] = 1;
-                    episode.FitnessValues[worldIdx] = ComputeFitness(
-                        steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                        velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
-                    return;
-                }
+                hasContact = true;
+                if (contact.ColliderIndex >= config.FirstObstacleIndex)
+                    hitObstacle = true;
             }
         }
 
-        // Landing success
-        bool nearPad = XMath.Abs(errX) < config.PadHalfWidth && XMath.Abs(errY) < 2f;
-        bool lowVel = XMath.Abs(velX2) < config.MaxLandingVel && XMath.Abs(velY2) < config.MaxLandingVel;
-        bool upright = angleErr < config.MaxLandingAngle;
-
-        if (nearPad && lowVel && upright)
+        // Obstacle collision — always fatal (regardless of speed)
+        if (hitObstacle && config.ObstacleDeathEnabled != 0)
         {
             episode.IsTerminal[worldIdx] = 1;
-            episode.HasLanded[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
-                steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 1, config.LandingBonus, waggle, config.WagglePenalty);
+                steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                zoneAccum, config);
             return;
         }
 
-        // Crash
-        if (XMath.Abs(velY2) > 15f || XMath.Abs(velX2) > 10f || angleErr > Pi * 0.4f)
+        // Any contact (ground or obstacle) — check landing vs crash
+        if (hasContact)
+        {
+            bool lowVel = speed < config.MaxLandingVel;
+
+            // Landing success — near pad, slow, upright
+            if (nearPad && lowVel && upright)
+            {
+                episode.IsTerminal[worldIdx] = 1;
+                episode.HasLanded[worldIdx] = 1;
+                episode.FitnessValues[worldIdx] = ComputeFitness(
+                    steps, comX2, comY2, velX2, velY2, angleErr, angVel, 1, waggle,
+                    zoneAccum, config);
+                return;
+            }
+
+            // Contact crash — hit something too fast, wrong angle, or wrong spot
+            episode.IsTerminal[worldIdx] = 1;
+            float padCrashBonus = 0f;
+            if (nearPad)
+            {
+                // Partial credit for reaching the pad even though the landing failed
+                float speedRatio = config.MaxLandingVel / XMath.Max(speed, 0.01f);
+                if (speedRatio > 1f) speedRatio = 1f;
+                padCrashBonus = config.LandingBonus * 0.5f * speedRatio;
+            }
+            episode.FitnessValues[worldIdx] = ComputeFitness(
+                steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                zoneAccum, config) + padCrashBonus;
+            return;
+        }
+
+        // Mid-air crash — extreme tumbling (no contact needed)
+        if (angleErr > Pi * 0.5f)
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
-                steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
+                steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                zoneAccum, config);
             return;
         }
 
@@ -217,8 +262,8 @@ public static class DenseRocketLandingStepKernel
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
-                steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
+                steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                zoneAccum, config);
             return;
         }
 
@@ -227,39 +272,145 @@ public static class DenseRocketLandingStepKernel
         {
             episode.IsTerminal[worldIdx] = 1;
             episode.FitnessValues[worldIdx] = ComputeFitness(
-                steps, config.MaxSteps, comX2, comY2, config.PadX, config.PadY,
-                velX2, velY2, angleErr, 0, config.LandingBonus, waggle, config.WagglePenalty);
+                steps, comX2, comY2, velX2, velY2, angleErr, angVel, 0, waggle,
+                zoneAccum, config);
         }
     }
 
-    private static float ComputeFitness(
-        int steps, int maxSteps,
-        float comX, float comY, float padX, float padY,
-        float velX, float velY, float angleErr,
-        byte hasLanded, float landingBonus,
-        float waggle, float wagglePenalty)
+    private static float EvaluateZones(
+        int worldIdx, float comX, float comY, float speed,
+        MegaKernelConfig config, ZoneViews zones)
     {
-        float errX = comX - padX;
-        float errY = comY - padY;
+        float reward = 0f;
+
+        // --- Checkpoints (circles, sequential, one-time bonus + proximity shaping) ---
+        int cpProgress = zones.CheckpointProgress[worldIdx];
+        for (int ci = 0; ci < config.CheckpointCount; ci++)
+        {
+            var cp = zones.Checkpoints[ci];
+            if (cp.Order != cpProgress) continue;
+
+            float dx = comX - cp.X;
+            float dy = comY - cp.Y;
+            float dist = XMath.Sqrt(dx * dx + dy * dy);
+
+            if (dist < cp.Radius)
+            {
+                reward += cp.RewardBonus;
+                cpProgress++;
+                zones.CheckpointProgress[worldIdx] = cpProgress;
+            }
+            else if (dist < cp.Radius + cp.InfluenceRadius)
+            {
+                float closeness = 1f - (dist - cp.Radius) / cp.InfluenceRadius;
+                reward += closeness * cp.RewardBonus * 0.01f;
+            }
+            break;
+        }
+
+        // --- Danger zones (AABB, per-step penalty + proximity warning) ---
+        for (int di = 0; di < config.DangerZoneCount; di++)
+        {
+            var dz = zones.DangerZones[di];
+            float dx = XMath.Abs(comX - dz.X) - dz.HalfExtentX;
+            float dy = XMath.Abs(comY - dz.Y) - dz.HalfExtentY;
+
+            if (dx < 0f && dy < 0f)
+            {
+                reward -= dz.PenaltyPerStep;
+                if (dz.IsLethal != 0)
+                    reward -= 1000f;
+            }
+            else
+            {
+                float edgeDist = XMath.Max(dx, dy);
+                if (edgeDist > 0f && edgeDist < dz.InfluenceRadius)
+                {
+                    float closeness = 1f - edgeDist / dz.InfluenceRadius;
+                    reward -= closeness * dz.PenaltyPerStep * 0.1f;
+                }
+            }
+        }
+
+        // --- Speed zones (AABB, reward per step if speed below max) ---
+        for (int si = 0; si < config.SpeedZoneCount; si++)
+        {
+            var sz = zones.SpeedZones[si];
+            float dx = XMath.Abs(comX - sz.X) - sz.HalfExtentX;
+            float dy = XMath.Abs(comY - sz.Y) - sz.HalfExtentY;
+
+            if (dx < 0f && dy < 0f && speed <= sz.MaxSpeed)
+                reward += sz.RewardPerStep;
+        }
+
+        // --- Attractors (AABB + influence, one-time contact bonus + proximity shaping) ---
+        int attractorMask = zones.AttractorContacted[worldIdx];
+        for (int ai = 0; ai < config.AttractorCount; ai++)
+        {
+            var att = zones.Attractors[ai];
+            float dx = XMath.Abs(comX - att.X) - att.HalfExtentX;
+            float dy = XMath.Abs(comY - att.Y) - att.HalfExtentY;
+
+            if (dx < 0f && dy < 0f)
+            {
+                if ((attractorMask & (1 << ai)) == 0)
+                {
+                    reward += att.ContactBonus;
+                    attractorMask |= (1 << ai);
+                }
+            }
+
+            float edgeDist = XMath.Max(XMath.Max(dx, dy), 0f);
+            if (edgeDist < att.InfluenceRadius)
+            {
+                float closeness = 1f - edgeDist / att.InfluenceRadius;
+                reward += closeness * att.Magnitude * 0.001f;
+            }
+        }
+        zones.AttractorContacted[worldIdx] = attractorMask;
+
+        return reward;
+    }
+
+    private static float ComputeFitness(
+        int steps, float comX, float comY,
+        float velX, float velY, float angleErr, float angVel,
+        byte hasLanded, float waggle, float zoneReward,
+        MegaKernelConfig config)
+    {
+        float errX = comX - config.PadX;
+        float errY = comY - config.PadY;
         float distToPad = XMath.Sqrt(errX * errX + errY * errY);
         float speed = XMath.Sqrt(velX * velX + velY * velY);
-        float survivalFrac = (float)steps / maxSteps;
+        float survivalFrac = (float)steps / config.MaxSteps;
 
-        float fitness = 20f * survivalFrac;
+        float fitness = config.RewardSurvivalWeight * survivalFrac;
+
         float closeBonus = 1f - distToPad / 30f;
         if (closeBonus < 0f) closeBonus = 0f;
-        fitness += 20f * closeBonus;
+        fitness += config.RewardPositionWeight * closeBonus;
+
         float sp = speed / 20f;
         if (sp > 1f) sp = 1f;
-        fitness -= 5f * sp;
+        fitness -= config.RewardVelocityWeight * sp;
+
         float ap = angleErr / Pi;
         if (ap > 1f) ap = 1f;
-        fitness -= 5f * ap;
+        fitness -= config.RewardAngleWeight * ap;
+
+        float avp = XMath.Abs(angVel) / 10f;
+        if (avp > 1f) avp = 1f;
+        fitness -= config.RewardAngVelWeight * avp;
 
         if (hasLanded != 0)
-            fitness += landingBonus;
+        {
+            fitness += config.LandingBonus;
+            fitness += (config.MaxSteps - steps) * config.HasteBonus;
+        }
 
-        fitness -= waggle * wagglePenalty;
+        fitness -= waggle * config.WagglePenalty;
+
+        fitness += zoneReward;
 
         return fitness;
     }

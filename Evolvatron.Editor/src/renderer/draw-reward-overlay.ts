@@ -12,10 +12,22 @@ export function sampleReward(world: World, wx: number, wy: number): number {
       total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, mod.magnitude, mod.influenceRadius, wx, wy);
     } else if (mod.kind === 'dangerZone') {
       total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, -mod.penaltyPerStep, mod.influenceRadius, wx, wy);
+    } else if (mod.kind === 'obstacle' && (mod.penaltyPerStep > 0 || mod.influenceRadius > 0)) {
+      total += rewardAt(mod.position.x, mod.position.y, mod.halfExtentX, mod.halfExtentY, -mod.penaltyPerStep, mod.influenceRadius, wx, wy);
     } else if (mod.kind === 'checkpoint') {
       total += rewardAtCircle(mod.position.x, mod.position.y, mod.radius, mod.rewardBonus, mod.influenceRadius, wx, wy);
     }
   }
+
+  // Landing pad attraction (upward only — no reward below pad bottom)
+  const pad = world.landingPad;
+  if (pad.attractionMagnitude > 0 && pad.attractionRadius > 0) {
+    total += rewardAtUpward(
+      pad.position.x, pad.position.y, pad.halfWidth, pad.halfHeight,
+      pad.attractionMagnitude, pad.attractionRadius, wx, wy,
+    );
+  }
+
   return total;
 }
 
@@ -35,6 +47,26 @@ function rewardAt(
 
   const t = dist / influenceRadius;
   return magnitude * (1 - t * t); // Quadratic falloff
+}
+
+/** Reward from a rectangular zone, only above the zone's bottom edge. */
+function rewardAtUpward(
+  cx: number, cy: number, hx: number, hy: number,
+  magnitude: number, influenceRadius: number,
+  wx: number, wy: number,
+): number {
+  // No reward below the pad bottom (Y-up convention)
+  if (wy < cy - hy) return 0;
+
+  const dx = Math.max(0, Math.abs(wx - cx) - hx);
+  const dy = Math.max(0, Math.abs(wy - cy) - hy);
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist === 0) return magnitude;
+  if (influenceRadius <= 0 || dist > influenceRadius) return 0;
+
+  const t = dist / influenceRadius;
+  return magnitude * (1 - t * t);
 }
 
 /** Reward from a circular zone with uniform influence radius. */
@@ -66,8 +98,11 @@ export function drawRewardOverlay(
   world: World,
 ): void {
   const hasAnySources = world.modules.some(
-    m => m.kind === 'attractor' || m.kind === 'dangerZone' || m.kind === 'checkpoint',
-  );
+    m => m.kind === 'attractor'
+      || m.kind === 'dangerZone'
+      || m.kind === 'checkpoint'
+      || (m.kind === 'obstacle' && (m.penaltyPerStep > 0 || m.influenceRadius > 0)),
+  ) || (world.landingPad.attractionMagnitude > 0 && world.landingPad.attractionRadius > 0);
   if (!hasAnySources) return;
 
   const canvasW = camera.canvasWidth;
@@ -87,7 +122,10 @@ export function drawRewardOverlay(
     if (mod.kind === 'attractor') maxMag = Math.max(maxMag, Math.abs(mod.magnitude));
     else if (mod.kind === 'dangerZone') maxMag = Math.max(maxMag, mod.penaltyPerStep);
     else if (mod.kind === 'checkpoint') maxMag = Math.max(maxMag, mod.rewardBonus);
+    else if (mod.kind === 'obstacle') maxMag = Math.max(maxMag, mod.penaltyPerStep);
   }
+  const pad = world.landingPad;
+  if (pad.attractionMagnitude > 0) maxMag = Math.max(maxMag, pad.attractionMagnitude);
   if (maxMag === 0) return;
 
   for (let gy = 0; gy < gridH; gy++) {

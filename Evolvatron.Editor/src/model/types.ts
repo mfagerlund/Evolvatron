@@ -12,6 +12,8 @@ export interface LandingPad {
   landingBonus: number;
   maxLandingVelocity: number;
   maxLandingAngle: number; // degrees
+  attractionMagnitude: number;
+  attractionRadius: number;
 }
 
 export interface SpawnArea {
@@ -21,6 +23,8 @@ export interface SpawnArea {
   angleRange: number; // degrees
   velXRange: number;
   velYMax: number;
+  spawnCount: number;
+  spawnSeed: number;
 }
 
 export type ModuleKind = 'obstacle' | 'checkpoint' | 'speedZone' | 'dangerZone' | 'attractor';
@@ -33,6 +37,8 @@ export interface ObstacleModule {
   halfExtentY: number;
   rotation: number; // degrees
   isLethal: boolean;
+  penaltyPerStep: number;
+  influenceRadius: number;
 }
 
 export interface CheckpointModule {
@@ -96,6 +102,7 @@ export interface SimulationConfig {
   maxGimbalAngle: number; // degrees
   sensorCount: number;
   maxSteps: number;
+  hasteBonus: number;
 }
 
 export interface RewardWeights {

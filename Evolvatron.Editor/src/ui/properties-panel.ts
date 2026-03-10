@@ -11,8 +11,9 @@ export function setupPropertiesPanel(editor: Editor): () => void {
   function update(): void {
     const ids = editor.selection.toArray();
     if (ids.length === 0) {
-      noSelection.style.display = '';
-      propsContent.style.display = 'none';
+      noSelection.style.display = 'none';
+      propsContent.style.display = '';
+      renderWorldProps(editor, propsContent);
       return;
     }
 
@@ -62,6 +63,12 @@ function renderLandingPadProps(editor: Editor, container: HTMLElement): void {
   appendNumberField(container, 'Max Land Angle', pad.maxLandingAngle, v => {
     commitSingleton(editor, 'landingPad', 'maxLandingAngle', pad.maxLandingAngle, v);
   });
+  appendNumberField(container, 'Attraction Magnitude', pad.attractionMagnitude, v => {
+    commitSingleton(editor, 'landingPad', 'attractionMagnitude', pad.attractionMagnitude, v);
+  });
+  appendNumberField(container, 'Attraction Radius', pad.attractionRadius, v => {
+    commitSingleton(editor, 'landingPad', 'attractionRadius', pad.attractionRadius, v);
+  });
 }
 
 function renderSpawnAreaProps(editor: Editor, container: HTMLElement): void {
@@ -88,6 +95,85 @@ function renderSpawnAreaProps(editor: Editor, container: HTMLElement): void {
   appendNumberField(container, 'Vel Y Max', spawn.velYMax, v => {
     commitSingleton(editor, 'spawnArea', 'velYMax', spawn.velYMax, v);
   });
+  appendIntField(container, 'Spawn Count', spawn.spawnCount, v => {
+    commitSingleton(editor, 'spawnArea', 'spawnCount', spawn.spawnCount, v);
+  });
+  appendIntField(container, 'Spawn Seed', spawn.spawnSeed, v => {
+    commitSingleton(editor, 'spawnArea', 'spawnSeed', spawn.spawnSeed, v);
+  });
+}
+
+function renderWorldProps(editor: Editor, container: HTMLElement): void {
+  const sim = editor.world.simulationConfig;
+  const rw = editor.world.rewardWeights;
+  container.innerHTML = '<h3>Simulation</h3>';
+
+  appendIntField(container, 'Max Steps', sim.maxSteps, v => {
+    commitSingleton(editor, 'simulationConfig', 'maxSteps', sim.maxSteps, v);
+  });
+  appendNumberField(container, 'Dt', sim.dt, v => {
+    commitSingleton(editor, 'simulationConfig', 'dt', sim.dt, v);
+  });
+  const maxTime = sim.maxSteps * sim.dt;
+  const timeRow = document.createElement('div');
+  timeRow.className = 'prop-row';
+  const timeLbl = document.createElement('label');
+  timeLbl.textContent = 'Max Time';
+  const timeVal = document.createElement('span');
+  timeVal.textContent = `${maxTime.toFixed(1)}s`;
+  timeVal.style.color = '#8888aa';
+  timeRow.appendChild(timeLbl);
+  timeRow.appendChild(timeVal);
+  container.appendChild(timeRow);
+
+  appendNumberField(container, 'Gravity Y', sim.gravityY, v => {
+    commitSingleton(editor, 'simulationConfig', 'gravityY', sim.gravityY, v);
+  });
+  appendNumberField(container, 'Max Thrust', sim.maxThrust, v => {
+    commitSingleton(editor, 'simulationConfig', 'maxThrust', sim.maxThrust, v);
+  });
+  appendNumberField(container, 'Max Gimbal Angle', sim.maxGimbalAngle, v => {
+    commitSingleton(editor, 'simulationConfig', 'maxGimbalAngle', sim.maxGimbalAngle, v);
+  });
+  appendIntField(container, 'Sensor Count', sim.sensorCount, v => {
+    commitSingleton(editor, 'simulationConfig', 'sensorCount', sim.sensorCount, v);
+  });
+  appendNumberField(container, 'Haste Bonus', sim.hasteBonus, v => {
+    commitSingleton(editor, 'simulationConfig', 'hasteBonus', sim.hasteBonus, v);
+  });
+  appendIntField(container, 'Solver Iterations', sim.solverIterations, v => {
+    commitSingleton(editor, 'simulationConfig', 'solverIterations', sim.solverIterations, v);
+  });
+  appendNumberField(container, 'Friction', sim.frictionMu, v => {
+    commitSingleton(editor, 'simulationConfig', 'frictionMu', sim.frictionMu, v);
+  });
+  appendNumberField(container, 'Global Damping', sim.globalDamping, v => {
+    commitSingleton(editor, 'simulationConfig', 'globalDamping', sim.globalDamping, v);
+  });
+  appendNumberField(container, 'Angular Damping', sim.angularDamping, v => {
+    commitSingleton(editor, 'simulationConfig', 'angularDamping', sim.angularDamping, v);
+  });
+
+  const heading2 = document.createElement('h3');
+  heading2.textContent = 'Reward Weights';
+  heading2.style.marginTop = '12px';
+  container.appendChild(heading2);
+
+  appendNumberField(container, 'Position', rw.positionWeight, v => {
+    commitSingleton(editor, 'rewardWeights', 'positionWeight', rw.positionWeight, v);
+  });
+  appendNumberField(container, 'Velocity', rw.velocityWeight, v => {
+    commitSingleton(editor, 'rewardWeights', 'velocityWeight', rw.velocityWeight, v);
+  });
+  appendNumberField(container, 'Angle', rw.angleWeight, v => {
+    commitSingleton(editor, 'rewardWeights', 'angleWeight', rw.angleWeight, v);
+  });
+  appendNumberField(container, 'Angular Vel', rw.angularVelocityWeight, v => {
+    commitSingleton(editor, 'rewardWeights', 'angularVelocityWeight', rw.angularVelocityWeight, v);
+  });
+  appendNumberField(container, 'Control Effort', rw.controlEffortWeight, v => {
+    commitSingleton(editor, 'rewardWeights', 'controlEffortWeight', rw.controlEffortWeight, v);
+  });
 }
 
 function renderModuleProps(editor: Editor, container: HTMLElement, id: string): void {
@@ -110,10 +196,12 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
       appendNumberField(container, 'Half Extent Y', mod.halfExtentY, v => commitProp(editor, id, 'halfExtentY', mod.halfExtentY, v));
       appendNumberField(container, 'Rotation', mod.rotation, v => commitProp(editor, id, 'rotation', mod.rotation, v));
       appendCheckbox(container, 'Lethal', mod.isLethal, v => commitProp(editor, id, 'isLethal', mod.isLethal, v));
+      appendNumberField(container, 'Penalty/Step', mod.penaltyPerStep, v => commitProp(editor, id, 'penaltyPerStep', mod.penaltyPerStep, v));
+      appendNumberField(container, 'Influence Radius', mod.influenceRadius, v => commitProp(editor, id, 'influenceRadius', mod.influenceRadius, v));
       break;
     case 'checkpoint':
       appendNumberField(container, 'Radius', mod.radius, v => commitProp(editor, id, 'radius', mod.radius, v));
-      appendNumberField(container, 'Order', mod.order, v => commitProp(editor, id, 'order', mod.order, v));
+      appendIntField(container, 'Order', mod.order, v => commitProp(editor, id, 'order', mod.order, v));
       appendNumberField(container, 'Reward Bonus', mod.rewardBonus, v => commitProp(editor, id, 'rewardBonus', mod.rewardBonus, v));
       appendNumberField(container, 'Influence Radius', mod.influenceRadius, v => commitProp(editor, id, 'influenceRadius', mod.influenceRadius, v));
       break;
@@ -140,7 +228,11 @@ function renderModuleProps(editor: Editor, container: HTMLElement, id: string): 
   }
 }
 
-function appendNumberField(container: HTMLElement, label: string, value: number, onChange: (v: number) => void): void {
+function appendIntField(container: HTMLElement, label: string, value: number, onChange: (v: number) => void): void {
+  appendNumberField(container, label, value, onChange, true);
+}
+
+function appendNumberField(container: HTMLElement, label: string, value: number, onChange: (v: number) => void, integer = false): void {
   const row = document.createElement('div');
   row.className = 'prop-row';
   const lbl = document.createElement('label');
@@ -150,10 +242,10 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.inputMode = 'decimal';
-  input.value = Number.isInteger(value) ? value.toString() : value.toFixed(3);
+  input.inputMode = integer ? 'numeric' : 'decimal';
+  input.value = integer ? Math.round(value).toString() : (Number.isInteger(value) ? value.toString() : value.toFixed(3));
   input.addEventListener('change', () => {
-    const v = parseFloat(input.value);
+    const v = integer ? parseInt(input.value, 10) : parseFloat(input.value);
     if (!isNaN(v)) onChange(v);
   });
 
@@ -163,12 +255,16 @@ function appendNumberField(container: HTMLElement, label: string, value: number,
 
   const onDragMove = (e: MouseEvent) => {
     const dx = e.clientX - dragStartX;
-    // Scale: 1px = 0.01 for small values, 0.1 for larger
-    const scale = Math.abs(dragStartValue) > 10 ? 0.1 : 0.01;
-    const newVal = dragStartValue + dx * scale;
-    const rounded = Math.round(newVal * 1000) / 1000;
-    input.value = rounded.toString();
-    onChange(rounded);
+    let newVal: number;
+    if (integer) {
+      const scale = Math.abs(dragStartValue) > 100 ? 0.5 : 0.2;
+      newVal = Math.round(dragStartValue + dx * scale);
+    } else {
+      const scale = Math.abs(dragStartValue) > 10 ? 0.1 : 0.01;
+      newVal = Math.round((dragStartValue + dx * scale) * 1000) / 1000;
+    }
+    input.value = newVal.toString();
+    onChange(newVal);
   };
 
   const onDragEnd = () => {
@@ -210,7 +306,7 @@ function commitProp(editor: Editor, id: string, prop: string, oldVal: unknown, n
   editor.markDirty();
 }
 
-function commitSingleton(editor: Editor, target: 'landingPad' | 'spawnArea', prop: string, oldVal: unknown, newVal: unknown): void {
+function commitSingleton(editor: Editor, target: 'landingPad' | 'spawnArea' | 'simulationConfig' | 'rewardWeights', prop: string, oldVal: unknown, newVal: unknown): void {
   editor.history.execute(new UpdateSingletonCommand(target, prop, oldVal, newVal), editor.world);
   editor.markDirty();
 }
