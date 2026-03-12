@@ -251,7 +251,17 @@ public class GPURocketLandingMegaEvaluator : IDisposable
             // Early exit check every 30 steps
             if (step > 0 && step % 30 == 0)
             {
-                _accelerator.Synchronize();
+                try
+                {
+                    _accelerator.Synchronize();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"GPU FATAL: Synchronize failed at step {step}/{maxSteps} with {worldCount} worlds. " +
+                        $"The CUDA context is poisoned and cannot recover.",
+                        ex);
+                }
                 _isTerminal!.CopyToCPU(_terminalCache!);
                 bool allDone = true;
                 for (int i = 0; i < worldCount; i++)

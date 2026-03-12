@@ -387,6 +387,53 @@ If you're writing `.Find(x => x.Id ==` or `.Where(x => x.Id ==` in runtime code,
 8. **Rigid Body Limitations**: Rigid bodies don't collide with particles or each other (only with static colliders)
 9. **GPU/CPU Parity**: Any physics change must be mirrored in both implementations (see section above)
 
+## GPU Safety — Avoiding Hard Crashes
+
+GPU kernel bugs don't throw exceptions — they silently corrupt memory or poison the CUDA context,
+which can hang the GPU driver so hard that Windows can't recover (no TDR event, forced reboot).
+
+### Rules for GPU kernel code
+
+1. **No unguarded math that can produce NaN/Inf.** `XMath.Exp(x)` overflows to Inf for x>88.
+   `Inf/Inf = NaN`. NaN propagates silently through all downstream math and corrupts physics state.
+   All `tanh` implementations in `DenseNN.cs` and `InlineNN.cs` clamp inputs to [-10,10] for this reason.
+   **Any new activation function MUST be overflow-safe.**
+
+2. **DenseNN local buffer limit: MaxLayerWidth=64.** `DenseNN.ForwardPass` allocates
+   `LocalMemory.Allocate1D<float>(64 * 2)` for ping-pong hidden activations. A topology with any
+   hidden or output layer wider than 64 writes past this buffer → GPU memory corruption.
+   Evaluator constructors validate this, but if you add a new code path that creates DenseTopology,
+   ensure it also validates. If 64 is ever increased, update ALL evaluators' validation AND the
+   `DenseNN.MaxLayerWidth` constant together.
+
+3. **InlinePhysics.cs hardcodes 3 bodies per world.** The cos/sin cache (lines 73-78) and the
+   ternary body-index lookups (`geom.BodyIndex == 0 ? cos0 : (... == 1 ? cos1 : cos2)`) assume
+   exactly 3 rigid bodies. If `BodiesPerWorld` ever changes, this code silently uses wrong angles
+   for bodies with index >= 3, corrupting physics → NaN → crash. To support more bodies, replace
+   the hardcoded cache with a loop or local array.
+
+4. **Attractor proximity buffer: hardcoded `* 8`.** `DenseRocketLandingStepKernel.EvaluateZones`
+   computes `proxIdx = worldIdx * 8 + ai`. The buffer is allocated as `worldCount * MaxAttractorsPerWorld`
+   where `MaxAttractorsPerWorld = 8`. The host validates `Attractors.Count <= 8`, but the kernel
+   uses a magic number. If MaxAttractorsPerWorld ever changes, update the kernel constant too.
+
+5. **Always wrap `_accelerator.Synchronize()` in try-catch.** If a kernel crashed (OOB access, etc.),
+   the CUDA context is permanently poisoned. Without try-catch, subsequent kernel launches operate on
+   a dead context → undefined behavior → driver hang. The evaluators do this; any new GPU code must too.
+
+6. **NaN guard after every NN forward pass.** All step kernels check `float.IsNaN(action)` after
+   the NN produces outputs. If NaN is detected, the world is terminated immediately with poison
+   fitness. This is defense-in-depth — the tanh clamp should prevent NaN, but if it sneaks through
+   a new code path, this guard prevents it from entering the physics pipeline.
+
+### Patterns that can trigger hard crashes (from ILGPU GitHub issues)
+
+- **Multiple ILGPU contexts on the same GPU without a lock** → driver race condition
+- **CopyToCPU without pinning memory** → GC relocates target during async copy → VRAM corruption
+- **ILGPU OptimizationLevel.O1+** has known loop-unrolling bugs → silent wrong results → cascading corruption
+- **Loading the same kernel on multiple GPUs simultaneously** → NVIDIA driver race ~10% of the time
+- **Kernel exceeding TDR timeout (2s on Windows)** → if 5+ timeouts in 60s → BSOD `0x117`
+
 ## GPU Sync Policy
 
 **Never add `_accelerator.Synchronize()` between GPU kernel launches unless you are about to read results back to CPU.**

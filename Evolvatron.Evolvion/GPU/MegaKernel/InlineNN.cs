@@ -133,6 +133,9 @@ public static class InlineNN
 
         if (activationType == 1)
         {
+            // Clamp to prevent Exp overflow → Inf/Inf = NaN → GPU memory corruption.
+            if (x > 10.0f) return 1.0f;
+            if (x < -10.0f) return -1.0f;
             float exp2x = XMath.Exp(2.0f * x);
             return (exp2x - 1.0f) / (exp2x + 1.0f);
         }
@@ -161,8 +164,15 @@ public static class InlineNN
         if (activationType == 10)
         {
             float arg = 0.7978845608f * (x + 0.044715f * x * x * x);
-            float exp2arg = XMath.Exp(2.0f * arg);
-            float tanhArg = (exp2arg - 1.0f) / (exp2arg + 1.0f);
+            // Clamp to prevent Exp overflow → Inf/Inf = NaN → GPU memory corruption.
+            float tanhArg;
+            if (arg > 10.0f) tanhArg = 1.0f;
+            else if (arg < -10.0f) tanhArg = -1.0f;
+            else
+            {
+                float exp2arg = XMath.Exp(2.0f * arg);
+                tanhArg = (exp2arg - 1.0f) / (exp2arg + 1.0f);
+            }
             return 0.5f * x * (1.0f + tanhArg);
         }
 

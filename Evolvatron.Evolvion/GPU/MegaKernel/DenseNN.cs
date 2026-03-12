@@ -130,6 +130,10 @@ public static class DenseNN
 
     private static float Tanh(float x)
     {
+        // Clamp to prevent Exp overflow → Inf/Inf = NaN → GPU memory corruption.
+        // tanh(10) = 0.99999999587... ≈ 1.0f in float32.
+        if (x > 10f) return 1f;
+        if (x < -10f) return -1f;
         float exp2x = XMath.Exp(2f * x);
         return (exp2x - 1f) / (exp2x + 1f);
     }

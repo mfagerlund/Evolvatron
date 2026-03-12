@@ -82,6 +82,19 @@ public static class DenseDoublePoleStepKernel
 
             // === 3. Action + context store ===
             float action = actions[actBase];
+
+            // NaN/Inf detection: if NN produces garbage, terminate immediately.
+            // NaN in physics → state diverges → undefined behavior on GPU.
+            if (float.IsNaN(action) || float.IsInfinity(action))
+            {
+                episode.IsTerminal[worldIdx] = 1;
+                episode.FitnessValues[worldIdx] = 0f;
+                state[stateBase] = s0; state[stateBase + 1] = s1;
+                state[stateBase + 2] = s2; state[stateBase + 3] = s3;
+                state[stateBase + 4] = s4; state[stateBase + 5] = s5;
+                return;
+            }
+
             action = XMath.Max(-1f, XMath.Min(1f, action));
 
             if (config.ContextSize > 0)

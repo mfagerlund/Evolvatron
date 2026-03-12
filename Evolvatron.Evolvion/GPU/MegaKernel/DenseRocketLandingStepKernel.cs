@@ -109,6 +109,16 @@ public static class DenseRocketLandingStepKernel
         float throttle = actions[actionBase + 0];
         float gimbal = actions[actionBase + 1];
 
+        // NaN/Inf detection: if NN produces garbage, terminate immediately.
+        // NaN in physics → body positions go to Inf → contact solver reads OOB → GPU memory corruption.
+        if (float.IsNaN(throttle) || float.IsInfinity(throttle) ||
+            float.IsNaN(gimbal) || float.IsInfinity(gimbal))
+        {
+            episode.IsTerminal[worldIdx] = 1;
+            episode.FitnessValues[worldIdx] = -1e6f; // poison fitness so this individual is never selected
+            return;
+        }
+
         throttle = XMath.Max(0f, XMath.Min(1f, throttle));
         gimbal = XMath.Max(-1f, XMath.Min(1f, gimbal));
 

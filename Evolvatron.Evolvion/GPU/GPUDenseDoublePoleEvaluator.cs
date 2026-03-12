@@ -80,6 +80,16 @@ public class GPUDenseDoublePoleEvaluator : IDisposable
 
     public GPUDenseDoublePoleEvaluator(DenseTopology topology)
     {
+        // Validate topology against GPU kernel limits BEFORE allocating GPU resources.
+        // DenseNN.cs uses LocalMemory.Allocate1D<float>(MaxLayerWidth * 2) with MaxLayerWidth=64.
+        // A layer wider than 64 would write past the local buffer → GPU memory corruption → hard crash.
+        const int gpuMaxLayerWidth = 64;
+        if (topology.MaxLayerWidth > gpuMaxLayerWidth)
+            throw new ArgumentException(
+                $"Dense NN topology has max layer width {topology.MaxLayerWidth} but GPU kernel limit is {gpuMaxLayerWidth}. " +
+                $"Launching this kernel would corrupt GPU memory. Reduce hidden/output layer sizes. " +
+                $"Topology: {topology}");
+
         _topology = topology;
         _context = Context.Create(builder => builder.Default().EnableAlgorithms().Math(MathMode.Fast32BitOnly));
 
@@ -299,7 +309,18 @@ public class GPUDenseDoublePoleEvaluator : IDisposable
         {
             if (launch > 0 && launch % earlyExitInterval == 0)
             {
-                _accelerator.Synchronize();
+                try
+                {
+                    _accelerator.Synchronize();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"GPU FATAL: Synchronize failed at launch {launch}/{totalLaunches} with {worldCount} worlds. " +
+                        $"The CUDA context is poisoned and cannot recover. " +
+                        $"NN topology={_topology}, TicksPerLaunch={TicksPerLaunch}",
+                        ex);
+                }
                 _isTerminal!.CopyToCPU(_terminalCache!);
                 bool allDone = true;
                 for (int i = 0; i < worldCount; i++)

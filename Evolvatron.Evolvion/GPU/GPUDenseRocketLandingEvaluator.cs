@@ -150,6 +150,16 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
 
     public GPUDenseRocketLandingEvaluator(DenseTopology topology)
     {
+        // Validate topology against GPU kernel limits BEFORE allocating GPU resources.
+        // DenseNN.cs uses LocalMemory.Allocate1D<float>(MaxLayerWidth * 2) with MaxLayerWidth=64.
+        // A layer wider than 64 would write past the local buffer → GPU memory corruption → hard crash.
+        const int gpuMaxLayerWidth = 64;
+        if (topology.MaxLayerWidth > gpuMaxLayerWidth)
+            throw new ArgumentException(
+                $"Dense NN topology has max layer width {topology.MaxLayerWidth} but GPU kernel limit is {gpuMaxLayerWidth}. " +
+                $"Launching this kernel would corrupt GPU memory. Reduce hidden/output layer sizes. " +
+                $"Topology: {topology}");
+
         _topology = topology;
         _context = Context.Create(builder => builder.Default().EnableAlgorithms().Math(MathMode.Fast32BitOnly));
 
@@ -400,6 +410,19 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
         int maxContacts = 24 + Obstacles.Count * 4;
         int inputSize = 8 + SensorCount;
 
+        // Validate topology matches the kernel's expected I/O sizes.
+        // Mismatch → kernel reads/writes past buffer bounds → GPU memory corruption → hard crash.
+        if (_topology.InputSize != inputSize)
+            throw new InvalidOperationException(
+                $"GPU SAFETY: Topology input size ({_topology.InputSize}) != kernel input size ({inputSize}). " +
+                $"Expected 8 base observations + {SensorCount} sensors = {inputSize}. " +
+                $"Topology: {_topology}");
+
+        if (_topology.OutputSize != 2)
+            throw new InvalidOperationException(
+                $"GPU SAFETY: Topology output size ({_topology.OutputSize}) != 2 (throttle + gimbal). " +
+                $"Topology: {_topology}");
+
         return new MegaKernelConfig
         {
             BodiesPerWorld = 3,
@@ -534,7 +557,23 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
             // Sync after every batch to prevent GPU monopolization
             if ((step + 1) % batchSize == 0)
             {
-                _accelerator.Synchronize();
+                try
+                {
+                    _accelerator.Synchronize();
+                }
+                catch (Exception ex)
+                {
+                    // CUDA context is poisoned after a kernel error.
+                    // Continuing would dispatch kernels on a dead context → undefined behavior → hard crash.
+                    throw new InvalidOperationException(
+                        $"GPU FATAL: Synchronize failed at step {step}/{MaxSteps} with {worldCount} worlds. " +
+                        $"The CUDA context is poisoned and cannot recover. " +
+                        $"This likely indicates an out-of-bounds GPU memory access in the kernel. " +
+                        $"Config: bodies={megaConfig.BodiesPerWorld}, geoms={megaConfig.GeomsPerWorld}, " +
+                        $"joints={megaConfig.JointsPerWorld}, contacts={megaConfig.MaxContactsPerWorld}, " +
+                        $"colliders={megaConfig.SharedColliderCount}, NN={_topology}",
+                        ex);
+                }
 
                 // Early-exit check every 30 steps (less frequent — the sync is the important part)
                 if (step % 30 == 29)
