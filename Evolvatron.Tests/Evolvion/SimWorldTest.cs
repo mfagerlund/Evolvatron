@@ -159,9 +159,9 @@ public class SimWorldTest
         Assert.Equal(-4.5f, evaluator.PadY);
         Assert.Equal(2f, evaluator.PadHalfWidth);
         Assert.Equal(-5f, evaluator.GroundY);
-        Assert.Equal(15f, evaluator.SpawnHeight);
+        Assert.Equal(14f, evaluator.SpawnHeight); // editor Y is center; evaluator stores bottom edge
         Assert.Equal(2f, evaluator.SpawnHeightRange);
-        Assert.Equal(8f, evaluator.SpawnXRange);
+        Assert.Equal(4f, evaluator.SpawnXRange); // editor XRange is full width; evaluator stores half-width
         Assert.Equal(200f, evaluator.MaxThrust);
         Assert.Equal(600, evaluator.MaxSteps);
         Assert.Equal(4, evaluator.SensorCount);

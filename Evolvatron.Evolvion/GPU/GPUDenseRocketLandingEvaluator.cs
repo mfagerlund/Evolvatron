@@ -95,9 +95,9 @@ public class GPUDenseRocketLandingEvaluator : IDisposable
     public float MaxLandingAngle { get; set; } = 15f * MathF.PI / 180f;
     public float LandingBonus { get; set; } = 200f;
     public float HasteBonus { get; set; } = 1.0f;
-    public float SettleSpeedThreshold { get; set; } = 0.3f;
-    public float SettleAngVelThreshold { get; set; } = 0.5f;
-    public int SettleStepsRequired { get; set; } = 30;   // ~0.25s at 120Hz
+    public float SettleSpeedThreshold { get; set; } = 0.12f;
+    public float SettleAngVelThreshold { get; set; } = 0.2f;
+    public int SettleStepsRequired { get; set; } = 90;   // ~0.75s at 120Hz
     public float SettleTipAngle { get; set; } = 45f * MathF.PI / 180f;
 
     // Difficulty knobs

@@ -117,7 +117,7 @@ var stepper = new CPUStepper();
 var stepper = new GPUStepper();
 ```
 
-**Note**: The GPU backend is currently incomplete. Some post-processing steps (velocity stabilization, friction, damping) may be missing or fall back to CPU. Always use `CPUStepper` for validation.
+**Note**: `GPUStepper` implements the same major simulation phases as `CPUStepper`, including velocity stabilization, friction, damping, rigid-body contacts, and joints. `CPUStepper` remains the reference implementation for correctness validation. For training, the game uses specialized batched/fused GPU evaluators rather than this single-world stepper, because `GPUStepper.Step()` uploads and downloads a `WorldState` each call.
 
 ## Testing
 
