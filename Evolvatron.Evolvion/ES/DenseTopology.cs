@@ -80,6 +80,30 @@ public class DenseTopology
         return new DenseTopology(layers);
     }
 
+    /// <summary>
+    /// Input size for the Phase-1 maneuvering controller (see docs/phase1_controller_spec.md).
+    /// 9 dynamics+command observations: upX, upY, angVel, errFwd, errLat, speed,
+    /// curThrottle, curGimbal, gUp.
+    /// </summary>
+    public const int ControllerInputSize = 9;
+
+    /// <summary>
+    /// Creates a topology for the Phase-1 maneuvering controller.
+    /// Input = 9 dynamics+command signals (no pad-relative position, no sensors) + contextSize
+    /// Elman feedback inputs. Output = 2 (throttle, gimbal) + contextSize feedback outputs.
+    /// contextSize = 0 → plain reactive controller (input 9, output 2).
+    /// </summary>
+    public static DenseTopology ForRocketController(int[] hiddenSizes, int contextSize = 0)
+    {
+        var layers = new int[hiddenSizes.Length + 2];
+        layers[0] = ControllerInputSize + contextSize;
+        for (int i = 0; i < hiddenSizes.Length; i++)
+            layers[i + 1] = hiddenSizes[i];
+        layers[^1] = 2 + contextSize;
+
+        return new DenseTopology(layers);
+    }
+
     public override string ToString()
         => string.Join("→", LayerSizes) + $" ({TotalParams} params, {TotalWeights}w+{TotalBiases}b)";
 }

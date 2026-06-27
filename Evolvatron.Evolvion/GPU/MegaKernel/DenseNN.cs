@@ -48,11 +48,32 @@ public static class DenseNN
         int totalBiasesPerNet,
         int inputSize,
         int outputSize)
+        => ForwardPass(weights, biases, layerSizes, observations, actions,
+            worldIdx, worldIdx, numLayers, totalWeightsPerNet, totalBiasesPerNet, inputSize, outputSize);
+
+    /// <summary>
+    /// Forward pass with separate weight and I/O world indices. For a SHARED/frozen network
+    /// (same weights for every world), pass weightWorldIdx=0 while ioWorldIdx=worldIdx so each
+    /// world reads/writes its own observation/action slots. For a per-world network, pass both equal.
+    /// </summary>
+    public static void ForwardPass(
+        ArrayView<float> weights,
+        ArrayView<float> biases,
+        ArrayView<int> layerSizes,
+        ArrayView<float> observations,
+        ArrayView<float> actions,
+        int weightWorldIdx,
+        int ioWorldIdx,
+        int numLayers,
+        int totalWeightsPerNet,
+        int totalBiasesPerNet,
+        int inputSize,
+        int outputSize)
     {
-        int wBase = worldIdx * totalWeightsPerNet;
-        int bBase = worldIdx * totalBiasesPerNet;
-        int obsBase = worldIdx * inputSize;
-        int actBase = worldIdx * outputSize;
+        int wBase = weightWorldIdx * totalWeightsPerNet;
+        int bBase = weightWorldIdx * totalBiasesPerNet;
+        int obsBase = ioWorldIdx * inputSize;
+        int actBase = ioWorldIdx * outputSize;
 
         // Single local buffer, two halves for ping-pong
         var buf = LocalMemory.Allocate1D<float>(MaxLayerWidth * 2);

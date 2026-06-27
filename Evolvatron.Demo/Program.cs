@@ -68,6 +68,21 @@ class Program
             // Launch obstacle lander demo (evolution + sensors)
             ObstacleLanderDemo.Run();
         }
+        else if (args.Length > 0 && args[0] == "control")
+        {
+            // Launch Phase-1 controller replay (loads controller.bin)
+            ControlReplayDemo.Run(args);
+        }
+        else if (args.Length > 0 && args[0] == "control-verify")
+        {
+            // Headless replay verification (no window)
+            ControlReplayDemo.Verify(args);
+        }
+        else if (args.Length > 0 && args[0] == "maze")
+        {
+            // Phase-2 maze navigator replay (frozen controller + evolved maze policy)
+            MazeReplayDemo.Run(args);
+        }
         else
         {
             // Launch physics demo by default
