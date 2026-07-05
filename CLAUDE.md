@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⭐ PRIMARY WORKSPACE: the Godot game prototype (`Evolvatron.Godot/`)
+
+**The main structure we are building is the Godot game prototype.** `Evolvatron.Godot/`
+(Godot 4.6.3, .NET 8, C#) is the actual product — the game frontend that drives everything
+else. The other C# projects are its **backend libraries**, not the product:
+- `Evolvatron.Rigidon` — physics engine (CPU + GPU), namespace `Evolvatron.Core`
+- `Evolvatron.Evolvion` — evolutionary training (CEM/ES, dense NN GPU kernels)
+- `Evolvatron.Demo` / `Evolvatron.LiveTrainer` — Raylib prototypes/experiments (NOT the game)
+- `Evolvatron.TrainingRunner` — headless CLI training (NOT the game)
+
+Godot runs ILGPU **in-process** (`project.godot` main scene `Scenes/RocketReplay.tscn` →
+`Scripts/RocketReplayScene.cs` already does live background-thread GPU training + visualization).
+**When asked "what's next" or to add features, assume the target is integrating into the Godot
+game** (rocket constructor, controller/nav-policy training pipeline, level flow), not the Raylib
+demos. See `docs/godot_pipeline_plan.md` for the current build plan. Always check the Godot
+frontend first before treating the demos/CLI as the project surface.
+
 ## Project Overview
 
 **Evolvatron** is a game centered around **rocket systems design and reward engineering**. Think moon lander in continuous space where the rocket starts far away with obstacles in the way. The player's job is to design reward landscapes to train RL agents to land rockets successfully.

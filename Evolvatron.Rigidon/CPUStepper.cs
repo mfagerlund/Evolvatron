@@ -94,6 +94,9 @@ public sealed class CPUStepper : IStepper
         // Solve position constraints for stability
         RigidBodyJointSolver.SolvePositionConstraints(world, jointConstraints);
 
+        // Read back each motor's applied impulse onto its joint (diagnostic only; no effect on the sim).
+        RigidBodyJointSolver.StoreAppliedImpulses(world, jointConstraints);
+
         // Store impulses for next frame's warm-start
         ImpulseContactSolver.StoreImpulses(rigidBodyContacts, _contactCache);
 

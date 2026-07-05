@@ -81,6 +81,25 @@ public class DenseTopology
     }
 
     /// <summary>
+    /// Creates a topology for the goal-relative pose-reaching controller used by the rocket editor.
+    /// 10 inputs: targetX-relative, targetY-relative, velX, velY, cos/sin(bodyAngle),
+    /// cos/sin(targetAngle), curGimbal, curThrottle. 2 outputs (throttle, gimbal).
+    /// </summary>
+    public static DenseTopology ForRocketPose(int[] hiddenSizes)
+    {
+        const int inputSize = 10;
+        const int outputSize = 2;
+
+        var layers = new int[hiddenSizes.Length + 2];
+        layers[0] = inputSize;
+        for (int i = 0; i < hiddenSizes.Length; i++)
+            layers[i + 1] = hiddenSizes[i];
+        layers[^1] = outputSize;
+
+        return new DenseTopology(layers);
+    }
+
+    /// <summary>
     /// Input size for the Phase-1 maneuvering controller (see docs/phase1_controller_spec.md).
     /// 9 dynamics+command observations: upX, upY, angVel, errFwd, errLat, speed,
     /// curThrottle, curGimbal, gUp.

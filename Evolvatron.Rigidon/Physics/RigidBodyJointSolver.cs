@@ -18,8 +18,9 @@ public static class RigidBodyJointSolver
     {
         var constraints = new List<RevoluteJointConstraint>();
 
-        foreach (var joint in world.RevoluteJoints)
+        for (int jointIndex = 0; jointIndex < world.RevoluteJoints.Count; jointIndex++)
         {
+            var joint = world.RevoluteJoints[jointIndex];
             var bodyA = world.RigidBodies[joint.BodyA];
             var bodyB = world.RigidBodies[joint.BodyB];
 
@@ -29,6 +30,7 @@ public static class RigidBodyJointSolver
 
             var constraint = new RevoluteJointConstraint
             {
+                JointIndex = jointIndex,
                 BodyAIndex = joint.BodyA,
                 BodyBIndex = joint.BodyB,
                 RA_X = joint.LocalAnchorAX,
@@ -243,6 +245,23 @@ public static class RigidBodyJointSolver
             constraints[i] = constraint;
             world.RigidBodies[constraint.BodyAIndex] = bodyA;
             world.RigidBodies[constraint.BodyBIndex] = bodyB;
+        }
+    }
+
+    /// <summary>
+    /// Copy each solved constraint's accumulated <see cref="RevoluteJointConstraint.MotorImpulse"/> back onto
+    /// its source <see cref="RevoluteJoint.AppliedMotorImpulse"/> (a diagnostic read-back). Call once after the
+    /// velocity-iteration loop, when the motor impulse for the step is final. Purely informational — it mutates
+    /// only the joint's diagnostic field, never body state, so the simulation is unchanged.
+    /// </summary>
+    public static void StoreAppliedImpulses(WorldState world, List<RevoluteJointConstraint> constraints)
+    {
+        for (int i = 0; i < constraints.Count; i++)
+        {
+            var c = constraints[i];
+            var joint = world.RevoluteJoints[c.JointIndex];
+            joint.AppliedMotorImpulse = c.EnableMotor ? c.MotorImpulse : 0f;
+            world.RevoluteJoints[c.JointIndex] = joint;
         }
     }
 

@@ -27,6 +27,12 @@ public struct RevoluteJoint
     public float MotorSpeed;    // Target angular velocity (rad/s)
     public float MaxMotorTorque; // Maximum torque the motor can apply
 
+    // Diagnostic read-back (output): the motor impulse the solver actually applied on the last Step, written
+    // back after the velocity solve. |AppliedMotorImpulse| ≤ MaxMotorTorque·dt, and applied torque =
+    // AppliedMotorImpulse / dt. Does not affect the simulation — it is populated for inspection only (e.g. a
+    // "how saturated is this motor?" gauge). CPU stepper only; 0 until the first Step.
+    public float AppliedMotorImpulse;
+
     public RevoluteJoint(int bodyA, int bodyB, float anchorAX, float anchorAY, float anchorBX, float anchorBY)
     {
         BodyA = bodyA;
@@ -42,6 +48,7 @@ public struct RevoluteJoint
         EnableMotor = false;
         MotorSpeed = 0f;
         MaxMotorTorque = 0f;
+        AppliedMotorImpulse = 0f;
     }
 }
 
@@ -50,6 +57,8 @@ public struct RevoluteJoint
 /// </summary>
 public struct RevoluteJointConstraint
 {
+    public int JointIndex;      // Source index into WorldState.RevoluteJoints (constraints skip static-static
+                                // joints, so this is not the list position) — used to write diagnostics back.
     public int BodyAIndex;
     public int BodyBIndex;
 

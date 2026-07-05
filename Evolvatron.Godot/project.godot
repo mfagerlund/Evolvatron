@@ -11,8 +11,8 @@ config_version=5
 [application]
 
 config/name="Evolvatron"
-run/main_scene="res://Scenes/RocketReplay.tscn"
-config/features=PackedStringArray("4.6", "C#", "Forward Plus")
+run/main_scene="res://Scenes/RocketEditor.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
 [display]
 

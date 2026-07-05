@@ -74,4 +74,15 @@ public struct MegaKernelConfig
     public int DangerZoneCount;
     public int SpeedZoneCount;
     public int AttractorCount;
+
+    // Pose-reaching task (DenseRocketPoseStepKernel). Target position reuses PadX/PadY.
+    public float TargetAngle;     // desired body angle (world frame, radians)
+    public float PoseHitRadius;   // position tolerance for a "hit"
+    public float PoseHitAngle;    // angle tolerance for a "hit" (radians)
+    public float PoseHitSpeed;    // speed tolerance for a "hit"
+    public int PoseHoldSteps;     // consecutive in-tolerance steps required to count as a hit
+    public float PosePosWeight;   // per-step proximity reward weight
+    public float PoseAngleWeight; // per-step alignment reward weight (gated by proximity)
+    public float PoseVelWeight;   // per-step slow-near-target reward weight (gated by proximity)
+    public float PoseHitBonus;    // terminal bonus when the pose was held
 }
