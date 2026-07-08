@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace Evolvatron.Core.Physics;
 
@@ -29,11 +30,14 @@ public static class RigidBodyJointSolver
     {
         constraints.Clear();
 
-        for (int jointIndex = 0; jointIndex < world.RevoluteJoints.Count; jointIndex++)
+        var bodies = CollectionsMarshal.AsSpan(world.RigidBodies);
+        var joints = CollectionsMarshal.AsSpan(world.RevoluteJoints);
+
+        for (int jointIndex = 0; jointIndex < joints.Length; jointIndex++)
         {
-            var joint = world.RevoluteJoints[jointIndex];
-            var bodyA = world.RigidBodies[joint.BodyA];
-            var bodyB = world.RigidBodies[joint.BodyB];
+            ref readonly var joint = ref joints[jointIndex];
+            ref readonly var bodyA = ref bodies[joint.BodyA];
+            ref readonly var bodyB = ref bodies[joint.BodyB];
 
             // Skip if either body is static
             if (bodyA.InvMass == 0f && bodyB.InvMass == 0f)
@@ -148,11 +152,16 @@ public static class RigidBodyJointSolver
     /// </summary>
     public static void SolveVelocityConstraints(WorldState world, List<RevoluteJointConstraint> constraints, float dt)
     {
-        for (int i = 0; i < constraints.Count; i++)
+        // Mutate bodies and constraints in place via spans over the backing arrays: no copy-out/copy-back
+        // of the (large) structs and no List-indexer indirection per access. BodyA and BodyB of a joint are
+        // always distinct bodies, so the two refs never alias — arithmetic is bit-identical to the copy path.
+        var bodies = CollectionsMarshal.AsSpan(world.RigidBodies);
+        var cons = CollectionsMarshal.AsSpan(constraints);
+        for (int i = 0; i < cons.Length; i++)
         {
-            var constraint = constraints[i];
-            var bodyA = world.RigidBodies[constraint.BodyAIndex];
-            var bodyB = world.RigidBodies[constraint.BodyBIndex];
+            ref var constraint = ref cons[i];
+            ref var bodyA = ref bodies[constraint.BodyAIndex];
+            ref var bodyB = ref bodies[constraint.BodyBIndex];
 
             // World-space anchors were cached in InitializeConstraints; body angles do not change across
             // the velocity iterations, so reuse them instead of recomputing sin/cos every iteration.
@@ -252,10 +261,7 @@ public static class RigidBodyJointSolver
             bodyB.VelY += bodyB.InvMass * lambdaY;
             bodyB.AngularVel += bodyB.InvInertia * (rBX * lambdaY - rBY * lambdaX);
 
-            // Write back
-            constraints[i] = constraint;
-            world.RigidBodies[constraint.BodyAIndex] = bodyA;
-            world.RigidBodies[constraint.BodyBIndex] = bodyB;
+            // No write-back: constraint, bodyA and bodyB are refs into the backing arrays, mutated in place.
         }
     }
 
@@ -267,12 +273,12 @@ public static class RigidBodyJointSolver
     /// </summary>
     public static void StoreAppliedImpulses(WorldState world, List<RevoluteJointConstraint> constraints)
     {
-        for (int i = 0; i < constraints.Count; i++)
+        var cons = CollectionsMarshal.AsSpan(constraints);
+        var joints = CollectionsMarshal.AsSpan(world.RevoluteJoints);
+        for (int i = 0; i < cons.Length; i++)
         {
-            var c = constraints[i];
-            var joint = world.RevoluteJoints[c.JointIndex];
-            joint.AppliedMotorImpulse = c.EnableMotor ? c.MotorImpulse : 0f;
-            world.RevoluteJoints[c.JointIndex] = joint;
+            ref readonly var c = ref cons[i];
+            joints[c.JointIndex].AppliedMotorImpulse = c.EnableMotor ? c.MotorImpulse : 0f;
         }
     }
 
@@ -286,11 +292,13 @@ public static class RigidBodyJointSolver
         const float LinearSlop = 0.005f;
         const float AngularSlop = 2f * MathF.PI / 180f; // 2 degrees
 
-        for (int i = 0; i < constraints.Count; i++)
+        var bodies = CollectionsMarshal.AsSpan(world.RigidBodies);
+        var cons = CollectionsMarshal.AsSpan(constraints);
+        for (int i = 0; i < cons.Length; i++)
         {
-            var constraint = constraints[i];
-            var bodyA = world.RigidBodies[constraint.BodyAIndex];
-            var bodyB = world.RigidBodies[constraint.BodyBIndex];
+            ref readonly var constraint = ref cons[i];
+            ref var bodyA = ref bodies[constraint.BodyAIndex];
+            ref var bodyB = ref bodies[constraint.BodyBIndex];
 
             // Transform anchors to world space
             float cosA = MathF.Cos(bodyA.Angle);
@@ -366,9 +374,7 @@ public static class RigidBodyJointSolver
                 }
             }
 
-            // Write back
-            world.RigidBodies[constraint.BodyAIndex] = bodyA;
-            world.RigidBodies[constraint.BodyBIndex] = bodyB;
+            // No write-back: bodyA and bodyB are refs into the backing array, mutated in place.
         }
     }
 }

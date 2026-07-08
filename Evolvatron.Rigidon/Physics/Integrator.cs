@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Evolvatron.Core.Physics;
 
 /// <summary>
@@ -82,9 +84,10 @@ public static class Integrator
     /// </summary>
     public static void IntegrateRigidBodies(WorldState world, float dt)
     {
-        for (int i = 0; i < world.RigidBodies.Count; i++)
+        var bodies = CollectionsMarshal.AsSpan(world.RigidBodies);
+        for (int i = 0; i < bodies.Length; i++)
         {
-            var rb = world.RigidBodies[i];
+            ref var rb = ref bodies[i];
             if (rb.InvMass == 0f) continue; // Skip static rigid bodies
 
             // Linear integration
@@ -93,8 +96,6 @@ public static class Integrator
 
             // Angular integration
             rb.Angle += dt * rb.AngularVel;
-
-            world.RigidBodies[i] = rb;
         }
     }
 
