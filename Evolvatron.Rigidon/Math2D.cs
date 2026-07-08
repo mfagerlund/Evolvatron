@@ -74,10 +74,14 @@ public static class Math2D
     }
 
     /// <summary>
-    /// Wraps angle to [-π, π] range.
+    /// Wraps angle to [-π, π] range. The <c>% 2π</c> is an exact identity for |angle| &lt; 2π (so this is
+    /// bit-identical to the old repeated-subtraction path across the normal range) but O(1) for any magnitude
+    /// and maps a non-finite angle to NaN instead of looping forever — an accumulated body angle can grow
+    /// without bound, and an ∞ would otherwise hang the caller (∞ − 2π == ∞).
     /// </summary>
     public static float WrapAngle(float angle)
     {
+        angle %= 2f * MathF.PI;
         while (angle > MathF.PI) angle -= 2f * MathF.PI;
         while (angle < -MathF.PI) angle += 2f * MathF.PI;
         return angle;
