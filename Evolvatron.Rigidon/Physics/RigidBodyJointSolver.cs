@@ -12,6 +12,22 @@ public static class RigidBodyJointSolver
     private const float Epsilon = 1e-9f;
 
     /// <summary>
+    /// Range-reduce a relative joint angle to [-π, π]. The <c>% 2π</c> is an exact identity for |angle| &lt; 2π,
+    /// so this is bit-identical to the old repeated-subtraction path across the normal operating range, but it
+    /// is O(1) for any magnitude and maps a non-finite angle to NaN instead of looping forever. A motor-driven
+    /// joint with no limit can spin its relative angle up without bound; once it reached ±∞ the old
+    /// <c>while (angle -= 2π)</c> never terminated (∞ − 2π == ∞), hanging the whole step, and even a
+    /// large-but-finite angle degenerated into hundreds of thousands of iterations.
+    /// </summary>
+    private static float NormalizeAngle(float angle)
+    {
+        angle %= 2f * MathF.PI;
+        while (angle > MathF.PI) angle -= 2f * MathF.PI;
+        while (angle < -MathF.PI) angle += 2f * MathF.PI;
+        return angle;
+    }
+
+    /// <summary>
     /// Initialize joint constraints from joint definitions.
     /// Computes effective masses and prepares solver data.
     /// </summary>
@@ -192,11 +208,7 @@ public static class RigidBodyJointSolver
             // === SOLVE ANGLE LIMITS ===
             if (constraint.EnableLimits)
             {
-                float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
-
-                // Normalize angle to [-π, π]
-                while (angle > MathF.PI) angle -= 2f * MathF.PI;
-                while (angle < -MathF.PI) angle += 2f * MathF.PI;
+                float angle = NormalizeAngle(bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle);
 
                 float limitImpulse = 0f;
 
@@ -346,11 +358,7 @@ public static class RigidBodyJointSolver
             // Solve angle position errors (limits or motor reference angle)
             if (constraint.EnableLimits || constraint.EnableMotor)
             {
-                float angle = bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle;
-
-                // Normalize angle
-                while (angle > MathF.PI) angle -= 2f * MathF.PI;
-                while (angle < -MathF.PI) angle += 2f * MathF.PI;
+                float angle = NormalizeAngle(bodyB.Angle - bodyA.Angle - constraint.ReferenceAngle);
 
                 float angleError = 0f;
                 if (constraint.EnableLimits)
