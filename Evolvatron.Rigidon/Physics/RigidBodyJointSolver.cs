@@ -17,6 +17,17 @@ public static class RigidBodyJointSolver
     public static List<RevoluteJointConstraint> InitializeConstraints(WorldState world, float dt)
     {
         var constraints = new List<RevoluteJointConstraint>();
+        InitializeConstraints(world, dt, constraints);
+        return constraints;
+    }
+
+    /// <summary>
+    /// Allocation-free variant: fills a caller-owned buffer (cleared first) instead of allocating a new
+    /// list each substep. Lets a stepper reuse one buffer across the whole simulation.
+    /// </summary>
+    public static void InitializeConstraints(WorldState world, float dt, List<RevoluteJointConstraint> constraints)
+    {
+        constraints.Clear();
 
         for (int jointIndex = 0; jointIndex < world.RevoluteJoints.Count; jointIndex++)
         {
@@ -88,6 +99,12 @@ public static class RigidBodyJointSolver
             constraint.K21 = k21;
             constraint.K22 = k22;
 
+            // Cache the world-space anchor offsets so the velocity iterations don't recompute sin/cos.
+            constraint.RA_WorldX = rAX_world;
+            constraint.RA_WorldY = rAY_world;
+            constraint.RB_WorldX = rBX_world;
+            constraint.RB_WorldY = rBY_world;
+
             // Invert the K matrix to get effective mass matrix
             float det = k11 * k22 - k12 * k21;
             if (MathF.Abs(det) > Epsilon)
@@ -123,8 +140,6 @@ public static class RigidBodyJointSolver
 
             constraints.Add(constraint);
         }
-
-        return constraints;
     }
 
     /// <summary>
@@ -139,16 +154,12 @@ public static class RigidBodyJointSolver
             var bodyA = world.RigidBodies[constraint.BodyAIndex];
             var bodyB = world.RigidBodies[constraint.BodyBIndex];
 
-            // Transform anchors to world space
-            float cosA = MathF.Cos(bodyA.Angle);
-            float sinA = MathF.Sin(bodyA.Angle);
-            float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
-            float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
-
-            float cosB = MathF.Cos(bodyB.Angle);
-            float sinB = MathF.Sin(bodyB.Angle);
-            float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
-            float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
+            // World-space anchors were cached in InitializeConstraints; body angles do not change across
+            // the velocity iterations, so reuse them instead of recomputing sin/cos every iteration.
+            float rAX = constraint.RA_WorldX;
+            float rAY = constraint.RA_WorldY;
+            float rBX = constraint.RB_WorldX;
+            float rBY = constraint.RB_WorldY;
 
             // === SOLVE MOTOR ===
             if (constraint.EnableMotor)

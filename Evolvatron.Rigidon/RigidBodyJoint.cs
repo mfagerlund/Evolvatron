@@ -66,6 +66,12 @@ public struct RevoluteJointConstraint
     public float RA_X, RA_Y;  // Anchor A in local space
     public float RB_X, RB_Y;  // Anchor B in local space
 
+    // World-space anchor offsets (local anchor rotated by body angle), cached during initialization.
+    // Body angles are constant across the velocity-constraint iterations of a substep, so these are
+    // computed once and reused instead of recomputing sin/cos every iteration.
+    public float RA_WorldX, RA_WorldY;
+    public float RB_WorldX, RB_WorldY;
+
     // Effective mass for position constraint (2x2 matrix)
     public float K11, K12, K21, K22; // K matrix
     public float Mass11, Mass12, Mass21, Mass22; // Inverse of K
