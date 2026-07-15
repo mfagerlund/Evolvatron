@@ -4,18 +4,14 @@
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
     <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />
-    <!-- FollowTheCorridorEnvironment.cs moved here from Evolvion: this demo (plus one test)
-         was its only consumer, and it was the sole reason a GPU optimizer library referenced
-         a NUnit test project. The Colonel dependency belongs with the demo that wants it. -->
-    <ProjectReference Include="..\..\Colonel\Colonel.Tests\Colonel.Tests.csproj" />
+    <!-- Explicit, though Evolvion already drags it in transitively: this demo names TinyWorlds types
+         directly (FollowTheCorridorEnvironment, SimpleCarWorld), so it should declare them.
+         FollowTheCorridorEnvironment.cs used to live in this project purely because the world it
+         wrapped was stuck inside Colonel.Tests; both now live in TinyWorlds. -->
+    <ProjectReference Include="..\..\TinyWorlds\src\TinyWorlds\TinyWorlds.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Raylib-cs" Version="7.0.2" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="GodotSharp">
-      <HintPath>..\..\Colonel\Data\Dlls\GodotSharp.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <PropertyGroup>

@@ -21,14 +21,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Rigidon + Evolvion ONLY. Both Evolvatron.Demo and Evolvatron.TrajectoryOpt pull in Colonel
-         (~256MB, incl. a foreign NUnit test project), which made this suite unrunnable on any machine
-         without Colonel checked out. The four tests that genuinely need Colonel now live in
-         Evolvatron.Demo.Tests and Evolvatron.TrajectoryOpt.Tests. Keep this list at two entries.
-         Guard: `dotnet msbuild Evolvatron.Tests\Evolvatron.Tests.csproj -t:ResolveProjectReferences
-         -v:n | grep -ci colonel` must be 0. -->
+    <!-- Rigidon + Evolvion (+ TinyWorlds for the worlds under test). Keep it lean: this suite must
+         stay runnable on a bare checkout, which is why it does not reference Evolvatron.Demo
+         (Raylib, a window) or Evolvatron.TrajectoryOpt.
+
+         This list used to carry a warning about Colonel, a 1.5GB sibling repo that had to be cloned
+         for the tests to build at all. Nothing in Evolvatron references Colonel any more, so that
+         warning is gone rather than merely reworded. -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
+    <ProjectReference Include="..\..\TinyWorlds\src\TinyWorlds\TinyWorlds.csproj" />
   </ItemGroup>
 
 </Project>

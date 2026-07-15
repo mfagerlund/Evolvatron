@@ -8,10 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Pinned to 18.0.1, not the 17.11.1 used by the other test projects: Colonel.Tests floors it
-         at >=18.0.1 and NU1605 treats the downgrade as an error. A version floor imposed by another
-         repo's test project is exactly the coupling this project is here to contain. -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <!-- Back to 17.11.1, matching the other test projects. This was pinned to 18.0.1 because
+         Colonel.Tests floored it there and NU1605 made the downgrade an error. Nothing here
+         references Colonel any more, so the floor is gone — and this line building is part of how
+         we know that. -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -21,14 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- This project exists to QUARANTINE a dependency, not to group a feature.
-         The FollowTheCorridor task is Colonel's: its car physics (SimpleCarWorld) and SVG track live
-         in Colonel.Tests, so these tests drag Colonel (~256MB) AND a foreign NUnit test project.
-         Keeping them here is what lets Evolvatron.Tests stay at Rigidon + Evolvion and run anywhere.
-
-         A Colonel-free equivalent already exists and stays in Evolvatron.Tests:
-         SimpleCorridorEvolutionTest, over Evolvion's procedural SimpleCorridorEnvironment.
-         So corridor coverage does NOT depend on this project building. -->
+    <!-- Tests for Evolvatron.Demo, and nothing more exotic than that. This project used to exist to
+         QUARANTINE Colonel — the FollowTheCorridor car physics and SVG track lived in Colonel.Tests,
+         so anything touching them dragged in a 1.5GB sibling repo and a foreign NUnit test project.
+         Those worlds now live in TinyWorlds, so the quarantine is over; what's left is an ordinary
+         test project for the demo, kept separate only because Evolvatron.Tests deliberately avoids
+         Raylib. -->
     <ProjectReference Include="..\Evolvatron.Demo\Evolvatron.Demo.csproj" />
   </ItemGroup>
 

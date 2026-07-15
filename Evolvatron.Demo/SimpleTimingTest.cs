@@ -1,8 +1,7 @@
 using Evolvatron.Evolvion;
 using TinyWorlds;
+using static TinyWorlds.SimpleCarWorld;
 using System.Diagnostics;
-using Colonel.Tests.HagridTests.FollowTheCorridor;
-using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
 
 namespace Evolvatron.Demo;
 

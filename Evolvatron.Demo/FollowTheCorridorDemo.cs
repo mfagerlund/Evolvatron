@@ -1,11 +1,10 @@
 using Raylib_cs;
 using System.Numerics;
 using RaylibVector2 = System.Numerics.Vector2;
-using GodotVector2 = Godot.Vector2;
+using WorldVector2 = System.Numerics.Vector2;
 using RaylibColor = Raylib_cs.Color;
 using TinyWorlds;
-using Colonel.Tests.HagridTests.FollowTheCorridor;
-using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
+using static TinyWorlds.SimpleCarWorld;
 
 namespace Evolvatron.Demo;
 
@@ -143,7 +142,7 @@ public static class FollowTheCorridorDemo
         }
     }
 
-    private static void RenderCar(GodotVector2 position, float heading, RaylibVector2 cameraOffset, RaylibColor color)
+    private static void RenderCar(WorldVector2 position, float heading, RaylibVector2 cameraOffset, RaylibColor color)
     {
         RaylibVector2 screenPos = WorldToScreen(position, cameraOffset);
 
@@ -213,15 +212,14 @@ public static class FollowTheCorridorDemo
         Raylib.DrawText($"  Finished: {finished}", 10, y, 16, RaylibColor.Lime);
     }
 
-    private static RaylibVector2 WorldToScreen(GodotVector2 worldPos, RaylibVector2 cameraOffset)
-    {
-        return new RaylibVector2(
-            cameraOffset.X + worldPos.X * Scale,
-            cameraOffset.Y - worldPos.Y * Scale
-        );
-    }
-
-    private static RaylibVector2 WorldToScreen(RaylibVector2 worldPos, RaylibVector2 cameraOffset)
+    /// <summary>
+    /// Track space (+y up) to screen space (+y down), hence the flipped Y.
+    ///
+    /// There were two identical copies of this, one taking Godot.Vector2 and one taking
+    /// System.Numerics.Vector2, purely to bridge the two vector types. The world speaks
+    /// System.Numerics now, so they collapsed into each other.
+    /// </summary>
+    private static RaylibVector2 WorldToScreen(WorldVector2 worldPos, RaylibVector2 cameraOffset)
     {
         return new RaylibVector2(
             cameraOffset.X + worldPos.X * Scale,

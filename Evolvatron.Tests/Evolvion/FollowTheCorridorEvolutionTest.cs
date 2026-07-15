@@ -1,7 +1,7 @@
 using Evolvatron.Evolvion;
 using TinyWorlds;
 
-namespace Evolvatron.Demo.Tests;
+namespace Evolvatron.Tests.Evolvion;
 
 public class FollowTheCorridorEvolutionTest
 {
