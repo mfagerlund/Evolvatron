@@ -18,10 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- This project exists to QUARANTINE a dependency, not to group a feature.
-         TrajectoryOptimizer needs Colonel.Core's NonlinearLeastSquaresSolver, so anything testing
-         it inherits Colonel (~256MB). Keeping these tests here is what lets Evolvatron.Tests stay
-         at Rigidon + Evolvion and run on any machine. Do not add non-trajectory tests here. -->
+    <!-- Created to quarantine Colonel, which TrajectoryOpt used to drag via Colonel.Core's solver.
+         That reason is GONE — TrajectoryOpt now uses the TinyLeastSquares package and resolves zero
+         Colonel, so these tests could fold back into Evolvatron.Tests. They stay split for the
+         ordinary reason instead: TrajectoryOpt is a standalone project and owns its tests, which
+         keeps Evolvatron.Tests's reference list minimal (same rationale as Evolvatron.Rigidon.Tests). -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
     <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />

@@ -7,13 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- CPU Levenberg-Marquardt trajectory optimization. Split out of Evolvatron.Evolvion so
-         that Evolvion stays a self-contained optimizer library: this is the ONLY part that
-         needed Colonel's NonlinearLeastSquaresSolver, and dragging Colonel (256MB, incl.
-         GodotSharp/Microsoft.ML/MIDI/geospatial) into every Evolvion consumer was the tail
-         wagging the dog. Namespace is unchanged, so consumers' usings still resolve. -->
+    <!-- TinyLeastSquares is Colonel's NonlinearLeastSquares.cs extracted to a standalone MIT
+         package (its LeastSquaresOptions / LeastSquaresResult / ResidualEvaluation are still
+         byte-identical to Colonel's; only the namespace changed). Depending on the package instead
+         of Colonel.Core is what lets this project — the ONLY consumer of that solver — stop
+         dragging Colonel, and with it GodotSharp/FluentAssertions/Microsoft.ML/MIDI/geospatial.
+         Do not re-add a Colonel reference; if the solver needs a fix, fix it upstream in
+         https://github.com/mfagerlund/TinyLeastSquares. -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
-    <ProjectReference Include="..\..\Colonel\Colonel.Core\Colonel.Core.csproj" />
+    <PackageReference Include="TinyLeastSquares" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

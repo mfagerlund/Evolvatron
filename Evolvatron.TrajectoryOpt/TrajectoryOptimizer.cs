@@ -1,6 +1,6 @@
 using Evolvatron.Core;
 using Evolvatron.Core.Templates;
-using Colonel.Core.Optimization;
+using TinyLeastSquares;
 
 namespace Evolvatron.Evolvion.TrajectoryOptimization;
 
