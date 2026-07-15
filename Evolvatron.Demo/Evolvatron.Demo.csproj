@@ -3,6 +3,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
+    <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />
+    <!-- FollowTheCorridorEnvironment.cs moved here from Evolvion: this demo (plus one test)
+         was its only consumer, and it was the sole reason a GPU optimizer library referenced
+         a NUnit test project. The Colonel dependency belongs with the demo that wants it. -->
+    <ProjectReference Include="..\..\Colonel\Colonel.Tests\Colonel.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Raylib-cs" Version="7.0.2" />

@@ -12,16 +12,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Colonel\Colonel.Core\Colonel.Core.csproj" />
-    <ProjectReference Include="..\..\Colonel\Colonel.Framework\Colonel.Framework.csproj" />
-    <ProjectReference Include="..\..\Colonel\Colonel.Tests\Colonel.Tests.csproj" />
+    <!-- Evolvion is a self-contained optimizer library: ILGPU + Rigidon, nothing else.
+         It previously referenced Colonel (Core/Framework/Tests) and GodotSharp, which
+         transitively imposed ~256MB and GodotSharp/Microsoft.ML/LightGBM/SQLite/MIDI/
+         geospatial packages on EVERY consumer (Walker, Clones, Swarm). Those came from
+         exactly three places, all now gone: TrajectoryOptimization (moved to
+         Evolvatron.TrajectoryOpt), FollowTheCorridorEnvironment (moved to Evolvatron.Demo),
+         and SvgPathDecoder's Godot.Vector2 (now System.Numerics.Vector2).
+         Keep it this way — a library consumed by four games must not drag a game engine. -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="GodotSharp">
-      <HintPath>..\..\Colonel\Data\Dlls\GodotSharp.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>

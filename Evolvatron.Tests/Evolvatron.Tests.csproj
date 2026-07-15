@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
     <ProjectReference Include="..\Evolvatron.Demo\Evolvatron.Demo.csproj" />
+    <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />
   </ItemGroup>
 
 </Project>

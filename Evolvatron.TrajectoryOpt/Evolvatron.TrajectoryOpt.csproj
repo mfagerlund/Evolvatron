@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CPU Levenberg-Marquardt trajectory optimization. Split out of Evolvatron.Evolvion so
+         that Evolvion stays a self-contained optimizer library: this is the ONLY part that
+         needed Colonel's NonlinearLeastSquaresSolver, and dragging Colonel (256MB, incl.
+         GodotSharp/Microsoft.ML/MIDI/geospatial) into every Evolvion consumer was the tail
+         wagging the dog. Namespace is unchanged, so consumers' usings still resolve. -->
+    <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
+    <ProjectReference Include="..\..\Colonel\Colonel.Core\Colonel.Core.csproj" />
+  </ItemGroup>
+
+</Project>

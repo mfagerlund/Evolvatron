@@ -69,15 +69,16 @@ public static class InlinePhysics
             pv.Bodies[idx] = body;
         }
 
-        // === 3b. Cache cos/sin for all 3 bodies (valid until position solve modifies angles) ===
-        float cos0 = XMath.Cos(pv.Bodies[bodyBase].Angle);
-        float sin0 = XMath.Sin(pv.Bodies[bodyBase].Angle);
-        float cos1 = XMath.Cos(pv.Bodies[bodyBase + 1].Angle);
-        float sin1 = XMath.Sin(pv.Bodies[bodyBase + 1].Angle);
-        float cos2 = XMath.Cos(pv.Bodies[bodyBase + 2].Angle);
-        float sin2 = XMath.Sin(pv.Bodies[bodyBase + 2].Angle);
-
         // === 4. Update geom world positions ===
+        // Run-length cache: geoms are emitted grouped by body, so consecutive geoms usually
+        // share a body and we recompute sin/cos only when the body index changes. Correctness
+        // does NOT depend on that grouping — unsorted geoms just cost more sin/cos, never a
+        // wrong answer. Angles are fixed from integration until the position solve below, so
+        // every read here sees the same angle the value was computed from.
+        int cachedBody = -1;
+        float cachedCos = 0f;
+        float cachedSin = 0f;
+
         for (int i = 0; i < cfg.GeomsPerWorld; i++)
         {
             int gIdx = geomBase + i;
@@ -85,10 +86,15 @@ public static class InlinePhysics
             int bIdx = bodyBase + geom.BodyIndex;
             var body = pv.Bodies[bIdx];
 
-            float cos = geom.BodyIndex == 0 ? cos0 : (geom.BodyIndex == 1 ? cos1 : cos2);
-            float sin = geom.BodyIndex == 0 ? sin0 : (geom.BodyIndex == 1 ? sin1 : sin2);
-            geom.WorldX = body.X + geom.LocalX * cos - geom.LocalY * sin;
-            geom.WorldY = body.Y + geom.LocalX * sin + geom.LocalY * cos;
+            if (geom.BodyIndex != cachedBody)
+            {
+                cachedBody = geom.BodyIndex;
+                cachedCos = XMath.Cos(body.Angle);
+                cachedSin = XMath.Sin(body.Angle);
+            }
+
+            geom.WorldX = body.X + geom.LocalX * cachedCos - geom.LocalY * cachedSin;
+            geom.WorldY = body.Y + geom.LocalX * cachedSin + geom.LocalY * cachedCos;
             pv.Geoms[gIdx] = geom;
         }
 
@@ -233,15 +239,13 @@ public static class InlinePhysics
                 AngleLimitImpulse = 0f, MotorImpulse = 0f
             };
 
-            int localA = joint.BodyA - bodyBase;
-            int localB = joint.BodyB - bodyBase;
-            float cosA = localA == 0 ? cos0 : (localA == 1 ? cos1 : cos2);
-            float sinA = localA == 0 ? sin0 : (localA == 1 ? sin1 : sin2);
+            float cosA = XMath.Cos(bodyA.Angle);
+            float sinA = XMath.Sin(bodyA.Angle);
             float rAX_w = constraint.RA_X * cosA - constraint.RA_Y * sinA;
             float rAY_w = constraint.RA_X * sinA + constraint.RA_Y * cosA;
 
-            float cosB = localB == 0 ? cos0 : (localB == 1 ? cos1 : cos2);
-            float sinB = localB == 0 ? sin0 : (localB == 1 ? sin1 : sin2);
+            float cosB = XMath.Cos(bodyB.Angle);
+            float sinB = XMath.Sin(bodyB.Angle);
             float rBX_w = constraint.RB_X * cosB - constraint.RB_Y * sinB;
             float rBY_w = constraint.RB_X * sinB + constraint.RB_Y * cosB;
 
@@ -343,15 +347,13 @@ public static class InlinePhysics
                 var bodyA = pv.Bodies[constraint.BodyAIndex];
                 var bodyB = pv.Bodies[constraint.BodyBIndex];
 
-                int lA = constraint.BodyAIndex - bodyBase;
-                int lB = constraint.BodyBIndex - bodyBase;
-                float cosA = lA == 0 ? cos0 : (lA == 1 ? cos1 : cos2);
-                float sinA = lA == 0 ? sin0 : (lA == 1 ? sin1 : sin2);
+                float cosA = XMath.Cos(bodyA.Angle);
+                float sinA = XMath.Sin(bodyA.Angle);
                 float rAX = constraint.RA_X * cosA - constraint.RA_Y * sinA;
                 float rAY = constraint.RA_X * sinA + constraint.RA_Y * cosA;
 
-                float cosB = lB == 0 ? cos0 : (lB == 1 ? cos1 : cos2);
-                float sinB = lB == 0 ? sin0 : (lB == 1 ? sin1 : sin2);
+                float cosB = XMath.Cos(bodyB.Angle);
+                float sinB = XMath.Sin(bodyB.Angle);
                 float rBX = constraint.RB_X * cosB - constraint.RB_Y * sinB;
                 float rBY = constraint.RB_X * sinB + constraint.RB_Y * cosB;
 
