@@ -423,11 +423,17 @@ which can hang the GPU driver so hard that Windows can't recover (no TDR event, 
    ensure it also validates. If 64 is ever increased, update ALL evaluators' validation AND the
    `DenseNN.MaxLayerWidth` constant together.
 
-3. **InlinePhysics.cs hardcodes 3 bodies per world.** The cos/sin cache (lines 73-78) and the
-   ternary body-index lookups (`geom.BodyIndex == 0 ? cos0 : (... == 1 ? cos1 : cos2)`) assume
-   exactly 3 rigid bodies. If `BodiesPerWorld` ever changes, this code silently uses wrong angles
-   for bodies with index >= 3, corrupting physics → NaN → crash. To support more bodies, replace
-   the hardcoded cache with a loop or local array.
+3. **InlinePhysics.cs supports any body count — keep it that way.** It used to hardcode a cos/sin
+   cache for exactly 3 bodies (`geom.BodyIndex == 0 ? cos0 : (... == 1 ? cos1 : cos2)`) while the
+   surrounding loops honoured `cfg.BodiesPerWorld`, so any geom on body 3+ silently read body 2's
+   angle — corrupt physics, no crash. Fixed in `fdfb104`: the geom loop now uses a **run-length
+   cache** keyed on the actual body index (`cachedBody` starts at -1, so the first geom always
+   computes fresh), and the joint sites compute `XMath.Cos(body.Angle)` on demand.
+   Guarded by `Evolvatron.Rigidon.Tests/InlinePhysicsBodyCountTests.cs` (`9a0e1e1`), which runs on
+   ILGPU's CPU accelerator and covers 1/3/4/7/16 bodies plus an 8-body independent-rotation check.
+   **The rule that survives:** never reintroduce a fixed-size per-body cache in a kernel whose loops
+   bound on `cfg.BodiesPerWorld`. The mismatch does not crash — it silently returns wrong angles,
+   which is worse. Swarm worlds run 7-16 bodies and depend on this.
 
 4. **Attractor proximity buffer: hardcoded `* 8`.** `DenseRocketLandingStepKernel.EvaluateZones`
    computes `proxIdx = worldIdx * 8 + ai`. The buffer is allocated as `worldCount * MaxAttractorsPerWorld`
