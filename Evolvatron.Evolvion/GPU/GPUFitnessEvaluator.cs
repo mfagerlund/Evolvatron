@@ -1,5 +1,4 @@
-using Evolvatron.Evolvion.Benchmarks;
-using Evolvatron.Evolvion.Environments;
+using TinyWorlds;
 
 namespace Evolvatron.Evolvion.GPU;
 

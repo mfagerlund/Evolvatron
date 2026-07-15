@@ -1,8 +1,14 @@
+using Colonel.Framework.Rendering;
 using Colonel.Tests.HagridTests.FollowTheCorridor;
+using FluentSvg;
 using Godot;
 using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
+using TinyWorlds;
 
-namespace Evolvatron.Evolvion.Environments;
+// Namespace matches the project it actually lives in. It used to claim
+// Evolvatron.Evolvion.Environments — a namespace owned by a different assembly — which was
+// harmless until those worlds moved to TinyWorlds and this was the only thing left squatting there.
+namespace Evolvatron.Demo;
 
 public enum DeathCause
 {
@@ -109,6 +115,24 @@ public class FollowTheCorridorEnvironment : IEnvironment
     public bool IsTerminal()
     {
         return _car.IsDead || _currentStep >= MaxSteps;
+    }
+
+    /// <summary>
+    /// Track plus the car on it. SimpleCarWorld.Render draws the walls, start/finish and progress
+    /// markers but not the car — the car is a separate object it knows nothing about — so this
+    /// adapter delegates for the track and adds the car itself.
+    ///
+    /// Drawn in SimpleCarWorld's own 0..256 grid space, which is already SVG-oriented, so unlike
+    /// the worlds in TinyWorlds there is no y-flip to apply here.
+    /// </summary>
+    public void Render(Svg svg)
+    {
+        _world.Render(svg, renderProgressMarkers: true);
+
+        svg.AddCircle(_car.Position, 2f)
+           .SetFill(_car.IsDead ? "#c0392b" : "#e67e22").SetStroke("transparent");
+        svg.AddLine(_car.Position, _car.Position + _car.Direction * 5f)
+           .SetStroke(_car.IsDead ? "#c0392b" : "#e67e22").SetStrokeWidth(0.5f);
     }
 
     // Additional properties for visualization

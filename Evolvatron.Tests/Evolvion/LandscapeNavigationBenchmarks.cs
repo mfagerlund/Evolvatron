@@ -1,4 +1,4 @@
-using Evolvatron.Evolvion.Benchmarks;
+using TinyWorlds;
 using Xunit;
 using Xunit.Abstractions;
 

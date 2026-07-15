@@ -1,5 +1,5 @@
 using Evolvatron.Evolvion;
-using Evolvatron.Evolvion.Benchmarks;
+using TinyWorlds;
 
 namespace Evolvatron.Demo;
 

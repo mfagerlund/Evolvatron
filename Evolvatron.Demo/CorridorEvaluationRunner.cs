@@ -1,5 +1,5 @@
 using Evolvatron.Evolvion;
-using Evolvatron.Evolvion.Environments;
+using TinyWorlds;
 using System.Diagnostics;
 using Colonel.Tests.HagridTests.FollowTheCorridor;
 
@@ -31,7 +31,7 @@ public class CorridorEvaluationRunner
         public long ElapsedMs { get; set; }
         public bool IsSimulating { get; set; }
         public List<EnvironmentSnapshot> Environments { get; set; } = new();
-        public Dictionary<Evolvion.Environments.DeathCause, int> DeathCounts { get; set; } = new();
+        public Dictionary<DeathCause, int> DeathCounts { get; set; } = new();
     }
 
     public class EnvironmentSnapshot
@@ -39,7 +39,7 @@ public class CorridorEvaluationRunner
         public Godot.Vector2 Position { get; set; }
         public float Heading { get; set; }
         public bool IsTerminal { get; set; }
-        public Evolvion.Environments.DeathCause DeathCause { get; set; }
+        public DeathCause DeathCause { get; set; }
     }
 
     public class ProgressUpdate

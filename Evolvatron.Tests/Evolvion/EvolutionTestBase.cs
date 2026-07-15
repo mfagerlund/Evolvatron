@@ -3,6 +3,7 @@ namespace Evolvatron.Tests.Evolvion;
 using Xunit;
 using Xunit.Abstractions;
 using Evolvatron.Evolvion;
+using TinyWorlds;
 
 public abstract class EvolutionTestBase
 {

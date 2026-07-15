@@ -3,7 +3,7 @@ using System.Numerics;
 using RaylibVector2 = System.Numerics.Vector2;
 using GodotVector2 = Godot.Vector2;
 using RaylibColor = Raylib_cs.Color;
-using Evolvatron.Evolvion.Environments;
+using TinyWorlds;
 using Colonel.Tests.HagridTests.FollowTheCorridor;
 using static Colonel.Tests.HagridTests.FollowTheCorridor.SimpleCarWorld;
 
@@ -84,11 +84,11 @@ public static class FollowTheCorridorDemo
                         {
                             color = env.DeathCause switch
                             {
-                                Evolvion.Environments.DeathCause.WallCollision => new RaylibColor(255, 100, 100, 120), // Red
-                                Evolvion.Environments.DeathCause.TooSlowTo4thMarker => new RaylibColor(255, 165, 0, 120), // Orange
-                                Evolvion.Environments.DeathCause.TooSlowAfter4thMarker => new RaylibColor(255, 255, 0, 120), // Yellow
-                                Evolvion.Environments.DeathCause.Timeout => new RaylibColor(128, 128, 128, 120), // Gray
-                                Evolvion.Environments.DeathCause.Finished => new RaylibColor(0, 255, 0, 180), // Lime
+                                DeathCause.WallCollision => new RaylibColor(255, 100, 100, 120), // Red
+                                DeathCause.TooSlowTo4thMarker => new RaylibColor(255, 165, 0, 120), // Orange
+                                DeathCause.TooSlowAfter4thMarker => new RaylibColor(255, 255, 0, 120), // Yellow
+                                DeathCause.Timeout => new RaylibColor(128, 128, 128, 120), // Gray
+                                DeathCause.Finished => new RaylibColor(0, 255, 0, 180), // Lime
                                 _ => new RaylibColor(255, 100, 100, 120)
                             };
                         }
@@ -159,7 +159,7 @@ public static class FollowTheCorridorDemo
         Raylib.DrawLineV(screenPos, screenNose, RaylibColor.White);
     }
 
-    private static void RenderUI(int generation, float bestFitness, int step, int activeCars, bool isSimulating, TimeSpan elapsed, Dictionary<Evolvion.Environments.DeathCause, int> deathCounts)
+    private static void RenderUI(int generation, float bestFitness, int step, int activeCars, bool isSimulating, TimeSpan elapsed, Dictionary<DeathCause, int> deathCounts)
     {
         int y = 10;
         int lineHeight = 25;
@@ -194,11 +194,11 @@ public static class FollowTheCorridorDemo
         Raylib.DrawText("Agent Status:", 10, y, 18, RaylibColor.Gray);
         y += lineHeight;
 
-        int wallCount = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.WallCollision, 0);
-        int slowTo4th = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.TooSlowTo4thMarker, 0);
-        int slowAfter4th = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.TooSlowAfter4thMarker, 0);
-        int finished = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.Finished, 0);
-        int timeout = deathCounts.GetValueOrDefault(Evolvion.Environments.DeathCause.Timeout, 0);
+        int wallCount = deathCounts.GetValueOrDefault(DeathCause.WallCollision, 0);
+        int slowTo4th = deathCounts.GetValueOrDefault(DeathCause.TooSlowTo4thMarker, 0);
+        int slowAfter4th = deathCounts.GetValueOrDefault(DeathCause.TooSlowAfter4thMarker, 0);
+        int finished = deathCounts.GetValueOrDefault(DeathCause.Finished, 0);
+        int timeout = deathCounts.GetValueOrDefault(DeathCause.Timeout, 0);
 
         Raylib.DrawText($"  Alive: {activeCars}", 10, y, 16, new RaylibColor(100, 200, 255, 255));
         y += 20;
