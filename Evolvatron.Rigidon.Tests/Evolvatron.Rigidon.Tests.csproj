@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Rigidon ONLY. Evolvatron.Tests references Evolvatron.Demo, which owns Colonel, so it
+         cannot run anywhere Colonel isn't checked out. Physics tests must not need a game engine. -->
+    <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
+  </ItemGroup>
+
+</Project>

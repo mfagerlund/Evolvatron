@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.LiveTrainer", "E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.TrajectoryOpt", "Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj", "{A9A10C0B-BA12-4AD1-BBE7-D8AAA02609B7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Evolvatron.Rigidon.Tests", "Evolvatron.Rigidon.Tests\Evolvatron.Rigidon.Tests.csproj", "{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,18 @@ Global
 		{A9A10C0B-BA12-4AD1-BBE7-D8AAA02609B7}.Release|x64.Build.0 = Release|Any CPU
 		{A9A10C0B-BA12-4AD1-BBE7-D8AAA02609B7}.Release|x86.ActiveCfg = Release|Any CPU
 		{A9A10C0B-BA12-4AD1-BBE7-D8AAA02609B7}.Release|x86.Build.0 = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|x64.Build.0 = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Debug|x86.Build.0 = Debug|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|x64.ActiveCfg = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|x64.Build.0 = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|x86.ActiveCfg = Release|Any CPU
+		{6F920FB3-32EE-41B8-AC7E-7078E5D185A6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
