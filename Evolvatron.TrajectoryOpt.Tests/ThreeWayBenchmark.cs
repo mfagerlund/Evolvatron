@@ -8,7 +8,7 @@ using System.Text;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Evolvatron.Tests.GPU;
+namespace Evolvatron.TrajectoryOpt.Tests;
 
 public class ThreeWayBenchmark
 {

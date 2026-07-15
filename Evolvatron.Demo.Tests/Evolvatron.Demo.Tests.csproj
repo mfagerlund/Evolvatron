@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pinned to 18.0.1, not the 17.11.1 used by the other test projects: Colonel.Tests floors it
+         at >=18.0.1 and NU1605 treats the downgrade as an error. A version floor imposed by another
+         repo's test project is exactly the coupling this project is here to contain. -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- This project exists to QUARANTINE a dependency, not to group a feature.
+         The FollowTheCorridor task is Colonel's: its car physics (SimpleCarWorld) and SVG track live
+         in Colonel.Tests, so these tests drag Colonel (~256MB) AND a foreign NUnit test project.
+         Keeping them here is what lets Evolvatron.Tests stay at Rigidon + Evolvion and run anywhere.
+
+         A Colonel-free equivalent already exists and stays in Evolvatron.Tests:
+         SimpleCorridorEvolutionTest, over Evolvion's procedural SimpleCorridorEnvironment.
+         So corridor coverage does NOT depend on this project building. -->
+    <ProjectReference Include="..\Evolvatron.Demo\Evolvatron.Demo.csproj" />
+  </ItemGroup>
+
+</Project>

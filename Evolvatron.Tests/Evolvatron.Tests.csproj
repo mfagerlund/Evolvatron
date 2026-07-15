@@ -21,10 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Rigidon + Evolvion ONLY. Both Evolvatron.Demo and Evolvatron.TrajectoryOpt pull in Colonel
+         (~256MB, incl. a foreign NUnit test project), which made this suite unrunnable on any machine
+         without Colonel checked out. The four tests that genuinely need Colonel now live in
+         Evolvatron.Demo.Tests and Evolvatron.TrajectoryOpt.Tests. Keep this list at two entries.
+         Guard: `dotnet msbuild Evolvatron.Tests\Evolvatron.Tests.csproj -t:ResolveProjectReferences
+         -v:n | grep -ci colonel` must be 0. -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
     <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
-    <ProjectReference Include="..\Evolvatron.Demo\Evolvatron.Demo.csproj" />
-    <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />
   </ItemGroup>
 
 </Project>

@@ -14,8 +14,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Rigidon ONLY. Evolvatron.Tests references Evolvatron.Demo, which owns Colonel, so it
-         cannot run anywhere Colonel isn't checked out. Physics tests must not need a game engine. -->
+    <!-- Rigidon ONLY, and deliberately narrower than Evolvatron.Tests (Rigidon + Evolvion).
+         Rigidon is consumed standalone by Walker and Clones, which have no use for the optimizer,
+         so its physics tests must be runnable without one. (This project was originally created
+         because Evolvatron.Tests dragged Colonel via Evolvatron.Demo — that's since been fixed,
+         but the narrower-scope reason above stands on its own.) -->
     <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
   </ItemGroup>
 

@@ -1,7 +1,7 @@
 using Evolvatron.Demo;
 using Xunit;
 
-namespace Evolvatron.Tests;
+namespace Evolvatron.Demo.Tests;
 
 public class CorridorEvolutionTests
 {

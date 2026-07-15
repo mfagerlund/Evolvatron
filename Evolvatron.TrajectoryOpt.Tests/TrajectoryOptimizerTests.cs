@@ -5,7 +5,7 @@ using Evolvatron.Evolvion.TrajectoryOptimization;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Evolvatron.Tests;
+namespace Evolvatron.TrajectoryOpt.Tests;
 
 public class TrajectoryOptimizerTests
 {

@@ -1,7 +1,7 @@
 using Evolvatron.Evolvion;
 using Evolvatron.Evolvion.Environments;
 
-namespace Evolvatron.Tests.Evolvion;
+namespace Evolvatron.Demo.Tests;
 
 public class FollowTheCorridorEvolutionTest
 {

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- This project exists to QUARANTINE a dependency, not to group a feature.
+         TrajectoryOptimizer needs Colonel.Core's NonlinearLeastSquaresSolver, so anything testing
+         it inherits Colonel (~256MB). Keeping these tests here is what lets Evolvatron.Tests stay
+         at Rigidon + Evolvion and run on any machine. Do not add non-trajectory tests here. -->
+    <ProjectReference Include="..\Evolvatron.Rigidon\Evolvatron.Rigidon.csproj" />
+    <ProjectReference Include="..\Evolvatron.Evolvion\Evolvatron.Evolvion.csproj" />
+    <ProjectReference Include="..\Evolvatron.TrajectoryOpt\Evolvatron.TrajectoryOpt.csproj" />
+  </ItemGroup>
+
+</Project>
