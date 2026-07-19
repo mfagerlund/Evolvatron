@@ -14,7 +14,22 @@ public class IslandOptimizer
     public int TotalPopulation { get; }
     public int Generation { get; private set; }
 
-    private readonly IUpdateStrategy _strategy;
+    // One strategy instance PER island (not one shared). Required: ES/SNES store per-generation sampling
+    // state (noise/z vectors) on the instance, so sharing one across islands corrupts it. A mixed
+    // portfolio (config.IslandStrategies) also assigns different rules per island through this array.
+    private readonly IUpdateStrategy[] _strategies;
+    private readonly UpdateStrategyType[] _strategyTypes;
+
+    /// <summary>The update rule driving island i (for logging a portfolio's per-island handoff).</summary>
+    public UpdateStrategyType StrategyOf(int islandIdx) => _strategyTypes[islandIdx];
+
+    private static IUpdateStrategy MakeStrategy(UpdateStrategyType type, IslandConfig config) => type switch
+    {
+        UpdateStrategyType.CEM => new CEMStrategy(config),
+        UpdateStrategyType.ES => new ESStrategy(config),
+        UpdateStrategyType.SNES => new SNESStrategy(config),
+        _ => throw new ArgumentException($"Unknown strategy: {type}")
+    };
 
     public IslandOptimizer(IslandConfig config, DenseTopology topology, int gpuCapacity)
     {
@@ -30,13 +45,15 @@ public class IslandOptimizer
         IndividualsPerIsland = (gpuCapacity / islandCount) & ~1;
         TotalPopulation = islandCount * IndividualsPerIsland;
 
-        _strategy = config.Strategy switch
+        // Per-island strategies: portfolio (IslandStrategies, round-robin) or the single global Strategy.
+        var mix = config.IslandStrategies;
+        _strategyTypes = new UpdateStrategyType[islandCount];
+        _strategies = new IUpdateStrategy[islandCount];
+        for (int i = 0; i < islandCount; i++)
         {
-            UpdateStrategyType.CEM => new CEMStrategy(config),
-            UpdateStrategyType.ES => new ESStrategy(config),
-            UpdateStrategyType.SNES => new SNESStrategy(config),
-            _ => throw new ArgumentException($"Unknown strategy: {config.Strategy}")
-        };
+            _strategyTypes[i] = (mix != null && mix.Count > 0) ? mix[i % mix.Count] : config.Strategy;
+            _strategies[i] = MakeStrategy(_strategyTypes[i], config);
+        }
 
         Islands = new List<Island>(islandCount);
         for (int i = 0; i < islandCount; i++)
@@ -60,7 +77,7 @@ public class IslandOptimizer
         {
             int offset = i * IndividualsPerIsland * paramCount;
             var span = paramVectors.AsSpan(offset, IndividualsPerIsland * paramCount);
-            _strategy.GenerateSamples(Islands[i], span, IndividualsPerIsland, rng);
+            _strategies[i].GenerateSamples(Islands[i], span, IndividualsPerIsland, rng);
         }
 
         return paramVectors;
@@ -81,7 +98,7 @@ public class IslandOptimizer
             var islandFitness = new ReadOnlySpan<float>(fitnesses, popOffset, IndividualsPerIsland);
             var islandParams = new ReadOnlySpan<float>(paramVectors, paramOffset, IndividualsPerIsland * paramCount);
 
-            _strategy.Update(Islands[i], islandFitness, islandParams, IndividualsPerIsland);
+            _strategies[i].Update(Islands[i], islandFitness, islandParams, IndividualsPerIsland);
 
             // Track best fitness for stagnation detection
             float currentBest = float.NegativeInfinity;
@@ -154,6 +171,18 @@ public class IslandOptimizer
                 island.Sigma[p] = MathF.Min(island.Sigma[p] * sigmaBump, Config.MaxSigma);
             island.StagnationCounter = 0;
         }
+    }
+
+    /// <summary>
+    /// Per-island "strategy:bestFitness" line — lets a portfolio run show which update rule is leading and
+    /// how that lead migrates over the run (the explorer→refiner handoff). e.g. "cem:B=1.2e3 es:B=1.3e3".
+    /// </summary>
+    public string IslandReport()
+    {
+        var parts = new string[Islands.Count];
+        for (int i = 0; i < Islands.Count; i++)
+            parts[i] = $"{_strategyTypes[i].ToString().ToLowerInvariant()}:{Islands[i].BestFitness:G4}";
+        return string.Join("  ", parts);
     }
 
     /// <summary>

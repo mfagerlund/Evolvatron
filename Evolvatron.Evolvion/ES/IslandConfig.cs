@@ -9,6 +9,15 @@ public class IslandConfig
     // Strategy selection
     public UpdateStrategyType Strategy { get; set; } = UpdateStrategyType.CEM;
 
+    // Optional PORTFOLIO: one update rule per island instead of a single global one. When non-null, island
+    // i uses IslandStrategies[i % count]; when null, every island uses Strategy (unchanged behavior). Each
+    // island gets its OWN strategy instance regardless — required because ES/SNES carry per-generation
+    // sampling state (noise/z vectors), so a shared instance would corrupt across islands. Combined with
+    // island migration (best μ reseeds stagnant islands), a mixed portfolio gives an automatic
+    // explorer→refiner handoff: e.g. ES explores, then a stagnating CEM island refines its μ. See
+    // docs/engine-sweep.md. The population is split evenly across islands (the 1:1:… ratio).
+    public List<UpdateStrategyType>? IslandStrategies { get; set; } = null;
+
     // CEM parameters (tuned via systematic sweep — see scratch/cem_parameter_sweep.md)
     public float CEMEliteFraction { get; set; } = 0.01f;
     public float CEMMuSmoothing { get; set; } = 0.2f;
